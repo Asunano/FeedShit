@@ -34,9 +34,6 @@ func main() {
 	}
 	defer db.Close()
 
-	// SQLite: limit to 1 open connection to avoid "database is locked" errors
-	db.SetMaxOpenConns(1)
-
 	// Seed default config
 	db.InitDefaultConfig(cfg)
 
@@ -47,13 +44,44 @@ func main() {
 
 	application := app.New(cfg, db, sm, rl, mailer)
 
+	// Auto backup on startup
+	backupDir := cfg.DataDir + "/backups"
+	if bp, err := db.BackupDatabase(backupDir); err != nil {
+		log.Printf("Startup backup failed: %v", err)
+	} else {
+		log.Printf("  Startup backup: %s", bp)
+	}
+
+	// Daily backup scheduler
+	go func() {
+		for {
+			now := time.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
+			time.Sleep(next.Sub(now))
+			if bp, err := db.BackupDatabase(backupDir); err != nil {
+				log.Printf("Daily backup failed: %v", err)
+			} else {
+				log.Printf("  Daily backup: %s", bp)
+			}
+		}
+	}()
+
+	// Configure trusted proxies for CDN header validation
+	middleware.SetTrustedProxies(cfg.TrustedProxies)
+
 	// Setup Gin
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	r.RedirectTrailingSlash = false
 	r.RedirectFixedPath = false
-	r.SetTrustedProxies(nil)
+
+	// Configure Gin's trusted proxies
+	if len(cfg.TrustedProxies) > 0 {
+		r.SetTrustedProxies(cfg.TrustedProxies)
+	} else {
+		r.SetTrustedProxies(nil)
+	}
 
 	// Register all routes
 	routes.Register(r, application)
@@ -66,6 +94,9 @@ func main() {
 	log.Printf("  Landing page:  http://localhost:%s/", cfg.Port)
 	log.Printf("  Admin panel:   http://localhost:%s/admin", cfg.Port)
 	log.Printf("  Feedback page: http://localhost:%s/fb/{project-slug}", cfg.Port)
+	if len(cfg.TrustedProxies) > 0 {
+		log.Printf("  Trusted proxies: %v", cfg.TrustedProxies)
+	}
 
 	// Graceful shutdown: drain in-flight requests on SIGINT/SIGTERM
 	go func() {

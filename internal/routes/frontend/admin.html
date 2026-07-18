@@ -32,7 +32,8 @@ a:hover{text-decoration:underline}
 
 /* Filter bar */
 .filter-bar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
-.filter-bar select{padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem;background:#fff}
+.filter-bar select,.filter-bar input[type=text]{padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem;background:#fff}
+.filter-bar input[type=text]{width:180px}
 .filter-bar .count{color:#888;font-size:.8rem}
 .filter-bar .spacer{flex:1}
 .btn-sm{padding:5px 14px;border:1px solid #d0d0d0;border-radius:4px;cursor:pointer;font-size:.8rem;background:#fff;color:#555}
@@ -49,6 +50,13 @@ tr:hover{background:#f9f9f9}
 tr:last-child td{border-bottom:none}
 .tag{display:inline-block;padding:1px 6px;background:#eee;border-radius:3px;font-size:.75rem;color:#666;font-family:monospace}
 .clickable{cursor:pointer}
+
+/* Status badges */
+.status-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:500}
+.status-pending{background:#fff3cd;color:#856404}
+.status-processing{background:#cce5ff;color:#004085}
+.status-resolved{background:#d4edda;color:#155724}
+.status-closed{background:#e2e3e5;color:#383d41}
 
 /* Toggle switch */
 .toggle-switch{position:relative;display:inline-block;width:36px;height:20px;vertical-align:middle}
@@ -82,6 +90,12 @@ tr:last-child td{border-bottom:none}
 .custom-data-item{display:flex;gap:8px;margin-bottom:6px;font-size:.85rem}
 .custom-data-item .cd-label{color:#888;min-width:100px;flex-shrink:0}
 .custom-data-item .cd-value{color:#333;word-break:break-word}
+
+/* Status selector in detail */
+.status-selector{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #f0f0f0}
+.status-selector label{font-size:.8rem;color:#666}
+.status-selector select{padding:4px 8px;border:1px solid #d0d0d0;border-radius:4px;font-size:.8rem}
+.status-selector button{padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:.8rem;background:#333;color:#fff}
 
 /* Settings */
 .settings-layout{display:flex;gap:20px}
@@ -144,7 +158,7 @@ tr:last-child td{border-bottom:none}
 .fb-add-btn{display:inline-block;padding:6px 14px;border:1px dashed #ccc;border-radius:4px;cursor:pointer;font-size:.8rem;color:#888;background:none;margin-top:4px}
 .fb-add-btn:hover{border-color:#888;color:#555}
 
-/* Field editor (inside modal) */
+/* Field editor */
 .field-editor{background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:16px;margin-bottom:12px}
 .field-editor h4{font-size:.85rem;font-weight:600;margin-bottom:12px}
 .field-editor .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
@@ -161,12 +175,61 @@ tr:last-child td{border-bottom:none}
 .options-editor .add-opt{font-size:.75rem;color:#888;cursor:pointer;border:none;background:none;padding:2px 0}
 .options-editor .add-opt:hover{color:#555}
 
+/* Audit log */
+.audit-table td:first-child{font-family:monospace;font-size:.8rem;color:#888;white-space:nowrap}
+
 /* Toast */
 .toast{position:fixed;top:60px;right:20px;padding:10px 18px;border-radius:4px;font-size:.85rem;z-index:400;display:none}
 .toast.success{display:block;background:#e6f9e6;color:#1a7a1a;border:1px solid #b2e0b2}
 .toast.error{display:block;background:#fde8e8;color:#c00;border:1px solid #f5c6c6}
 
 .empty{text-align:center;padding:40px;color:#999}
+
+/* Bulk actions */
+.bulk-bar{display:none;align-items:center;gap:10px;padding:8px 14px;background:#f0f4ff;border:1px solid #c3d4f7;border-radius:4px;margin-bottom:10px;font-size:.85rem}
+.bulk-bar.active{display:flex}
+.bulk-bar select{padding:4px 8px;border:1px solid #d0d0d0;border-radius:4px;font-size:.8rem}
+.bulk-bar button{padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:.8rem}
+.cb-col{width:30px;text-align:center}
+
+/* Notes section */
+.notes-section{margin-top:16px;padding-top:16px;border-top:1px solid #f0f0f0}
+.notes-section h3{font-size:.85rem;font-weight:600;margin-bottom:10px;color:#666}
+.note-item{background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:10px 12px;margin-bottom:8px}
+.note-item.public{border-left:3px solid #2563eb}
+.note-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.note-author{font-size:.8rem;font-weight:500;color:#333}
+.note-time{font-size:.75rem;color:#999}
+.note-badge{font-size:.7rem;padding:1px 5px;border-radius:3px;margin-left:6px}
+.note-badge.pub{background:#cce5ff;color:#004085}
+.note-badge.priv{background:#eee;color:#666}
+.note-content{font-size:.85rem;color:#444;line-height:1.5;white-space:pre-wrap}
+.note-delete{font-size:.75rem;color:#c00;cursor:pointer;background:none;border:none}
+.note-form{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.note-form textarea{width:100%;padding:8px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem;font-family:inherit;resize:vertical;min-height:60px}
+.note-form-actions{display:flex;align-items:center;gap:8px}
+.note-form-actions label{font-size:.8rem;color:#666;display:flex;align-items:center;gap:4px}
+.note-form-actions button{padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:.8rem;background:#333;color:#fff}
+
+/* Contact info in detail */
+.contact-info{display:flex;gap:16px;margin-top:8px;font-size:.8rem;color:#666}
+.contact-info span{display:flex;align-items:center;gap:4px}
+
+/* Chart */
+.chart-container{background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:20px;margin-top:16px}
+.chart-container h2{font-size:1rem;margin-bottom:12px}
+.bar-chart{display:flex;align-items:flex-end;gap:2px;height:120px;padding-top:10px}
+.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px}
+.bar-col .bar{width:100%;background:#333;border-radius:2px 2px 0 0;min-height:1px;transition:height .3s}
+.bar-col .bar-label{font-size:.6rem;color:#999;writing-mode:vertical-rl;text-orientation:mixed;max-height:40px;overflow:hidden}
+.bar-col .bar-count{font-size:.65rem;color:#666}
+.chart-empty{text-align:center;padding:40px;color:#999;font-size:.85rem}
+
+/* Assignee in detail */
+.assignee-row{display:flex;align-items:center;gap:8px;margin-top:8px}
+.assignee-row label{font-size:.8rem;color:#666}
+.assignee-row input{padding:4px 8px;border:1px solid #d0d0d0;border-radius:4px;font-size:.8rem;width:140px}
+.assignee-row button{padding:4px 10px;border:none;border-radius:4px;cursor:pointer;font-size:.8rem;background:#333;color:#fff}
 </style>
 </head>
 <body>
@@ -176,6 +239,7 @@ tr:last-child td{border-bottom:none}
   <div class="nav">
     <button class="active" data-tab="dashboard" onclick="switchTab('dashboard')">概览</button>
     <button data-tab="projects" onclick="switchTab('projects')">项目</button>
+    <button data-tab="audit" onclick="switchTab('audit')">审计</button>
     <button data-tab="settings" onclick="switchTab('settings')">设置</button>
   </div>
   <div class="header-right">
@@ -197,15 +261,41 @@ tr:last-child td{border-bottom:none}
         <select id="projectFilter" onchange="loadFeedbacks()">
           <option value="">全部项目</option>
         </select>
+        <select id="statusFilter" onchange="loadFeedbacks()">
+          <option value="">全部状态</option>
+          <option value="pending">待处理</option>
+          <option value="processing">处理中</option>
+          <option value="resolved">已解决</option>
+          <option value="closed">已关闭</option>
+        </select>
+        <input type="text" id="keywordSearch" placeholder="搜索标题/描述..." onkeyup="debounceSearch()">
         <span class="count" id="feedbackCount"></span>
         <span class="spacer"></span>
         <button class="btn-sm" onclick="exportCSV()">导出 CSV</button>
       </div>
+      <div class="bulk-bar" id="bulkBar">
+        <span id="bulkCount">0 条已选</span>
+        <select id="bulkStatusSelect">
+          <option value="">批量改状态...</option>
+          <option value="pending">待处理</option>
+          <option value="processing">处理中</option>
+          <option value="resolved">已解决</option>
+          <option value="closed">已关闭</option>
+        </select>
+        <button onclick="bulkUpdateStatus()" style="background:#333;color:#fff">应用</button>
+        <button onclick="bulkDelete()" style="background:#c00;color:#fff">批量删除</button>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn-sm" onclick="clearSelection()">取消选择</button>
+      </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>ID</th><th>项目</th><th>标题</th><th>IP</th><th>时间</th></tr></thead>
-          <tbody id="feedbackTable"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+          <thead><tr><th class="cb-col"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll(this.checked)"></th><th>ID</th><th>项目</th><th>标题</th><th>状态</th><th>指派</th><th>IP</th><th>时间</th></tr></thead>
+          <tbody id="feedbackTable"><tr><td colspan="8" class="empty">加载中...</td></tr></tbody>
         </table>
+      </div>
+      <div class="chart-container" id="trendChart">
+        <h2>反馈趋势（近 30 天）</h2>
+        <div id="chartInner"><p class="chart-empty">加载中...</p></div>
       </div>
     </div>
 
@@ -217,21 +307,18 @@ tr:last-child td{border-bottom:none}
 
   <!-- ===== Projects Tab ===== -->
   <div id="tab-projects" style="display:none">
-    <!-- Project list view -->
     <div id="projectListView">
       <div class="filter-bar">
         <strong style="font-size:.95rem">反馈项目</strong>
         <span class="spacer"></span>
         <button class="btn-sm" onclick="openProjectModal()">+ 新建项目</button>
       </div>
-
       <div class="table-wrap">
         <table>
           <thead><tr><th>项目名称</th><th>标识</th><th>状态</th><th>反馈数</th><th>反馈链接</th><th>操作</th></tr></thead>
           <tbody id="projectTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
         </table>
       </div>
-
       <div style="margin-top:20px">
         <div class="settings-card">
           <h2>项目反馈统计</h2>
@@ -239,11 +326,23 @@ tr:last-child td{border-bottom:none}
         </div>
       </div>
     </div>
-
-    <!-- Project detail view -->
     <div id="projectDetailView" style="display:none">
       <div class="detail-back" onclick="showProjectList()">&#8592; 返回项目列表</div>
       <div id="projectDetailContent"></div>
+    </div>
+  </div>
+
+  <!-- ===== Audit Tab ===== -->
+  <div id="tab-audit" style="display:none">
+    <div class="filter-bar">
+      <strong style="font-size:.95rem">操作审计日志</strong>
+      <span class="count" id="auditCount"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>时间</th><th>操作</th><th>详情</th><th>用户</th><th>IP</th></tr></thead>
+        <tbody id="auditTable"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+      </table>
     </div>
   </div>
 
@@ -276,20 +375,26 @@ tr:last-child td{border-bottom:none}
           <div class="settings-actions">
             <button class="btn-save" onclick="saveSystemSettings()">保存设置</button>
           </div>
+          <div style="margin-top:24px;padding-top:20px;border-top:1px solid #eee">
+            <h2 style="font-size:.95rem">数据备份</h2>
+            <p style="font-size:.8rem;color:#888;margin:8px 0">手动创建数据库备份文件，存储在服务端 backups 目录。系统每日凌晨 3 点自动备份。</p>
+            <button class="btn-save" onclick="doBackup()">立即备份</button>
+            <span id="backupResult" style="margin-left:12px;font-size:.8rem;color:#888"></span>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-<!-- Project Modal (create/edit) -->
+<!-- Project Modal -->
 <div class="modal-overlay" id="projectModal">
   <div class="modal">
     <h3 id="projectModalTitle">新建项目</h3>
     <input type="hidden" id="pfId">
     <div class="row">
       <div class="settings-field"><label>项目名称 *</label><input type="text" id="pfName" placeholder="例：官网、App"></div>
-      <div class="settings-field"><label>项目标识 *</label><input type="text" id="pfSlug" placeholder="例：website、app（小写字母/数字/连字符）"></div>
+      <div class="settings-field"><label>项目标识 *</label><input type="text" id="pfSlug" placeholder="例：website、app"></div>
     </div>
     <div class="settings-field"><label>项目描述</label><input type="text" id="pfDesc" placeholder="可选"></div>
     <div class="settings-field"><div class="toggle"><input type="checkbox" id="pfActive" checked><span>启用（关闭后该项目无法提交新反馈）</span></div></div>
@@ -315,24 +420,12 @@ tr:last-child td{border-bottom:none}
         </select></div>
         <div><label>字段名称（英文标识）</label><input type="text" id="feName" placeholder="例：priority"></div>
       </div>
-      <div class="field-row full">
-        <div><label>显示标签</label><input type="text" id="feLabel" placeholder="例：优先级"></div>
-      </div>
-      <div class="field-row full" id="fePlaceholderRow">
-        <div><label>占位提示</label><input type="text" id="fePlaceholder" placeholder="可选"></div>
-      </div>
+      <div class="field-row full"><div><label>显示标签</label><input type="text" id="feLabel" placeholder="例：优先级"></div></div>
+      <div class="field-row full" id="fePlaceholderRow"><div><label>占位提示</label><input type="text" id="fePlaceholder" placeholder="可选"></div></div>
       <div class="field-row full" id="feOptionsRow" style="display:none">
-        <div>
-          <label>选项（每行一个）</label>
-          <div class="options-editor" id="feOptionsEditor">
-            <div id="feOptionsList"></div>
-            <button class="add-opt" onclick="addOptionRow()">+ 添加选项</button>
-          </div>
-        </div>
+        <div><label>选项（每行一个）</label><div class="options-editor"><div id="feOptionsList"></div><button class="add-opt" onclick="addOptionRow()">+ 添加选项</button></div></div>
       </div>
-      <div class="field-row">
-        <div class="toggle"><input type="checkbox" id="feRequired"><span>必填</span></div>
-      </div>
+      <div class="field-row"><div class="toggle"><input type="checkbox" id="feRequired"><span>必填</span></div></div>
     </div>
     <div class="modal-actions">
       <button class="btn-sm" onclick="closeFieldEditor()">取消</button>
@@ -350,7 +443,29 @@ tr:last-child td{border-bottom:none}
   var allProjects = [];
   var currentProjectId = null;
   var currentFormSchema = [];
-  var editingFieldIndex = -1; // -1 = adding new, >=0 = editing existing
+  var editingFieldIndex = -1;
+  var csrfToken = '';
+  var searchTimer = null;
+  var selectedIds = new Set();
+
+  var statusLabels = {pending:'待处理',processing:'处理中',resolved:'已解决',closed:'已关闭'};
+
+  // --- CSRF helpers ---
+  function getCsrfHeaders() {
+    var h = {'X-CSRF-Token': csrfToken};
+    return h;
+  }
+
+  // Fetch CSRF token after login
+  async function fetchCSRFToken() {
+    try {
+      var resp = await api('/api/v1/admin/csrf-token');
+      if (resp) {
+        var d = await resp.json();
+        csrfToken = d.csrf_token || '';
+      }
+    } catch(e) {}
+  }
 
   // --- Tab switching with hash routing ---
   window.switchTab = function(tab) {
@@ -359,12 +474,13 @@ tr:last-child td{border-bottom:none}
     document.querySelectorAll('.nav button').forEach(function(b){
       b.classList.toggle('active', b.dataset.tab === tab);
     });
-    document.getElementById('tab-dashboard').style.display = tab === 'dashboard' ? '' : 'none';
-    document.getElementById('tab-projects').style.display = tab === 'projects' ? '' : 'none';
-    document.getElementById('tab-settings').style.display = tab === 'settings' ? '' : 'none';
+    ['dashboard','projects','audit','settings'].forEach(function(t){
+      document.getElementById('tab-'+t).style.display = t === tab ? '' : 'none';
+    });
     if (tab === 'projects') { showProjectList(); loadProjects(); loadProjectStats(); }
     if (tab === 'settings') loadEmailSettings();
-    if (tab === 'dashboard') { showList(); loadStats(); loadFeedbacks(); }
+    if (tab === 'dashboard') { showList(); loadStats(); loadFeedbacks(); loadChart(); }
+    if (tab === 'audit') loadAuditLogs();
   };
 
   // --- API helpers ---
@@ -372,6 +488,16 @@ tr:last-child td{border-bottom:none}
     var resp = await fetch(url, opts);
     if (resp.status === 401) { window.location.href = '/admin/login'; return null; }
     return resp;
+  }
+
+  async function apiJSON(url, opts) {
+    opts = opts || {};
+    opts.headers = opts.headers || {};
+    opts.headers['Content-Type'] = 'application/json';
+    Object.assign(opts.headers, getCsrfHeaders());
+    var resp = await api(url, opts);
+    if (!resp) return null;
+    return resp.json();
   }
 
   // --- Load stats ---
@@ -384,11 +510,15 @@ tr:last-child td{border-bottom:none}
     document.getElementById('statToday').textContent = d.today_feedbacks || 0;
   }
 
-  // --- Load feedbacks ---
+  // --- Load feedbacks with search/filter ---
   window.loadFeedbacks = async function() {
     var project = document.getElementById('projectFilter').value;
+    var status = document.getElementById('statusFilter').value;
+    var keyword = document.getElementById('keywordSearch').value.trim();
     var url = '/api/v1/admin/feedbacks?limit=100';
     if (project) url += '&project=' + encodeURIComponent(project);
+    if (status) url += '&status=' + encodeURIComponent(status);
+    if (keyword) url += '&keyword=' + encodeURIComponent(keyword);
     var resp = await api(url);
     if (!resp) return;
     var d = await resp.json();
@@ -409,25 +539,94 @@ tr:last-child td{border-bottom:none}
     renderTable();
   };
 
+  window.debounceSearch = function() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(function(){ loadFeedbacks(); }, 300);
+  };
+
+  function statusBadge(status) {
+    var cls = 'status-badge status-' + (status || 'pending');
+    var label = statusLabels[status] || status || '待处理';
+    return '<span class="'+cls+'">'+esc(label)+'</span>';
+  }
+
   function renderTable() {
     var tbody = document.getElementById('feedbackTable');
     if (feedbacks.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无反馈记录</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">暂无反馈记录</td></tr>';
+      updateBulkBar();
       return;
     }
     tbody.innerHTML = feedbacks.map(function(f){
       var dt = f.created_at ? f.created_at.replace('T',' ').substring(0,16) : '-';
-      return '<tr class="clickable" onclick="showDetail('+f.id+')">' +
-        '<td>#'+f.id+'</td>' +
+      var checked = selectedIds.has(f.id) ? ' checked' : '';
+      return '<tr>' +
+        '<td class="cb-col"><input type="checkbox" data-id="'+f.id+'"'+checked+' onchange="toggleSelect('+f.id+',this.checked)"></td>' +
+        '<td><a href="#" onclick="showDetail('+f.id+');return false;" style="color:#333">#'+f.id+'</a></td>' +
         '<td><span class="tag">'+esc(f.project_id)+'</span></td>' +
-        '<td>'+esc(f.title)+'</td>' +
+        '<td><a href="#" onclick="showDetail('+f.id+');return false;">'+esc(f.title)+'</a></td>' +
+        '<td>'+statusBadge(f.status)+'</td>' +
+        '<td style="font-size:.8rem;color:#666">'+(f.assignee ? esc(f.assignee) : '-')+'</td>' +
         '<td style="font-family:monospace;font-size:.8rem;color:#888">'+esc(f.client_ip)+'</td>' +
         '<td style="color:#888;font-size:.8rem">'+dt+'</td>' +
         '</tr>';
     }).join('');
+    updateBulkBar();
   }
 
-  // --- Feedback Detail view ---
+  // --- Selection & Bulk operations ---
+  window.toggleSelect = function(id, checked) {
+    if (checked) selectedIds.add(id); else selectedIds.delete(id);
+    updateBulkBar();
+  };
+  window.toggleSelectAll = function(checked) {
+    if (checked) { feedbacks.forEach(function(f){ selectedIds.add(f.id); }); }
+    else { selectedIds.clear(); }
+    renderTable();
+  };
+  window.clearSelection = function() {
+    selectedIds.clear();
+    document.getElementById('selectAllCb').checked = false;
+    renderTable();
+  };
+  function updateBulkBar() {
+    var bar = document.getElementById('bulkBar');
+    var n = selectedIds.size;
+    if (n > 0) {
+      bar.classList.add('active');
+      document.getElementById('bulkCount').textContent = n + ' 条已选';
+    } else {
+      bar.classList.remove('active');
+    }
+  }
+  window.bulkUpdateStatus = async function() {
+    var status = document.getElementById('bulkStatusSelect').value;
+    if (!status) { showToast('请选择目标状态', 'error'); return; }
+    if (!confirm('确认将 '+selectedIds.size+' 条反馈标记为 '+statusLabels[status]+'？')) return;
+    var d = await apiJSON('/api/v1/admin/feedbacks/bulk-status', {
+      method: 'POST',
+      body: JSON.stringify({ids: Array.from(selectedIds), status: status})
+    });
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast(d.message, 'success');
+    selectedIds.clear();
+    loadFeedbacks(); loadStats();
+  };
+  window.bulkDelete = async function() {
+    if (!confirm('确认删除 '+selectedIds.size+' 条反馈？此操作不可恢复。')) return;
+    var d = await apiJSON('/api/v1/admin/feedbacks/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ids: Array.from(selectedIds)})
+    });
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast(d.message, 'success');
+    selectedIds.clear();
+    loadFeedbacks(); loadStats();
+  };
+
+  // --- Feedback Detail ---
   window.showDetail = function(id) {
     window.location.hash = 'feedback/' + id;
     showDetailInner(id);
@@ -448,6 +647,15 @@ tr:last-child td{border-bottom:none}
         '<span>时间：'+dt+'</span>' +
         '<span><a href="#" onclick="deleteFeedback('+f.id+');return false;" style="color:#c00">删除</a></span>' +
       '</div>';
+
+    // Contact info
+    if (f.contact_name || f.contact_email) {
+      html += '<div class="contact-info">';
+      if (f.contact_name) html += '<span>联系人：'+esc(f.contact_name)+'</span>';
+      if (f.contact_email) html += '<span>邮箱：<a href="mailto:'+esc(f.contact_email)+'">'+esc(f.contact_email)+'</a></span>';
+      html += '</div>';
+    }
+
     if (f.description) html += '<div class="detail-desc">' + esc(f.description) + '</div>';
 
     // Custom data
@@ -464,10 +672,36 @@ tr:last-child td{border-bottom:none}
       html += '</div>';
     }
 
+    // Status selector
+    var curStatus = f.status || 'pending';
+    html += '<div class="status-selector">' +
+      '<label>状态：</label>' +
+      '<select id="statusSelect">' +
+      '<option value="pending"' + (curStatus==='pending'?' selected':'') + '>待处理</option>' +
+      '<option value="processing"' + (curStatus==='processing'?' selected':'') + '>处理中</option>' +
+      '<option value="resolved"' + (curStatus==='resolved'?' selected':'') + '>已解决</option>' +
+      '<option value="closed"' + (curStatus==='closed'?' selected':'') + '>已关闭</option>' +
+      '</select>' +
+      '<button onclick="updateFeedbackStatus('+f.id+')">更新</button>' +
+      '</div>';
+
+    // Tags
+    if (f.tags) {
+      html += '<div style="margin-top:8px;font-size:.8rem;color:#888">标签：' + esc(f.tags) + '</div>';
+    }
+
+    // Assignee
+    html += '<div class="assignee-row">' +
+      '<label>指派给：</label>' +
+      '<input type="text" id="assigneeInput" value="'+esc(f.assignee||'')+'" placeholder="处理人">' +
+      '<button onclick="updateAssignee('+f.id+')">保存</button>' +
+      '</div>';
+
+    // Files
     var files = [];
     try { files = JSON.parse(f.file_paths || '[]'); } catch(e){}
     if (files.length > 0) {
-      html += '<div class="detail-files"><h3>附件 ('+files.length+')</h3>';
+      html += '<div class="detail-files" style="margin-top:16px"><h3>附件 ('+files.length+')</h3>';
       files.forEach(function(fp){
         var fname = fp.split('/').pop();
         var isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(fname);
@@ -486,8 +720,35 @@ tr:last-child td{border-bottom:none}
       });
       html += '</div>';
     }
+
+    // Notes section
+    html += '<div class="notes-section">' +
+      '<h3>备注与回复 ('+((f.notes||[]).length)+')</h3>' +
+      '<div id="notesList">加载中...</div>' +
+      '<div class="note-form">' +
+      '<textarea id="noteContent" placeholder="添加内部备注或公开回复..."></textarea>' +
+      '<div class="note-form-actions">' +
+      '<label><input type="checkbox" id="notePublic"> 公开回复（提交者可见）</label>' +
+      '<button onclick="addNote('+f.id+')">提交</button>' +
+      '</div></div></div>';
+
     document.getElementById('detailContent').innerHTML = html;
+
+    // Load notes
+    loadNotes(f.id);
   }
+
+  window.updateFeedbackStatus = async function(id) {
+    var sel = document.getElementById('statusSelect');
+    if (!sel) return;
+    var d = await apiJSON('/api/v1/admin/feedbacks/' + id + '/status', {
+      method: 'PUT',
+      body: JSON.stringify({status: sel.value})
+    });
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast('状态已更新', 'success');
+  };
 
   async function loadLogContent(url, elemId) {
     try {
@@ -504,6 +765,105 @@ tr:last-child td{border-bottom:none}
     }
   }
 
+  // --- Notes ---
+  async function loadNotes(feedbackId) {
+    var resp = await api('/api/v1/admin/feedbacks/' + feedbackId + '/notes');
+    if (!resp) return;
+    var d = await resp.json();
+    var notes = d.notes || [];
+    var container = document.getElementById('notesList');
+    if (!container) return;
+    if (notes.length === 0) {
+      container.innerHTML = '<p style="color:#999;font-size:.8rem">暂无备注</p>';
+      return;
+    }
+    container.innerHTML = notes.map(function(n){
+      var dt = n.created_at ? n.created_at.replace('T',' ').substring(0,16) : '-';
+      var pubClass = n.is_public ? ' public' : '';
+      var badge = n.is_public ? '<span class="note-badge pub">公开</span>' : '<span class="note-badge priv">内部</span>';
+      return '<div class="note-item'+pubClass+'">' +
+        '<div class="note-header"><span class="note-author">'+esc(n.author)+badge+'</span>' +
+        '<span><span class="note-time">'+dt+'</span> ' +
+        '<button class="note-delete" onclick="deleteNote('+n.id+','+feedbackId+')">删除</button></span></div>' +
+        '<div class="note-content">'+esc(n.content)+'</div></div>';
+    }).join('');
+  }
+
+  window.addNote = async function(feedbackId) {
+    var content = document.getElementById('noteContent').value.trim();
+    if (!content) { showToast('内容不能为空', 'error'); return; }
+    var isPublic = document.getElementById('notePublic').checked;
+    var d = await apiJSON('/api/v1/admin/feedbacks/' + feedbackId + '/notes', {
+      method: 'POST',
+      body: JSON.stringify({content: content, is_public: isPublic})
+    });
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast('备注已添加', 'success');
+    document.getElementById('noteContent').value = '';
+    document.getElementById('notePublic').checked = false;
+    loadNotes(feedbackId);
+  };
+
+  window.deleteNote = async function(noteId, feedbackId) {
+    if (!confirm('确认删除此备注？')) return;
+    var d = await apiJSON('/api/v1/admin/feedbacks/' + feedbackId + '/notes/' + noteId, {method: 'DELETE'});
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast('备注已删除', 'success');
+    loadNotes(feedbackId);
+  };
+
+  // --- Assignee ---
+  window.updateAssignee = async function(id) {
+    var val = document.getElementById('assigneeInput').value.trim();
+    var d = await apiJSON('/api/v1/admin/feedbacks/' + id + '/assignee', {
+      method: 'PUT',
+      body: JSON.stringify({assignee: val})
+    });
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast('指派已更新', 'success');
+  };
+
+  // --- Chart ---
+  async function loadChart() {
+    var resp = await api('/api/v1/admin/chart-data?days=30');
+    if (!resp) return;
+    var d = await resp.json();
+    var trend = d.daily_trend || [];
+    var container = document.getElementById('chartInner');
+    if (!container) return;
+    if (trend.length === 0) {
+      container.innerHTML = '<p class="chart-empty">暂无数据</p>';
+      return;
+    }
+    var maxCount = Math.max.apply(null, trend.map(function(t){ return t.count; }));
+    if (maxCount === 0) maxCount = 1;
+    var html = '<div class="bar-chart">';
+    trend.forEach(function(t){
+      var h = Math.max(2, Math.round((t.count / maxCount) * 100));
+      var dateShort = (t.date || '').substring(5);
+      html += '<div class="bar-col" title="'+t.date+': '+t.count+'">' +
+        '<span class="bar-count">'+(t.count > 0 ? t.count : '')+'</span>' +
+        '<div class="bar" style="height:'+h+'px"></div>' +
+        '<span class="bar-label">'+dateShort+'</span></div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  // --- Backup ---
+  window.doBackup = async function() {
+    var resultEl = document.getElementById('backupResult');
+    resultEl.textContent = '备份中...';
+    var d = await apiJSON('/api/v1/admin/backup', {method: 'POST'});
+    if (!d) { resultEl.textContent = '失败'; return; }
+    if (d.error) { resultEl.textContent = d.error; return; }
+    resultEl.textContent = '已完成: ' + (d.path || '');
+    showToast(d.message || '备份完成', 'success');
+  };
+
   window.showList = function() {
     document.getElementById('detailView').classList.remove('active');
     document.getElementById('listView').style.display = '';
@@ -512,9 +872,9 @@ tr:last-child td{border-bottom:none}
 
   window.deleteFeedback = async function(id) {
     if (!confirm('确认删除此反馈记录？')) return;
-    var resp = await api('/api/v1/admin/feedbacks/' + id, { method: 'DELETE' });
-    if (!resp) return;
-    showToast('已删除', 'success');
+    var d = await apiJSON('/api/v1/admin/feedbacks/' + id, {method: 'DELETE'});
+    if (!d) return;
+    showToast(d.message || '已删除', 'success');
     showList(); loadFeedbacks(); loadStats();
   };
 
@@ -534,7 +894,7 @@ tr:last-child td{border-bottom:none}
     allProjects = d.projects || [];
     var tbody = document.getElementById('projectTable');
     if (allProjects.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无项目，点击右上角创建</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无项目</td></tr>';
       return;
     }
     tbody.innerHTML = allProjects.map(function(p){
@@ -547,7 +907,7 @@ tr:last-child td{border-bottom:none}
         '<td><span class="tag">'+esc(p.slug)+'</span></td>' +
         '<td>'+toggleHtml+'</td>' +
         '<td>'+fbCount+'</td>' +
-        '<td style="font-size:.75rem"><code>'+esc(fbUrl)+'</code> <a href="#" onclick="copyUrl(\''+fbUrl+'\');return false;" title="复制">复制</a></td>' +
+        '<td style="font-size:.75rem"><code>'+esc(fbUrl)+'</code> <a href="#" onclick="copyUrl(\''+fbUrl+'\');return false;">复制</a></td>' +
         '<td><a href="#" onclick="viewProjectDetail('+p.id+');return false;">详情</a> ' +
         '<a href="#" onclick="editProject('+p.id+');return false;">编辑</a> ' +
         '<a href="#" onclick="deleteProject('+p.id+',\''+esc(p.name).replace(/'/g,"\\'")+'\');return false;" style="color:#c00">删除</a></td>' +
@@ -555,27 +915,17 @@ tr:last-child td{border-bottom:none}
     }).join('');
   };
 
-  // Quick toggle project active status
   window.toggleProjectActive = async function(id, active) {
     var project = allProjects.find(function(p){ return p.id === id; });
-    if (!project) { showToast('项目不存在', 'error'); return; }
-    var resp = await api('/api/v1/admin/projects/' + id, {
+    if (!project) return;
+    var d = await apiJSON('/api/v1/admin/projects/' + id, {
       method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        name: project.name,
-        slug: project.slug,
-        description: project.description || '',
-        is_active: active,
-        form_schema: project.form_schema || '[]'
-      })
+      body: JSON.stringify({name:project.name,slug:project.slug,description:project.description||'',is_active:active,form_schema:project.form_schema||'[]'})
     });
-    if (!resp) return;
-    var data = await resp.json();
-    if (data.error) { showToast(data.error, 'error'); loadProjects(); return; }
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); loadProjects(); return; }
     showToast(active ? '已启用' : '已停用', 'success');
     loadStats();
-    // Update local cache
     project.is_active = active;
   };
 
@@ -583,7 +933,6 @@ tr:last-child td{border-bottom:none}
     navigator.clipboard.writeText(url).then(function(){ showToast('链接已复制', 'success'); });
   };
 
-  // --- Project Modal ---
   window.openProjectModal = function() {
     document.getElementById('projectModalTitle').textContent = '新建项目';
     document.getElementById('pfId').value = '';
@@ -594,7 +943,6 @@ tr:last-child td{border-bottom:none}
     document.getElementById('pfActive').checked = true;
     document.getElementById('projectModal').classList.add('active');
   };
-
   window.closeProjectModal = function() {
     document.getElementById('projectModal').classList.remove('active');
   };
@@ -623,9 +971,8 @@ tr:last-child td{border-bottom:none}
     if (!body.name || !body.slug) { showToast('名称和标识不能为空', 'error'); return; }
     var url = id ? '/api/v1/admin/projects/' + id : '/api/v1/admin/projects';
     var method = id ? 'PUT' : 'POST';
-    var resp = await api(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    if (!resp) return;
-    var d = await resp.json();
+    var d = await apiJSON(url, {method: method, body: JSON.stringify(body)});
+    if (!d) return;
     if (d.error) { showToast(d.error, 'error'); return; }
     showToast(d.message, 'success');
     closeProjectModal();
@@ -633,16 +980,15 @@ tr:last-child td{border-bottom:none}
   };
 
   window.deleteProject = async function(id, name) {
-    if (!confirm('确认删除项目 "'+name+'"？关联的反馈数据不会被删除。')) return;
-    var resp = await api('/api/v1/admin/projects/' + id, { method: 'DELETE' });
-    if (!resp) return;
-    showToast('已删除', 'success');
+    if (!confirm('确认删除项目 "'+name+'"？关联的反馈数据和文件将被一并删除。')) return;
+    var d = await apiJSON('/api/v1/admin/projects/' + id, {method: 'DELETE'});
+    if (!d) return;
+    showToast(d.message || '已删除', 'success');
     loadProjects(); loadStats();
   };
 
   // --- Donut Chart ---
   var chartColors = ['#333','#e53e3e','#2563eb','#38a169','#d69e2e','#805ad5','#dd6b20','#319795','#d53f8c','#718096'];
-
   window.loadProjectStats = async function() {
     var resp = await api('/api/v1/admin/project-stats');
     if (!resp) return;
@@ -650,41 +996,25 @@ tr:last-child td{border-bottom:none}
     var stats = d.stats || [];
     var chart = document.getElementById('projectStatsChart');
     if (stats.length === 0) { chart.innerHTML = '<p class="empty">暂无数据</p>'; return; }
-
     var total = stats.reduce(function(s,x){ return s + x.count; }, 0);
     if (total === 0) { chart.innerHTML = '<p class="empty">暂无数据</p>'; return; }
-
-    // Build SVG donut
-    var size = 160, cx = 80, cy = 80, r = 60, strokeW = 24;
+    var size=160,cx=80,cy=80,r=60,strokeW=24;
     var circumference = 2 * Math.PI * r;
     var offset = 0;
     var svgPaths = '';
     var legendHtml = '';
-
     stats.forEach(function(s, i){
       var pct = s.count / total;
       var dashLen = pct * circumference;
       var color = chartColors[i % chartColors.length];
       var label = s.project_name || s.project_id;
-
-      svgPaths += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="'+strokeW+'" ' +
-        'stroke-dasharray="'+dashLen+' '+(circumference - dashLen)+'" ' +
-        'stroke-dashoffset="'+(-offset)+'" ' +
-        'transform="rotate(-90 '+cx+' '+cy+')" />';
+      svgPaths += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="'+strokeW+'" stroke-dasharray="'+dashLen+' '+(circumference - dashLen)+'" stroke-dashoffset="'+(-offset)+'" transform="rotate(-90 '+cx+' '+cy+')" />';
       offset += dashLen;
-
-      legendHtml += '<div class="donut-legend-item">' +
-        '<div class="donut-legend-dot" style="background:'+color+'"></div>' +
-        '<span class="donut-legend-label">'+esc(label)+'</span>' +
-        '<span class="donut-legend-count">'+s.count+' ('+Math.round(pct*100)+'%)</span>' +
-        '</div>';
+      legendHtml += '<div class="donut-legend-item"><div class="donut-legend-dot" style="background:'+color+'"></div><span class="donut-legend-label">'+esc(label)+'</span><span class="donut-legend-count">'+s.count+' ('+Math.round(pct*100)+'%)</span></div>';
     });
-
     var svg = '<svg class="donut-svg" viewBox="0 0 '+size+' '+size+'">' + svgPaths +
       '<text x="'+cx+'" y="'+cy+'" text-anchor="middle" dominant-baseline="central" font-size="18" font-weight="700" fill="#333">'+total+'</text>' +
-      '<text x="'+cx+'" y="'+(cy+16)+'" text-anchor="middle" font-size="10" fill="#888">总计</text>' +
-      '</svg>';
-
+      '<text x="'+cx+'" y="'+(cy+16)+'" text-anchor="middle" font-size="10" fill="#888">总计</text></svg>';
     chart.innerHTML = '<div class="donut-container">' + svg + '<div class="donut-legend">' + legendHtml + '</div></div>';
   };
 
@@ -694,7 +1024,6 @@ tr:last-child td{border-bottom:none}
     window.location.hash = 'project/' + id;
     loadProjectDetail(id);
   };
-
   window.showProjectList = function() {
     currentProjectId = null;
     document.getElementById('projectDetailView').style.display = 'none';
@@ -703,86 +1032,52 @@ tr:last-child td{border-bottom:none}
   };
 
   async function loadProjectDetail(id) {
-    // Load project data
     var resp = await api('/api/v1/admin/projects');
     if (!resp) return;
     var d = await resp.json();
     var project = (d.projects || []).find(function(p){ return p.id === id; });
     if (!project) { showToast('项目不存在', 'error'); showProjectList(); return; }
-
-    // Parse form schema
     try { currentFormSchema = JSON.parse(project.form_schema || '[]'); } catch(e) { currentFormSchema = []; }
-
     document.getElementById('projectListView').style.display = 'none';
     var dv = document.getElementById('projectDetailView');
     dv.style.display = '';
-
     var fbUrl = window.location.origin + '/fb/' + encodeURIComponent(project.slug);
     var statusText = project.is_active ? '启用' : '停用';
     var statusColor = project.is_active ? '#1a7a1a' : '#c00';
-
-    var html = '<div class="project-detail-header">' +
-      '<h2>' + esc(project.name) + '</h2>' +
+    var html = '<div class="project-detail-header"><h2>' + esc(project.name) + '</h2>' +
       '<span class="tag">' + esc(project.slug) + '</span>' +
       '<span style="color:'+statusColor+';font-size:.8rem">' + statusText + '</span>' +
-      '<span class="spacer" style="flex:1"></span>' +
-      '<button class="btn-sm" onclick="editProject('+project.id+')">编辑基本信息</button>' +
-      '</div>';
-
-    if (project.description) {
-      html += '<p style="color:#666;font-size:.85rem;margin-bottom:16px">' + esc(project.description) + '</p>';
-    }
-
+      '<span style="flex:1"></span>' +
+      '<button class="btn-sm" onclick="editProject('+project.id+')">编辑基本信息</button></div>';
+    if (project.description) html += '<p style="color:#666;font-size:.85rem;margin-bottom:16px">' + esc(project.description) + '</p>';
     html += '<div class="project-info-grid">' +
       '<div class="project-info-card"><div class="label">反馈链接</div><div class="value"><code>' + esc(fbUrl) + '</code> <a href="#" onclick="copyUrl(\''+fbUrl+'\');return false;" style="font-size:.75rem">复制</a></div></div>' +
-      '<div class="project-info-card"><div class="label">反馈数量</div><div class="value" style="font-size:1.2rem;font-weight:700">' + (project.feedback_count || 0) + '</div></div>' +
-      '</div>';
-
+      '<div class="project-info-card"><div class="label">反馈数量</div><div class="value" style="font-size:1.2rem;font-weight:700">' + (project.feedback_count || 0) + '</div></div></div>';
     // Form schema builder
-    html += '<div class="settings-card" style="margin-bottom:20px">' +
-      '<h2>自定义表单字段</h2>' +
-      '<p style="font-size:.8rem;color:#888;margin-bottom:12px">配置反馈页面除标题和描述外的额外收集字段。拖拽排序，点击编辑或删除。</p>' +
+    html += '<div class="settings-card" style="margin-bottom:20px"><h2>自定义表单字段</h2>' +
+      '<p style="font-size:.8rem;color:#888;margin-bottom:12px">配置反馈页面除标题和描述外的额外收集字段。</p>' +
       '<div class="form-builder" id="formBuilder">';
-
     if (currentFormSchema.length === 0) {
-      html += '<p style="color:#999;font-size:.8rem;margin-bottom:8px">暂无自定义字段，反馈页仅收集标题和描述。</p>';
+      html += '<p style="color:#999;font-size:.8rem;margin-bottom:8px">暂无自定义字段。</p>';
     } else {
+      var typeLabels = {text:'单行文本',textarea:'多行文本',select:'下拉选择',checkbox:'复选框',radio:'单选'};
       currentFormSchema.forEach(function(f, i){
-        var typeLabels = {text:'单行文本',textarea:'多行文本',select:'下拉选择',checkbox:'复选框',radio:'单选'};
         var typeLabel = typeLabels[f.type] || f.type;
         var reqMark = f.required ? ' <span style="color:#c00">*</span>' : '';
-        var optInfo = '';
-        if (f.options && f.options.length > 0) {
-          optInfo = ' &mdash; ' + f.options.length + ' 个选项';
-        }
-        html += '<div class="fb-field">' +
-          '<div class="fb-field-info">' +
-          '<div class="fb-field-title">' + esc(f.label) + reqMark + '</div>' +
-          '<div class="fb-field-meta">' + typeLabel + ' &middot; <code>' + esc(f.name) + '</code>' + optInfo + '</div>' +
-          '</div>' +
+        var optInfo = (f.options && f.options.length > 0) ? ' &mdash; ' + f.options.length + ' 个选项' : '';
+        html += '<div class="fb-field"><div class="fb-field-info"><div class="fb-field-title">' + esc(f.label) + reqMark + '</div>' +
+          '<div class="fb-field-meta">' + typeLabel + ' &middot; <code>' + esc(f.name) + '</code>' + optInfo + '</div></div>' +
           '<div class="fb-field-actions">' +
-          (i > 0 ? '<button onclick="moveField('+i+',-1)" title="上移">&uarr;</button>' : '') +
-          (i < currentFormSchema.length - 1 ? '<button onclick="moveField('+i+',1)" title="下移">&darr;</button>' : '') +
+          (i > 0 ? '<button onclick="moveField('+i+',-1)">&uarr;</button>' : '') +
+          (i < currentFormSchema.length - 1 ? '<button onclick="moveField('+i+',1)">&darr;</button>' : '') +
           '<button onclick="editField('+i+')">编辑</button>' +
-          '<button class="del" onclick="removeField('+i+')">删除</button>' +
-          '</div></div>';
+          '<button class="del" onclick="removeField('+i+')">删除</button></div></div>';
       });
     }
-
-    html += '<button class="fb-add-btn" onclick="addField()">+ 添加字段</button>';
-    html += '</div>';
-    html += '<div class="settings-actions"><button class="btn-save" onclick="saveFormSchema()">保存表单配置</button></div>';
-    html += '</div>';
-
-    // Recent feedbacks for this project
-    html += '<div class="settings-card">' +
-      '<h2>最近反馈</h2>' +
-      '<div id="projectFeedbacks"><p class="empty">加载中...</p></div>' +
-      '</div>';
-
+    html += '<button class="fb-add-btn" onclick="addField()">+ 添加字段</button></div>';
+    html += '<div class="settings-actions"><button class="btn-save" onclick="saveFormSchema()">保存表单配置</button></div></div>';
+    html += '<div class="settings-card"><h2>最近反馈</h2><div id="projectFeedbacks"><p class="empty">加载中...</p></div></div>';
     document.getElementById('projectDetailContent').innerHTML = html;
-
-    // Load feedbacks for this project
     loadProjectFeedbacks(project.slug);
   }
 
@@ -793,24 +1088,13 @@ tr:last-child td{border-bottom:none}
     var fbs = d.feedbacks || [];
     var container = document.getElementById('projectFeedbacks');
     if (!container) return;
-    if (fbs.length === 0) {
-      container.innerHTML = '<p class="empty">暂无反馈</p>';
-      return;
-    }
-    var html = '<div class="table-wrap"><table><thead><tr><th>ID</th><th>标题</th><th>IP</th><th>时间</th></tr></thead><tbody>';
+    if (fbs.length === 0) { container.innerHTML = '<p class="empty">暂无反馈</p>'; return; }
+    var html = '<div class="table-wrap"><table><thead><tr><th>ID</th><th>标题</th><th>状态</th><th>IP</th><th>时间</th></tr></thead><tbody>';
     fbs.forEach(function(f){
       var dt = f.created_at ? f.created_at.replace('T',' ').substring(0,16) : '-';
-      html += '<tr class="clickable" onclick="showDetail('+f.id+')">' +
-        '<td>#'+f.id+'</td>' +
-        '<td>'+esc(f.title)+'</td>' +
-        '<td style="font-family:monospace;font-size:.8rem;color:#888">'+esc(f.client_ip)+'</td>' +
-        '<td style="color:#888;font-size:.8rem">'+dt+'</td>' +
-        '</tr>';
+      html += '<tr class="clickable" onclick="showDetail('+f.id+')"><td>#'+f.id+'</td><td>'+esc(f.title)+'</td><td>'+statusBadge(f.status)+'</td><td style="font-family:monospace;font-size:.8rem;color:#888">'+esc(f.client_ip)+'</td><td style="color:#888;font-size:.8rem">'+dt+'</td></tr>';
     });
     html += '</tbody></table></div>';
-    if (d.total > 20) {
-      html += '<p style="text-align:center;margin-top:8px;font-size:.8rem;color:#888">仅显示最近 20 条，共 ' + d.total + ' 条</p>';
-    }
     container.innerHTML = html;
   }
 
@@ -821,15 +1105,9 @@ tr:last-child td{border-bottom:none}
     var tmp = currentFormSchema[index];
     currentFormSchema[index] = currentFormSchema[newIndex];
     currentFormSchema[newIndex] = tmp;
-    // Re-render detail
     loadProjectDetail(currentProjectId);
   };
-
-  window.removeField = function(index) {
-    currentFormSchema.splice(index, 1);
-    loadProjectDetail(currentProjectId);
-  };
-
+  window.removeField = function(index) { currentFormSchema.splice(index, 1); loadProjectDetail(currentProjectId); };
   window.addField = function() {
     editingFieldIndex = -1;
     document.getElementById('fieldEditorTitle').textContent = '添加字段';
@@ -842,7 +1120,6 @@ tr:last-child td{border-bottom:none}
     onFieldTypeChange();
     document.getElementById('fieldEditorModal').classList.add('active');
   };
-
   window.editField = function(index) {
     editingFieldIndex = index;
     var field = currentFormSchema[index];
@@ -853,99 +1130,80 @@ tr:last-child td{border-bottom:none}
     document.getElementById('fePlaceholder').value = field.placeholder || '';
     document.getElementById('feRequired').checked = !!field.required;
     onFieldTypeChange();
-    // Populate options
     var optList = document.getElementById('feOptionsList');
     optList.innerHTML = '';
-    if (field.options) {
-      field.options.forEach(function(opt){
-        addOptionRow(opt);
-      });
-    }
+    if (field.options) field.options.forEach(function(opt){ addOptionRow(opt); });
     document.getElementById('fieldEditorModal').classList.add('active');
   };
-
-  window.closeFieldEditor = function() {
-    document.getElementById('fieldEditorModal').classList.remove('active');
-    editingFieldIndex = -1;
-  };
-
+  window.closeFieldEditor = function() { document.getElementById('fieldEditorModal').classList.remove('active'); editingFieldIndex = -1; };
   window.onFieldTypeChange = function() {
     var type = document.getElementById('feType').value;
     var needsOptions = (type === 'select' || type === 'radio' || type === 'checkbox');
     document.getElementById('feOptionsRow').style.display = needsOptions ? '' : 'none';
     document.getElementById('fePlaceholderRow').style.display = (type === 'text' || type === 'textarea') ? '' : 'none';
   };
-
   window.addOptionRow = function(value) {
     var list = document.getElementById('feOptionsList');
     var div = document.createElement('div');
     div.className = 'opt-row';
-    div.innerHTML = '<input type="text" placeholder="选项值" value="' + esc(value || '') + '">' +
-      '<button onclick="this.parentNode.remove()" title="删除">&times;</button>';
+    div.innerHTML = '<input type="text" placeholder="选项值" value="' + esc(value || '') + '"><button onclick="this.parentNode.remove()">&times;</button>';
     list.appendChild(div);
   };
-
   window.saveFieldEditor = function() {
     var type = document.getElementById('feType').value;
     var name = document.getElementById('feName').value.trim();
     var label = document.getElementById('feLabel').value.trim();
     var placeholder = document.getElementById('fePlaceholder').value.trim();
     var required = document.getElementById('feRequired').checked;
-
     if (!name || !label) { showToast('字段名称和标签不能为空', 'error'); return; }
-    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) { showToast('字段名称须为英文字母开头，仅含字母数字下划线', 'error'); return; }
-
-    // Check for duplicate name (except when editing the same field)
+    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) { showToast('字段名称须为英文字母开头', 'error'); return; }
     var isDuplicate = currentFormSchema.some(function(f, i){ return f.name === name && i !== editingFieldIndex; });
     if (isDuplicate) { showToast('字段名称已存在', 'error'); return; }
-
     var field = { type: type, name: name, label: label, required: required };
     if (placeholder) field.placeholder = placeholder;
-
-    // Collect options if needed
     var needsOptions = (type === 'select' || type === 'radio' || type === 'checkbox');
     if (needsOptions) {
       var optInputs = document.getElementById('feOptionsList').querySelectorAll('input');
       var options = [];
-      optInputs.forEach(function(inp){
-        var v = inp.value.trim();
-        if (v) options.push(v);
-      });
+      optInputs.forEach(function(inp){ var v = inp.value.trim(); if (v) options.push(v); });
       if (options.length === 0) { showToast('请至少添加一个选项', 'error'); return; }
       field.options = options;
     }
-
-    if (editingFieldIndex >= 0) {
-      currentFormSchema[editingFieldIndex] = field;
-    } else {
-      currentFormSchema.push(field);
-    }
-
+    if (editingFieldIndex >= 0) currentFormSchema[editingFieldIndex] = field;
+    else currentFormSchema.push(field);
     closeFieldEditor();
     loadProjectDetail(currentProjectId);
   };
-
   window.saveFormSchema = async function() {
     var project = allProjects.find(function(p){ return p.id === currentProjectId; });
     if (!project) return;
-    var resp = await api('/api/v1/admin/projects/' + currentProjectId, {
+    var d = await apiJSON('/api/v1/admin/projects/' + currentProjectId, {
       method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        name: project.name,
-        slug: project.slug,
-        description: project.description || '',
-        is_active: project.is_active,
-        form_schema: JSON.stringify(currentFormSchema)
-      })
+      body: JSON.stringify({name:project.name,slug:project.slug,description:project.description||'',is_active:project.is_active,form_schema:JSON.stringify(currentFormSchema)})
     });
-    if (!resp) return;
-    var d = await resp.json();
+    if (!d) return;
     if (d.error) { showToast(d.error, 'error'); return; }
     showToast('表单配置已保存', 'success');
-    // Update local cache
     project.form_schema = JSON.stringify(currentFormSchema);
   };
+
+  // ========== Audit Logs ==========
+  async function loadAuditLogs() {
+    var resp = await api('/api/v1/admin/audit-logs?limit=100');
+    if (!resp) return;
+    var d = await resp.json();
+    var logs = d.logs || [];
+    document.getElementById('auditCount').textContent = '共 ' + (d.total || 0) + ' 条';
+    var tbody = document.getElementById('auditTable');
+    if (logs.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无审计记录</td></tr>';
+      return;
+    }
+    tbody.innerHTML = logs.map(function(l){
+      var dt = l.created_at ? l.created_at.replace('T',' ').substring(0,19) : '-';
+      return '<tr><td>'+dt+'</td><td>'+esc(l.action)+'</td><td>'+esc(l.detail)+'</td><td>'+esc(l.user)+'</td><td style="font-family:monospace;font-size:.8rem;color:#888">'+esc(l.ip)+'</td></tr>';
+    }).join('');
+  }
 
   // ========== Settings ==========
   window.switchSettings = function(section, btn) {
@@ -959,7 +1217,6 @@ tr:last-child td{border-bottom:none}
     if (section === 'system') loadSystemSettings();
   };
 
-  // --- Email ---
   async function loadEmailSettings() {
     var resp = await api('/api/v1/admin/config/email');
     if (!resp) return;
@@ -989,13 +1246,11 @@ tr:last-child td{border-bottom:none}
     });
     var nEl = document.getElementById('ecfg_notify_enable');
     if (nEl) updates.push({key:'notify_enable', value:nEl.checked?'true':'false'});
-    var resp = await api('/api/v1/admin/config/email', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) });
-    if (!resp) return;
-    var d = await resp.json();
+    var d = await apiJSON('/api/v1/admin/config/email', {method:'PUT', body:JSON.stringify(updates)});
+    if (!d) return;
     showToast(d.message || '已保存', 'success');
   };
 
-  // --- Account ---
   async function loadAccountSettings() {
     var resp = await api('/api/v1/admin/config/account');
     if (!resp) return;
@@ -1003,7 +1258,7 @@ tr:last-child td{border-bottom:none}
     document.getElementById('accountForm').innerHTML =
       '<div class="settings-field"><label>当前用户名</label><input type="text" id="accUser" value="'+esc(d.username)+'"></div>' +
       '<div class="settings-field"><label>当前密码</label><input type="password" id="accOldPwd" placeholder="修改用户名或密码需验证当前密码"></div>' +
-      '<div class="settings-field"><label>新密码（留空不修改）</label><input type="password" id="accNewPwd" placeholder="至少 6 位"></div>' +
+      '<div class="settings-field"><label>新密码（留空不修改）</label><input type="password" id="accNewPwd" placeholder="至少 8 位，含大小写和数字"></div>' +
       '<div class="settings-field"><label>确认新密码</label><input type="password" id="accNewPwd2" placeholder="再次输入新密码"></div>';
   }
 
@@ -1013,18 +1268,21 @@ tr:last-child td{border-bottom:none}
     var newPwd = document.getElementById('accNewPwd').value;
     var newPwd2 = document.getElementById('accNewPwd2').value;
     if (newPwd && newPwd !== newPwd2) { showToast('两次新密码不一致', 'error'); return; }
-    if (newPwd && newPwd.length < 6) { showToast('密码至少 6 位', 'error'); return; }
-    var resp = await api('/api/v1/admin/config/account', {
-      method: 'PUT', headers: {'Content-Type':'application/json'},
+    if (newPwd) {
+      if (newPwd.length < 8) { showToast('密码至少 8 位', 'error'); return; }
+      if (!/[A-Z]/.test(newPwd)) { showToast('须包含至少一个大写字母', 'error'); return; }
+      if (!/[a-z]/.test(newPwd)) { showToast('须包含至少一个小写字母', 'error'); return; }
+      if (!/[0-9]/.test(newPwd)) { showToast('须包含至少一个数字', 'error'); return; }
+    }
+    var d = await apiJSON('/api/v1/admin/config/account', {
+      method: 'PUT',
       body: JSON.stringify({ username: document.getElementById('accUser').value.trim(), new_password: newPwd, old_password: oldPwd })
     });
-    if (!resp) return;
-    var d = await resp.json();
+    if (!d) return;
     if (d.error) { showToast(d.error, 'error'); return; }
     showToast(d.message, 'success');
   };
 
-  // --- System ---
   async function loadSystemSettings() {
     var resp = await api('/api/v1/admin/config/system');
     if (!resp) return;
@@ -1032,26 +1290,27 @@ tr:last-child td{border-bottom:none}
     document.getElementById('systemForm').innerHTML =
       '<div class="settings-field"><label>系统基础 URL</label><input type="text" id="sysBase" value="'+esc(d.base_url)+'"><div class="hint">用于邮件通知中的链接</div></div>' +
       '<div class="settings-field"><label>PoW 难度（前导零位数）</label><input type="number" id="sysPoW" value="'+d.pow_difficulty+'" min="1" max="10"><div class="hint">越高越安全，但客户端计算时间更长</div></div>' +
-      '<div class="settings-field"><label>每小时提交上限（每 IP）</label><input type="number" id="sysRate" value="'+d.rate_limit_per_hr+'" min="1"></div>';
+      '<div class="settings-field"><label>每小时提交上限（每 IP）</label><input type="number" id="sysRate" value="'+d.rate_limit_per_hr+'" min="1"></div>' +
+      '<div class="settings-field"><label>Webhook 通知 URL</label><input type="text" id="sysWebhook" value="'+esc(d.webhook_url||'')+'"><div class="hint">新反馈将 POST JSON 到此 URL（留空禁用）</div></div>';
   }
 
   window.saveSystemSettings = async function() {
-    var resp = await api('/api/v1/admin/config/system', {
-      method: 'PUT', headers: {'Content-Type':'application/json'},
+    var d = await apiJSON('/api/v1/admin/config/system', {
+      method: 'PUT',
       body: JSON.stringify({
         base_url: document.getElementById('sysBase').value.trim(),
         pow_difficulty: parseInt(document.getElementById('sysPoW').value) || 4,
-        rate_limit_per_hr: parseInt(document.getElementById('sysRate').value) || 3
+        rate_limit_per_hr: parseInt(document.getElementById('sysRate').value) || 3,
+        webhook_url: document.getElementById('sysWebhook').value.trim()
       })
     });
-    if (!resp) return;
-    var d = await resp.json();
+    if (!d) return;
     showToast(d.message, 'success');
   };
 
   // --- Logout ---
   window.logout = async function() {
-    await api('/api/v1/admin/logout', { method: 'POST' });
+    await apiJSON('/api/v1/admin/logout', {method: 'POST'});
     window.location.href = '/admin/login';
   };
 
@@ -1066,40 +1325,24 @@ tr:last-child td{border-bottom:none}
   // --- Init with hash-based routing ---
   function handleHash() {
     var hash = window.location.hash.replace('#','');
-
-    // Feedback detail: #feedback/123
     if (hash.startsWith('feedback/')) {
       var id = parseInt(hash.split('/')[1]);
-      if (id && currentTab === 'dashboard') {
-        switchTab('dashboard');
-        setTimeout(function(){ showDetailInner(id); }, 100);
-      }
+      if (id && currentTab === 'dashboard') { switchTab('dashboard'); setTimeout(function(){ showDetailInner(id); }, 100); }
       return;
     }
-
-    // Project detail: #project/123
     if (hash.startsWith('project/')) {
       var pid = parseInt(hash.split('/')[1]);
       if (pid) {
         currentTab = 'projects';
-        document.querySelectorAll('.nav button').forEach(function(b){
-          b.classList.toggle('active', b.dataset.tab === 'projects');
-        });
-        document.getElementById('tab-dashboard').style.display = 'none';
-        document.getElementById('tab-projects').style.display = '';
-        document.getElementById('tab-settings').style.display = 'none';
+        document.querySelectorAll('.nav button').forEach(function(b){ b.classList.toggle('active', b.dataset.tab === 'projects'); });
+        ['dashboard','projects','audit','settings'].forEach(function(t){ document.getElementById('tab-'+t).style.display = t === 'projects' ? '' : 'none'; });
         loadProjects().then(function(){ viewProjectDetail(pid); });
       }
       return;
     }
-
-    var validTabs = ['dashboard','projects','settings'];
-    if (validTabs.indexOf(hash) >= 0) {
-      switchTab(hash);
-    } else {
-      currentTab = 'dashboard';
-      window.location.hash = 'dashboard';
-    }
+    var validTabs = ['dashboard','projects','audit','settings'];
+    if (validTabs.indexOf(hash) >= 0) { switchTab(hash); }
+    else { currentTab = 'dashboard'; window.location.hash = 'dashboard'; }
   }
 
   window.addEventListener('hashchange', handleHash);
@@ -1107,6 +1350,8 @@ tr:last-child td{border-bottom:none}
   // Initial load
   loadStats();
   loadFeedbacks();
+  loadChart();
+  fetchCSRFToken();
   handleHash();
 })();
 </script>

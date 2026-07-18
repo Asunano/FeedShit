@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,8 +24,9 @@ type SessionManager struct {
 }
 
 type sessionEntry struct {
-	username string
-	expiry   time.Time
+	username  string
+	expiry    time.Time
+	csrfToken string
 }
 
 func NewSessionManager() *SessionManager {
@@ -35,10 +37,12 @@ func NewSessionManager() *SessionManager {
 
 func (sm *SessionManager) Create(username string) string {
 	token := generateToken(32)
+	csrf := generateToken(32)
 	sm.mu.Lock()
 	sm.sessions[token] = sessionEntry{
-		username: username,
-		expiry:   time.Now().Add(24 * time.Hour),
+		username:  username,
+		expiry:    time.Now().Add(24 * time.Hour),
+		csrfToken: csrf,
 	}
 	sm.mu.Unlock()
 	return token
@@ -63,6 +67,16 @@ func (sm *SessionManager) Revoke(token string) {
 	sm.mu.Lock()
 	delete(sm.sessions, token)
 	sm.mu.Unlock()
+}
+
+// GetCSRFToken returns the CSRF token for a given session.
+func (sm *SessionManager) GetCSRFToken(token string) string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	if entry, ok := sm.sessions[token]; ok {
+		return entry.csrfToken
+	}
+	return ""
 }
 
 func (sm *SessionManager) cleanupLoop() {
@@ -115,6 +129,175 @@ func AuthMiddleware(sm *SessionManager) gin.HandlerFunc {
 
 func isAPIRoute(path string) bool {
 	return strings.HasPrefix(path, "/api/")
+}
+
+// ========== CSRF Protection ==========
+
+// CSRFMiddleware validates CSRF token on state-changing requests.
+// Uses double-submit cookie pattern: csrf_token cookie must match X-CSRF-Token header.
+func CSRFMiddleware(sm *SessionManager) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Only check state-changing methods
+		if c.Request.Method == "GET" || c.Request.Method == "HEAD" || c.Request.Method == "OPTIONS" {
+			c.Next()
+			return
+		}
+
+		sessionToken, err := c.Cookie("admin_session")
+		if err != nil || sessionToken == "" {
+			c.Next()
+			return
+		}
+
+		// Verify session is valid
+		if _, ok := sm.Validate(sessionToken); !ok {
+			c.Next()
+			return
+		}
+
+		cookieToken := c.Request.FormValue("csrf_token")
+		if cookieToken == "" {
+			cookieToken = c.GetHeader("X-CSRF-Token")
+		}
+		headerToken := c.GetHeader("X-CSRF-Token")
+
+		if cookieToken == "" || headerToken == "" || !SecureCompare(cookieToken, headerToken) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "CSRF 验证失败，请刷新页面后重试"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// SetCSRFCookie sets a non-HttpOnly CSRF cookie after successful login.
+func SetCSRFCookie(c *gin.Context, csrfToken string) {
+	c.SetCookie("csrf_token", csrfToken, 86400, "/", "", false, false)
+}
+
+// ========== PoW Nonce Replay Protection ==========
+
+type NonceCache struct {
+	mu      sync.Mutex
+	entries map[string]time.Time
+}
+
+func NewNonceCache() *NonceCache {
+	nc := &NonceCache{entries: make(map[string]time.Time)}
+	go nc.cleanupLoop()
+	return nc
+}
+
+// CheckAndStore returns true if the nonce is new (not replayed), and stores it.
+func (nc *NonceCache) CheckAndStore(key string) bool {
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+	if _, exists := nc.entries[key]; exists {
+		return false // replay detected
+	}
+	nc.entries[key] = time.Now()
+	return true
+}
+
+func (nc *NonceCache) cleanupLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	for range ticker.C {
+		nc.mu.Lock()
+		cutoff := time.Now().Add(-10 * time.Minute)
+		for k, t := range nc.entries {
+			if t.Before(cutoff) {
+				delete(nc.entries, k)
+			}
+		}
+		nc.mu.Unlock()
+	}
+}
+
+// ========== Login Brute Force Protection ==========
+
+type LoginAttemptTracker struct {
+	mu       sync.Mutex
+	attempts map[string][]time.Time
+	max      int
+	window   time.Duration
+	lockout  time.Duration
+}
+
+func NewLoginAttemptTracker(maxAttempts int) *LoginAttemptTracker {
+	t := &LoginAttemptTracker{
+		attempts: make(map[string][]time.Time),
+		max:      maxAttempts,
+		window:   15 * time.Minute,
+		lockout:  15 * time.Minute,
+	}
+	go t.cleanupLoop()
+	return t
+}
+
+// IsLocked returns true if the IP has too many recent failures.
+func (t *LoginAttemptTracker) IsLocked(ip string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cutoff := time.Now().Add(-t.window)
+	attempts := t.attempts[ip]
+	var valid []time.Time
+	for _, at := range attempts {
+		if at.After(cutoff) {
+			valid = append(valid, at)
+		}
+	}
+	t.attempts[ip] = valid
+	return len(valid) >= t.max
+}
+
+// RecordFailure records a failed login attempt.
+func (t *LoginAttemptTracker) RecordFailure(ip string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.attempts[ip] = append(t.attempts[ip], time.Now())
+}
+
+// ClearFailures clears failed attempts on successful login.
+func (t *LoginAttemptTracker) ClearFailures(ip string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.attempts, ip)
+}
+
+// FailureCount returns the number of recent failures for an IP.
+func (t *LoginAttemptTracker) FailureCount(ip string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cutoff := time.Now().Add(-t.window)
+	count := 0
+	for _, at := range t.attempts[ip] {
+		if at.After(cutoff) {
+			count++
+		}
+	}
+	return count
+}
+
+func (t *LoginAttemptTracker) cleanupLoop() {
+	ticker := time.NewTicker(15 * time.Minute)
+	for range ticker.C {
+		t.mu.Lock()
+		cutoff := time.Now().Add(-t.window)
+		for ip, attempts := range t.attempts {
+			var valid []time.Time
+			for _, at := range attempts {
+				if at.After(cutoff) {
+					valid = append(valid, at)
+				}
+			}
+			if len(valid) == 0 {
+				delete(t.attempts, ip)
+			} else {
+				t.attempts[ip] = valid
+			}
+		}
+		t.mu.Unlock()
+	}
 }
 
 // ========== IP Rate Limiter ==========
@@ -246,7 +429,28 @@ func SecureCompare(a, b string) bool {
 	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 
+// GetClientIP extracts the real client IP address.
+// CDN/proxy headers are only trusted when the direct connection is from a trusted proxy.
 func GetClientIP(c *gin.Context) string {
+	remoteIP, _, _ := net.SplitHostPort(c.Request.RemoteAddr)
+	if remoteIP == "" {
+		remoteIP = c.ClientIP()
+	}
+
+	// If trusted proxies are configured, only read CDN headers from trusted sources
+	if len(trustedProxies) > 0 {
+		trusted := false
+		for _, tp := range trustedProxies {
+			if tp == remoteIP || tp == "*" {
+				trusted = true
+				break
+			}
+		}
+		if !trusted {
+			return remoteIP
+		}
+	}
+
 	// CF-Connecting-IP: Cloudflare always sets this, most trustworthy
 	if cf := c.GetHeader("CF-Connecting-IP"); cf != "" {
 		return cf
@@ -268,9 +472,7 @@ func GetClientIP(c *gin.Context) string {
 			param = strings.TrimSpace(param)
 			if strings.HasPrefix(strings.ToLower(param), "for=") {
 				forVal := param[4:]
-				// Strip quotes and brackets (IPv6 notation)
 				forVal = strings.Trim(forVal, `"[]`)
-				// Handle [IPv6]:port format
 				if idx := strings.LastIndex(forVal, "]:"); idx > 0 {
 					forVal = forVal[:idx+1]
 				}
@@ -281,22 +483,30 @@ func GetClientIP(c *gin.Context) string {
 			}
 		}
 	}
-	return c.ClientIP()
+	return remoteIP
 }
 
+// trustedProxies is set via SetTrustedProxies from config.
+var trustedProxies []string
+
+// SetTrustedProxies configures which proxy IPs are trusted for reading CDN headers.
+func SetTrustedProxies(proxies []string) {
+	trustedProxies = proxies
+}
+
+// FormatSize converts bytes to a human-readable string.
 func FormatSize(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {
 		return fmt.Sprintf("%d B", bytes)
 	}
-	div := int64(unit)
-	val := float64(bytes) / float64(div)
-	for _, u := range []string{"KB", "MB", "GB"} {
-		div *= unit
-		if bytes < div || u == "GB" {
+	val := float64(bytes)
+	units := []string{"KB", "MB", "GB", "TB"}
+	for _, u := range units {
+		val /= float64(unit)
+		if val < float64(unit) || u == "TB" {
 			return fmt.Sprintf("%.1f %s", val, u)
 		}
-		val = float64(bytes) / float64(div)
 	}
 	return ""
 }

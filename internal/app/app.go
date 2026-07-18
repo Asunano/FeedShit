@@ -1,10 +1,12 @@
 package app
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 
 	"feedshit/internal/config"
 	"feedshit/internal/database"
@@ -24,16 +27,77 @@ import (
 
 // App holds all shared dependencies for HTTP handlers.
 type App struct {
-	Cfg     *config.Config
-	DB      *database.Database
-	SM      *middleware.SessionManager
-	RL      *middleware.RateLimiter
-	Mailer  *email.Mailer
+	Cfg          *config.Config
+	DB           *database.Database
+	SM           *middleware.SessionManager
+	RL           *middleware.RateLimiter
+	Mailer       *email.Mailer
+	NonceCache   *middleware.NonceCache
+	LoginTracker *middleware.LoginAttemptTracker
 }
 
 // New creates a new App instance.
 func New(cfg *config.Config, db *database.Database, sm *middleware.SessionManager, rl *middleware.RateLimiter, mailer *email.Mailer) *App {
-	return &App{Cfg: cfg, DB: db, SM: sm, RL: rl, Mailer: mailer}
+	return &App{
+		Cfg:          cfg,
+		DB:           db,
+		SM:           sm,
+		RL:           rl,
+		Mailer:       mailer,
+		NonceCache:   middleware.NewNonceCache(),
+		LoginTracker: middleware.NewLoginAttemptTracker(10),
+	}
+}
+
+// ========== Password Hashing Helpers ==========
+
+func hashPassword(password string) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", err
+	}
+	return string(hash), nil
+}
+
+func isBcryptHash(s string) bool {
+	return len(s) == 60 && s[0] == '$'
+}
+
+func checkPassword(password, stored string) bool {
+	if isBcryptHash(stored) {
+		return bcrypt.CompareHashAndPassword([]byte(stored), []byte(password)) == nil
+	}
+	// Legacy plaintext comparison (for migration)
+	return middleware.SecureCompare(password, stored)
+}
+
+// validatePasswordStrength checks password meets minimum complexity requirements.
+// Requires: >= 8 chars, at least one uppercase, one lowercase, one digit.
+func validatePasswordStrength(password string) error {
+	if len(password) < 8 {
+		return fmt.Errorf("密码长度至少 8 位")
+	}
+	var hasUpper, hasLower, hasDigit bool
+	for _, c := range password {
+		switch {
+		case c >= 'A' && c <= 'Z':
+			hasUpper = true
+		case c >= 'a' && c <= 'z':
+			hasLower = true
+		case c >= '0' && c <= '9':
+			hasDigit = true
+		}
+	}
+	if !hasUpper {
+		return fmt.Errorf("密码须包含至少一个大写字母")
+	}
+	if !hasLower {
+		return fmt.Errorf("密码须包含至少一个小写字母")
+	}
+	if !hasDigit {
+		return fmt.Errorf("密码须包含至少一个数字")
+	}
+	return nil
 }
 
 // ========== Public Submission ==========
@@ -42,7 +106,8 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, a.Cfg.MaxUploadSize)
 
 	if err := c.Request.ParseMultipartForm(a.Cfg.MaxUploadSize); err != nil {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "请求体过大，上限 20MB"})
+		maxMB := a.Cfg.MaxUploadSize / 1024 / 1024
+		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("请求体过大，上限 %dMB", maxMB)})
 		return
 	}
 
@@ -51,9 +116,9 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 		projectID = "default"
 	}
 
-	// Check if project is active (if it exists in the projects table)
+	// Check if project is active — must exist in projects table
 	if !a.DB.IsProjectActive(projectID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "该项目已停用，无法提交反馈"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "该项目不存在或已停用，无法提交反馈"})
 		return
 	}
 
@@ -63,15 +128,28 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 		return
 	}
 	description := strings.TrimSpace(c.PostForm("description"))
+
 	customData := strings.TrimSpace(c.PostForm("custom_data"))
 	if customData == "" {
 		customData = "{}"
 	}
+	// Validate custom_data is valid JSON
+	if !json.Valid([]byte(customData)) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "自定义字段数据格式无效"})
+		return
+	}
 
+	// PoW verification with nonce replay protection
 	timestamp := c.GetHeader("X-PoW-Timestamp")
 	nonce := c.GetHeader("X-PoW-Nonce")
 	if !middleware.VerifyPoW(projectID, timestamp, nonce, a.Cfg.PoWDifficulty) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "工作量证明校验失败"})
+		return
+	}
+	// Check nonce replay
+	nonceKey := projectID + ":" + timestamp + ":" + nonce
+	if !a.NonceCache.CheckAndStore(nonceKey) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "工作量证明已被使用，请刷新页面重试"})
 		return
 	}
 
@@ -85,7 +163,7 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 	for _, fh := range form.File["images"] {
 		p, err := a.saveUpload(fh, projectID)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "文件保存失败: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "文件校验失败: " + err.Error()})
 			return
 		}
 		savedPaths = append(savedPaths, p)
@@ -93,7 +171,7 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 	for _, fh := range form.File["files"] {
 		p, err := a.saveUpload(fh, projectID)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "文件保存失败: " + err.Error()})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "文件校验失败: " + err.Error()})
 			return
 		}
 		savedPaths = append(savedPaths, p)
@@ -102,13 +180,19 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 	filePathsJSON, _ := json.Marshal(savedPaths)
 	clientIP := middleware.GetClientIP(c)
 
+	contactName := strings.TrimSpace(c.PostForm("contact_name"))
+	contactEmail := strings.TrimSpace(c.PostForm("contact_email"))
+
 	fb := &database.Feedback{
-		ProjectID:   projectID,
-		Title:       title,
-		Description: description,
-		CustomData:  customData,
-		FilePaths:   string(filePathsJSON),
-		ClientIP:    clientIP,
+		ProjectID:    projectID,
+		Title:        title,
+		Description:  description,
+		CustomData:   customData,
+		FilePaths:    string(filePathsJSON),
+		ClientIP:     clientIP,
+		Status:       "pending",
+		ContactName:  contactName,
+		ContactEmail: contactEmail,
 	}
 
 	id, err := a.DB.InsertFeedback(fb)
@@ -119,6 +203,7 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 	fb.ID = id
 
 	go a.Mailer.SendFeedbackNotification(fb)
+	go a.SendWebhookNotification(fb)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "反馈提交成功",
@@ -132,10 +217,56 @@ var allowedExtensions = map[string]bool{
 	".log": true, ".txt": true, ".csv": true, ".json": true,
 }
 
+// validateFileContent checks file magic bytes to ensure content matches extension.
+func validateFileContent(header []byte, ext string) bool {
+	switch ext {
+	case ".png":
+		return len(header) >= 4 && header[0] == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47
+	case ".jpg", ".jpeg":
+		return len(header) >= 2 && header[0] == 0xFF && header[1] == 0xD8
+	case ".gif":
+		return len(header) >= 3 && string(header[:3]) == "GIF"
+	case ".webp":
+		return len(header) >= 12 && string(header[8:12]) == "WEBP"
+	case ".bmp":
+		return len(header) >= 2 && header[0] == 0x42 && header[1] == 0x4D
+	case ".svg":
+		content := strings.TrimSpace(string(header))
+		return strings.HasPrefix(content, "<") && (strings.Contains(content, "<svg") || strings.Contains(content, "<?xml"))
+	case ".json":
+		trimmed := bytes.TrimLeft(header, "\xef\xbb\xbf \t\r\n")
+		return len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[')
+	case ".log", ".txt", ".csv":
+		return true // text files — no reliable magic bytes
+	default:
+		return false
+	}
+}
+
 func (a *App) saveUpload(fh *multipart.FileHeader, projectID string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(fh.Filename))
 	if !allowedExtensions[ext] {
 		return "", fmt.Errorf("不允许的文件类型: %s", ext)
+	}
+
+	// Validate file content via magic bytes
+	src, err := fh.Open()
+	if err != nil {
+		return "", fmt.Errorf("打开上传文件失败: %w", err)
+	}
+	defer src.Close()
+
+	header := make([]byte, 512)
+	n, _ := src.Read(header)
+	header = header[:n]
+
+	if !validateFileContent(header, ext) {
+		return "", fmt.Errorf("文件内容与扩展名 %s 不匹配", ext)
+	}
+
+	// Reset file pointer for copying
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return "", fmt.Errorf("重置文件指针失败: %w", err)
 	}
 
 	origName := filepath.Base(fh.Filename)
@@ -146,26 +277,20 @@ func (a *App) saveUpload(fh *multipart.FileHeader, projectID string) (string, er
 	relDir := filepath.Join("uploads", projectID)
 	absDir := filepath.Join(a.Cfg.DataDir, relDir)
 	if err := os.MkdirAll(absDir, 0755); err != nil {
-		return "", fmt.Errorf("mkdir: %w", err)
+		return "", fmt.Errorf("创建目录失败: %w", err)
 	}
 
 	relPath := filepath.Join(relDir, safeName)
 	absPath := filepath.Join(a.Cfg.DataDir, relPath)
 
-	src, err := fh.Open()
-	if err != nil {
-		return "", fmt.Errorf("open uploaded file: %w", err)
-	}
-	defer src.Close()
-
 	dst, err := os.Create(absPath)
 	if err != nil {
-		return "", fmt.Errorf("create file: %w", err)
+		return "", fmt.Errorf("创建文件失败: %w", err)
 	}
 	defer dst.Close()
 
 	if _, err := io.Copy(dst, src); err != nil {
-		return "", fmt.Errorf("write file: %w", err)
+		return "", fmt.Errorf("写入文件失败: %w", err)
 	}
 
 	return filepath.ToSlash(relPath), nil
@@ -177,6 +302,16 @@ func (a *App) AdminLogin(c *gin.Context) {
 	// Block login if setup hasn't been completed yet
 	if a.DB.GetConfig("setup_complete") != "true" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "请先完成初始设置"})
+		return
+	}
+
+	clientIP := middleware.GetClientIP(c)
+
+	// Brute force protection
+	if a.LoginTracker.IsLocked(clientIP) {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": "登录尝试次数过多，请 15 分钟后再试",
+		})
 		return
 	}
 
@@ -201,13 +336,29 @@ func (a *App) AdminLogin(c *gin.Context) {
 		effectivePwd = dbPwd
 	}
 
-	if !middleware.SecureCompare(req.Username, effectiveUser) || !middleware.SecureCompare(req.Password, effectivePwd) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
+	if !middleware.SecureCompare(req.Username, effectiveUser) || !checkPassword(req.Password, effectivePwd) {
+		a.LoginTracker.RecordFailure(clientIP)
+		remaining := 10 - a.LoginTracker.FailureCount(clientIP)
+		if remaining < 0 {
+			remaining = 0
+		}
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":     "用户名或密码错误",
+			"remaining": remaining,
+		})
 		return
 	}
 
+	// Clear brute force tracker on success
+	a.LoginTracker.ClearFailures(clientIP)
+
 	token := a.SM.Create(req.Username)
+	csrfToken := a.SM.GetCSRFToken(token)
 	c.SetCookie("admin_session", token, 86400, "/", "", false, true)
+	middleware.SetCSRFCookie(c, csrfToken)
+
+	a.DB.InsertAuditLog("login", "管理员登录", req.Username, clientIP)
+
 	c.JSON(http.StatusOK, gin.H{"message": "登录成功"})
 }
 
@@ -217,7 +368,20 @@ func (a *App) AdminLogout(c *gin.Context) {
 		a.SM.Revoke(t)
 	}
 	c.SetCookie("admin_session", "", -1, "/", "", false, true)
+	c.SetCookie("csrf_token", "", -1, "/", "", false, false)
 	c.JSON(http.StatusOK, gin.H{"message": "已退出"})
+}
+
+// AdminGetCSRFToken returns the CSRF token for the current session.
+func (a *App) AdminGetCSRFToken(c *gin.Context) {
+	token, _ := c.Get("session_token")
+	t, ok := token.(string)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "未登录"})
+		return
+	}
+	csrfToken := a.SM.GetCSRFToken(t)
+	c.JSON(http.StatusOK, gin.H{"csrf_token": csrfToken})
 }
 
 func (a *App) AdminStats(c *gin.Context) {
@@ -235,6 +399,8 @@ func (a *App) AdminStats(c *gin.Context) {
 
 func (a *App) AdminListFeedbacks(c *gin.Context) {
 	project := c.Query("project")
+	keyword := c.Query("keyword")
+	status := c.Query("status")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 
@@ -245,7 +411,15 @@ func (a *App) AdminListFeedbacks(c *gin.Context) {
 		offset = 0
 	}
 
-	list, total, err := a.DB.ListFeedbacks(project, limit, offset)
+	var list []database.Feedback
+	var total int
+	var err error
+
+	if keyword != "" || status != "" {
+		list, total, err = a.DB.SearchFeedbacks(project, keyword, status, limit, offset)
+	} else {
+		list, total, err = a.DB.ListFeedbacks(project, limit, offset)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
 		return
@@ -276,6 +450,41 @@ func (a *App) AdminGetFeedback(c *gin.Context) {
 	c.JSON(http.StatusOK, fb)
 }
 
+// AdminUpdateFeedbackStatus updates the status and tags of a feedback.
+func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	var req struct {
+		Status string `json:"status"`
+		Tags   string `json:"tags"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+
+	validStatuses := map[string]bool{"pending": true, "processing": true, "resolved": true, "closed": true}
+	if req.Status != "" && !validStatuses[req.Status] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的状态值"})
+		return
+	}
+
+	if err := a.DB.UpdateFeedbackStatus(id, req.Status, req.Tags); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("update_status", fmt.Sprintf("反馈 #%d 状态更新为 %s", id, req.Status), fmt.Sprintf("%v", user), clientIP)
+
+	c.JSON(http.StatusOK, gin.H{"message": "状态已更新"})
+}
+
 func (a *App) AdminGetConfig(c *gin.Context) {
 	configs, err := a.DB.GetAllConfig()
 	if err != nil {
@@ -283,7 +492,7 @@ func (a *App) AdminGetConfig(c *gin.Context) {
 		return
 	}
 	for i := range configs {
-		if (configs[i].Key == "smtp_pass" || configs[i].Key == "admin_password" || configs[i].Key == "ext_pass") && configs[i].Value != "" {
+		if (configs[i].Key == "smtp_pass" || configs[i].Key == "admin_password") && configs[i].Value != "" {
 			configs[i].Value = "********"
 		}
 	}
@@ -302,7 +511,7 @@ func (a *App) AdminUpdateConfig(c *gin.Context) {
 
 	for _, item := range req {
 		// Skip sensitive fields that still contain masked value
-		if (item.Key == "smtp_pass" || item.Key == "admin_password" || item.Key == "ext_pass") && strings.Contains(item.Value, "*") {
+		if (item.Key == "smtp_pass" || item.Key == "admin_password") && strings.Contains(item.Value, "*") {
 			continue
 		}
 		if err := a.DB.SetConfig(item.Key, item.Value, ""); err != nil {
@@ -374,9 +583,12 @@ func (a *App) AdminDeleteFeedback(c *gin.Context) {
 
 	var paths []string
 	json.Unmarshal([]byte(fb.FilePaths), &paths)
+	var fileErrors []string
 	for _, p := range paths {
 		absPath := filepath.Join(a.Cfg.DataDir, filepath.FromSlash(p))
-		os.Remove(absPath)
+		if err := os.Remove(absPath); err != nil && !os.IsNotExist(err) {
+			fileErrors = append(fileErrors, fmt.Sprintf("%s: %v", filepath.Base(absPath), err))
+		}
 	}
 
 	if err := a.DB.DeleteFeedback(id); err != nil {
@@ -384,7 +596,15 @@ func (a *App) AdminDeleteFeedback(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("delete_feedback", fmt.Sprintf("删除反馈 #%d (%s)", id, fb.Title), fmt.Sprintf("%v", user), clientIP)
+
+	msg := "已删除"
+	if len(fileErrors) > 0 {
+		msg += "，但部分文件清理失败: " + strings.Join(fileErrors, "; ")
+	}
+	c.JSON(http.StatusOK, gin.H{"message": msg})
 }
 
 // ========== Public Setup & Dashboard ==========
@@ -409,13 +629,6 @@ func (a *App) DoSetup(c *gin.Context) {
 	var req struct {
 		AdminUsername string `json:"admin_username"`
 		AdminPassword string `json:"admin_password"`
-		DBType        string `json:"db_type"`
-		ExtDBType     string `json:"ext_db_type"`
-		ExtHost       string `json:"ext_host"`
-		ExtPort       string `json:"ext_port"`
-		ExtUser       string `json:"ext_user"`
-		ExtPass       string `json:"ext_pass"`
-		ExtDBName     string `json:"ext_db_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -426,32 +639,23 @@ func (a *App) DoSetup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "用户名至少 2 个字符"})
 		return
 	}
-	if len(req.AdminPassword) < 6 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "密码长度不能少于 6 位"})
+	if err := validatePasswordStrength(req.AdminPassword); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Hash admin password with bcrypt
+	hashedPwd, err := hashPassword(req.AdminPassword)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
 		return
 	}
 
 	// Save admin credentials to DB
 	a.Cfg.AdminUsername = req.AdminUsername
-	a.Cfg.AdminPassword = req.AdminPassword
+	a.Cfg.AdminPassword = hashedPwd
 	a.DB.SetConfig("admin_username", req.AdminUsername, "管理员用户名")
-	a.DB.SetConfig("admin_password", req.AdminPassword, "管理员密码")
-
-	// Save DB config
-	dbType := req.DBType
-	if dbType == "" {
-		dbType = "sqlite"
-	}
-	a.DB.SetConfig("db_type", dbType, "数据库类型")
-
-	if dbType == "external" {
-		a.DB.SetConfig("ext_db_type", req.ExtDBType, "外部数据库类型")
-		a.DB.SetConfig("ext_host", req.ExtHost, "外部数据库主机")
-		a.DB.SetConfig("ext_port", req.ExtPort, "外部数据库端口")
-		a.DB.SetConfig("ext_user", req.ExtUser, "外部数据库用户名")
-		a.DB.SetConfig("ext_pass", req.ExtPass, "外部数据库密码")
-		a.DB.SetConfig("ext_db_name", req.ExtDBName, "外部数据库名")
-	}
+	a.DB.SetConfig("admin_password", hashedPwd, "管理员密码（bcrypt 哈希）")
 
 	// Mark setup complete
 	a.DB.SetConfig("setup_complete", "true", "初始安装已完成")
@@ -460,7 +664,6 @@ func (a *App) DoSetup(c *gin.Context) {
 }
 
 // Dashboard handles GET /api/v1/dashboard
-// Returns stats and recent feedback for the landing page dashboard.
 func (a *App) Dashboard(c *gin.Context) {
 	total, projects, today, err := a.DB.GetStats()
 	if err != nil {
@@ -562,6 +765,11 @@ func (a *App) AdminCreateProject(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败: " + err.Error()})
 		return
 	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("create_project", fmt.Sprintf("创建项目 %s (%s)", req.Name, req.Slug), fmt.Sprintf("%v", user), clientIP)
+
 	c.JSON(http.StatusCreated, gin.H{"message": "项目已创建", "id": id})
 }
 
@@ -616,11 +824,38 @@ func (a *App) AdminDeleteProject(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 		return
 	}
+
+	// Get project info before deletion for audit log and file cleanup
+	project, err := a.DB.GetProject(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
+		return
+	}
+
+	// Get all feedbacks for this project to clean up files
+	feedbacks, err := a.DB.ExportFeedbacks(project.Slug)
+	if err == nil {
+		for _, fb := range feedbacks {
+			var paths []string
+			json.Unmarshal([]byte(fb.FilePaths), &paths)
+			for _, p := range paths {
+				absPath := filepath.Join(a.Cfg.DataDir, filepath.FromSlash(p))
+				os.Remove(absPath) // best-effort cleanup
+			}
+		}
+	}
+
+	// Cascade delete: removes project + associated feedbacks
 	if err := a.DB.DeleteProject(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "项目已删除"})
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("delete_project", fmt.Sprintf("删除项目 %s (%s)", project.Name, project.Slug), fmt.Sprintf("%v", user), clientIP)
+
+	c.JSON(http.StatusOK, gin.H{"message": "项目及关联反馈已删除"})
 }
 
 // ========== Admin: Project Stats ==========
@@ -656,7 +891,7 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 	w := csv.NewWriter(c.Writer)
 	// Write BOM for Excel compatibility
 	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
-	w.Write([]string{"ID", "项目", "标题", "描述", "自定义字段", "来源IP", "提交时间"})
+	w.Write([]string{"ID", "项目", "标题", "描述", "自定义字段", "附件", "状态", "标签", "指派", "联系人", "联系邮箱", "来源IP", "提交时间"})
 	for _, fb := range feedbacks {
 		w.Write([]string{
 			strconv.FormatInt(fb.ID, 10),
@@ -664,11 +899,38 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 			fb.Title,
 			fb.Description,
 			fb.CustomData,
+			fb.FilePaths,
+			fb.Status,
+			fb.Tags,
+			fb.Assignee,
+			fb.ContactName,
+			fb.ContactEmail,
 			fb.ClientIP,
 			fb.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 	w.Flush()
+}
+
+// ========== Admin: Audit Logs ==========
+
+func (a *App) AdminListAuditLogs(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+
+	logs, total, err := a.DB.ListAuditLogs(limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询审计日志失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"logs":  logs,
+		"total": total,
+	})
 }
 
 // ========== Admin: Config Sections ==========
@@ -740,7 +1002,7 @@ func (a *App) AdminUpdateAccount(c *gin.Context) {
 	if dbPwd != "" {
 		effectivePwd = dbPwd
 	}
-	if !middleware.SecureCompare(req.OldPassword, effectivePwd) {
+	if !checkPassword(req.OldPassword, effectivePwd) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "当前密码错误"})
 		return
 	}
@@ -749,21 +1011,39 @@ func (a *App) AdminUpdateAccount(c *gin.Context) {
 		a.Cfg.AdminUsername = req.Username
 		a.DB.SetConfig("admin_username", req.Username, "管理员用户名")
 	}
-	if req.NewPassword != "" && len(req.NewPassword) >= 6 {
-		a.Cfg.AdminPassword = req.NewPassword
-		a.DB.SetConfig("admin_password", req.NewPassword, "管理员密码")
+	if req.NewPassword != "" {
+		if err := validatePasswordStrength(req.NewPassword); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		hashedPwd, err := hashPassword(req.NewPassword)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+			return
+		}
+		a.Cfg.AdminPassword = hashedPwd
+		a.DB.SetConfig("admin_password", hashedPwd, "管理员密码（bcrypt 哈希）")
 	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("update_account", "修改账户信息", fmt.Sprintf("%v", user), clientIP)
 
 	c.JSON(http.StatusOK, gin.H{"message": "账户信息已更新"})
 }
 
 // AdminGetSystemConfig returns system-level config.
 func (a *App) AdminGetSystemConfig(c *gin.Context) {
+	webhookURL := a.DB.GetConfig("webhook_url")
+	if webhookURL == "" {
+		webhookURL = a.Cfg.WebhookURL
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"base_url":          a.Cfg.BaseURL,
 		"pow_difficulty":    a.Cfg.PoWDifficulty,
 		"rate_limit_per_hr": a.Cfg.RateLimitPerHour,
 		"max_upload_mb":     a.Cfg.MaxUploadSize / 1024 / 1024,
+		"webhook_url":       webhookURL,
 	})
 }
 
@@ -773,6 +1053,7 @@ func (a *App) AdminUpdateSystemConfig(c *gin.Context) {
 		BaseURL       string `json:"base_url"`
 		PoWDifficulty int    `json:"pow_difficulty"`
 		RateLimit     int    `json:"rate_limit_per_hr"`
+		WebhookURL    string `json:"webhook_url"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -790,5 +1071,318 @@ func (a *App) AdminUpdateSystemConfig(c *gin.Context) {
 		a.Cfg.RateLimitPerHour = req.RateLimit
 		a.DB.SetConfig("rate_limit_per_hr", strconv.Itoa(req.RateLimit), "每小时提交上限")
 	}
+	if req.WebhookURL != "" {
+		a.Cfg.WebhookURL = req.WebhookURL
+		a.DB.SetConfig("webhook_url", req.WebhookURL, "Webhook 通知 URL")
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "系统设置已保存"})
+}
+
+// ========== Deep Health Check ==========
+
+func (a *App) HealthCheck(c *gin.Context) {
+	status := "ok"
+	httpCode := http.StatusOK
+	details := gin.H{}
+
+	// Check DB connectivity
+	if err := a.DB.Ping(); err != nil {
+		status = "degraded"
+		httpCode = http.StatusServiceUnavailable
+		details["database"] = "unreachable: " + err.Error()
+	} else {
+		details["database"] = "connected"
+	}
+
+	c.JSON(httpCode, gin.H{
+		"status":  status,
+		"details": details,
+	})
+}
+
+// ========== Webhook Notification ==========
+
+func (a *App) SendWebhookNotification(fb *database.Feedback) {
+	webhookURL := a.DB.GetConfig("webhook_url")
+	if webhookURL == "" {
+		webhookURL = a.Cfg.WebhookURL
+	}
+	if webhookURL == "" {
+		return
+	}
+
+	payload := map[string]interface{}{
+		"id":          fb.ID,
+		"project_id":  fb.ProjectID,
+		"title":       fb.Title,
+		"description": fb.Description,
+		"custom_data": fb.CustomData,
+		"client_ip":   fb.ClientIP,
+		"created_at":  fb.CreatedAt.Format(time.RFC3339),
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[WEBHOOK] Failed to marshal payload: %v", err)
+		return
+	}
+
+	resp, err := http.Post(webhookURL, "application/json", bytes.NewReader(jsonData))
+	if err != nil {
+		log.Printf("[WEBHOOK] Failed to send notification for feedback #%d: %v", fb.ID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		log.Printf("[WEBHOOK] Notification for feedback #%d returned status %d", fb.ID, resp.StatusCode)
+	} else {
+		log.Printf("[WEBHOOK] Notification sent for feedback #%d", fb.ID)
+	}
+}
+
+// ========== Feedback Notes (Replies / Internal Notes) ==========
+
+func (a *App) AdminAddFeedbackNote(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	// Verify feedback exists
+	if _, err := a.DB.GetFeedback(id); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "反馈不存在"})
+		return
+	}
+
+	var req struct {
+		Content  string `json:"content"`
+		IsPublic bool   `json:"is_public"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "内容不能为空"})
+		return
+	}
+
+	user, _ := c.Get("admin_user")
+	author := fmt.Sprintf("%v", user)
+
+	noteID, err := a.DB.InsertFeedbackNote(id, req.Content, author, req.IsPublic)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
+		return
+	}
+
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("add_note", fmt.Sprintf("反馈 #%d 添加备注", id), author, clientIP)
+
+	c.JSON(http.StatusCreated, gin.H{"message": "备注已添加", "id": noteID})
+}
+
+func (a *App) AdminListFeedbackNotes(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	notes, err := a.DB.ListFeedbackNotes(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+	if notes == nil {
+		notes = []database.FeedbackNote{}
+	}
+	c.JSON(http.StatusOK, gin.H{"notes": notes})
+}
+
+func (a *App) AdminDeleteFeedbackNote(c *gin.Context) {
+	noteID, err := strconv.ParseInt(c.Param("noteId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	if err := a.DB.DeleteFeedbackNote(noteID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
+		return
+	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("delete_note", fmt.Sprintf("删除备注 #%d", noteID), fmt.Sprintf("%v", user), clientIP)
+
+	c.JSON(http.StatusOK, gin.H{"message": "备注已删除"})
+}
+
+// ========== Feedback Assignee ==========
+
+func (a *App) AdminUpdateFeedbackAssignee(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	var req struct {
+		Assignee string `json:"assignee"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+
+	if err := a.DB.UpdateFeedbackAssignee(id, req.Assignee); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("assign_feedback", fmt.Sprintf("反馈 #%d 指派给 %s", id, req.Assignee), fmt.Sprintf("%v", user), clientIP)
+
+	c.JSON(http.StatusOK, gin.H{"message": "指派已更新"})
+}
+
+// ========== Bulk Operations ==========
+
+func (a *App) AdminBulkDeleteFeedbacks(c *gin.Context) {
+	var req struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要删除的反馈"})
+		return
+	}
+	if len(req.IDs) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "单次最多操作 500 条"})
+		return
+	}
+
+	// Clean up files for all feedbacks being deleted
+	for _, id := range req.IDs {
+		fb, err := a.DB.GetFeedback(id)
+		if err != nil {
+			continue
+		}
+		var paths []string
+		json.Unmarshal([]byte(fb.FilePaths), &paths)
+		for _, p := range paths {
+			absPath := filepath.Join(a.Cfg.DataDir, filepath.FromSlash(p))
+			os.Remove(absPath)
+		}
+	}
+
+	affected, err := a.DB.BulkDeleteFeedbacks(req.IDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量删除失败"})
+		return
+	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("bulk_delete", fmt.Sprintf("批量删除 %d 条反馈", affected), fmt.Sprintf("%v", user), clientIP)
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已删除 %d 条反馈", affected), "affected": affected})
+}
+
+func (a *App) AdminBulkUpdateStatus(c *gin.Context) {
+	var req struct {
+		IDs    []int64 `json:"ids"`
+		Status string  `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	if len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请选择要更新的反馈"})
+		return
+	}
+	if len(req.IDs) > 500 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "单次最多操作 500 条"})
+		return
+	}
+
+	validStatuses := map[string]bool{"pending": true, "processing": true, "resolved": true, "closed": true}
+	if !validStatuses[req.Status] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的状态值"})
+		return
+	}
+
+	affected, err := a.DB.BulkUpdateFeedbackStatus(req.IDs, req.Status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量更新失败"})
+		return
+	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("bulk_status", fmt.Sprintf("批量更新 %d 条反馈状态为 %s", affected, req.Status), fmt.Sprintf("%v", user), clientIP)
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已更新 %d 条反馈状态", affected), "affected": affected})
+}
+
+// ========== Chart Data ==========
+
+func (a *App) AdminChartData(c *gin.Context) {
+	daysStr := c.DefaultQuery("days", "30")
+	days, _ := strconv.Atoi(daysStr)
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+
+	trend, err := a.DB.GetDailyTrend(days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取趋势数据失败"})
+		return
+	}
+	if trend == nil {
+		trend = []map[string]interface{}{}
+	}
+
+	statusDist, err := a.DB.GetStatusDistribution()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取状态分布失败"})
+		return
+	}
+	if statusDist == nil {
+		statusDist = []map[string]interface{}{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"daily_trend":       trend,
+		"status_distribution": statusDist,
+	})
+}
+
+// ========== Backup ==========
+
+func (a *App) AdminBackup(c *gin.Context) {
+	backupDir := filepath.Join(a.Cfg.DataDir, "backups")
+	backupPath, err := a.DB.BackupDatabase(backupDir)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "备份失败: " + err.Error()})
+		return
+	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("backup", fmt.Sprintf("数据库备份: %s", filepath.Base(backupPath)), fmt.Sprintf("%v", user), clientIP)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "备份完成",
+		"path":    filepath.Base(backupPath),
+	})
 }

@@ -32,8 +32,6 @@ func Register(r *gin.Engine, application *app.App) {
 	adminHTML := mustReadFS(frontendSub, "admin.html")
 
 	// ========== Pre-setup whitelist ==========
-	// Only these paths are accessible before setup is complete.
-	// New routes are automatically blocked — no per-route guard needed.
 	setupWhitelist := []string{
 		"/health",
 		"/setup",
@@ -48,14 +46,12 @@ func Register(r *gin.Engine, application *app.App) {
 			return
 		}
 		path := c.Request.URL.Path
-		// Whitelist: allow specific paths even before setup
 		for _, prefix := range setupWhitelist {
 			if path == prefix || (prefix != "/health" && strings.HasPrefix(path, prefix)) {
 				c.Next()
 				return
 			}
 		}
-		// Block everything else
 		if strings.HasPrefix(path, "/api/") {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "系统尚未完成初始化"})
 			c.Abort()
@@ -65,15 +61,12 @@ func Register(r *gin.Engine, application *app.App) {
 		}
 	}
 
-	// Apply pre-setup guard globally
 	r.Use(setupGuard)
 
 	// ========== Public page routes ==========
 
-	// Health check for container orchestration
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	// Deep health check — verifies DB connectivity
+	r.GET("/health", application.HealthCheck)
 
 	// Landing page
 	r.GET("/", func(c *gin.Context) {
@@ -87,7 +80,6 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// ========== Per-project feedback pages ==========
 
-	// Dedicated feedback page per project: /fb/{slug}
 	r.GET("/fb/:slug", func(c *gin.Context) {
 		slug := c.Param("slug")
 		project, err := application.DB.GetProjectBySlug(slug)
@@ -112,21 +104,16 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// ========== Public API routes ==========
 
-	// Setup (always accessible via whitelist)
 	r.GET("/api/v1/setup/status", application.SetupStatus)
 	r.POST("/api/v1/setup", application.DoSetup)
-
-	// Public projects list (only after setup)
 	r.GET("/api/v1/projects", application.PublicListProjects)
 
-	// Feedback submission (with rate limit)
 	submit := r.Group("/api/v1/feedback")
 	submit.Use(middleware.RateLimitMiddleware(application.RL))
 	submit.POST("/submit", application.SubmitFeedback)
 
 	// ========== Admin page routes (HTML) ==========
 
-	// Exact /admin route
 	r.GET("/admin", func(c *gin.Context) {
 		token, err := c.Cookie("admin_session")
 		if err != nil || token == "" {
@@ -140,17 +127,14 @@ func Register(r *gin.Engine, application *app.App) {
 		c.Data(http.StatusOK, "text/html; charset=utf-8", adminHTML)
 	})
 
-	// Catch-all for /admin/* paths
 	r.GET("/admin/*path", func(c *gin.Context) {
 		path := c.Param("path")
 
-		// Login page — no auth required
 		if path == "/login" {
 			c.Data(http.StatusOK, "text/html; charset=utf-8", loginHTML)
 			return
 		}
 
-		// Auth check
 		token, err := c.Cookie("admin_session")
 		if err != nil || token == "" {
 			c.Redirect(http.StatusFound, "/admin/login")
@@ -161,13 +145,11 @@ func Register(r *gin.Engine, application *app.App) {
 			return
 		}
 
-		// Secure file serving: /admin/files/*filepath
 		if len(path) >= 7 && path[:7] == "/files/" {
 			application.AdminServeFile(c)
 			return
 		}
 
-		// Default: serve admin SPA
 		c.Data(http.StatusOK, "text/html; charset=utf-8", adminHTML)
 	})
 
@@ -179,9 +161,11 @@ func Register(r *gin.Engine, application *app.App) {
 	// Authenticated: everything else
 	adminAPI := r.Group("/api/v1/admin")
 	adminAPI.Use(middleware.AuthMiddleware(application.SM))
+	adminAPI.Use(middleware.CSRFMiddleware(application.SM))
 	{
 		// Session
 		adminAPI.POST("/logout", application.AdminLogout)
+		adminAPI.GET("/csrf-token", application.AdminGetCSRFToken)
 
 		// Dashboard
 		adminAPI.GET("/stats", application.AdminStats)
@@ -189,15 +173,31 @@ func Register(r *gin.Engine, application *app.App) {
 
 		// Feedbacks
 		adminAPI.GET("/feedbacks", application.AdminListFeedbacks)
-		adminAPI.GET("/feedbacks/:id", application.AdminGetFeedback)
-		adminAPI.DELETE("/feedbacks/:id", application.AdminDeleteFeedback)
 		adminAPI.GET("/feedbacks/export", application.AdminExportCSV)
+		adminAPI.GET("/feedbacks/:id", application.AdminGetFeedback)
+		adminAPI.PUT("/feedbacks/:id/status", application.AdminUpdateFeedbackStatus)
+		adminAPI.PUT("/feedbacks/:id/assignee", application.AdminUpdateFeedbackAssignee)
+		adminAPI.DELETE("/feedbacks/:id", application.AdminDeleteFeedback)
+		adminAPI.POST("/feedbacks/:id/notes", application.AdminAddFeedbackNote)
+		adminAPI.GET("/feedbacks/:id/notes", application.AdminListFeedbackNotes)
+		adminAPI.DELETE("/feedbacks/:id/notes/:noteId", application.AdminDeleteFeedbackNote)
+		adminAPI.POST("/feedbacks/bulk-delete", application.AdminBulkDeleteFeedbacks)
+		adminAPI.POST("/feedbacks/bulk-status", application.AdminBulkUpdateStatus)
 
 		// Projects
 		adminAPI.GET("/projects", application.AdminListProjects)
 		adminAPI.POST("/projects", application.AdminCreateProject)
 		adminAPI.PUT("/projects/:id", application.AdminUpdateProject)
 		adminAPI.DELETE("/projects/:id", application.AdminDeleteProject)
+
+		// Audit logs
+		adminAPI.GET("/audit-logs", application.AdminListAuditLogs)
+
+		// Chart data
+		adminAPI.GET("/chart-data", application.AdminChartData)
+
+		// Backup
+		adminAPI.POST("/backup", application.AdminBackup)
 
 		// Config sections
 		adminAPI.GET("/config/email", application.AdminGetEmailConfig)

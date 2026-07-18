@@ -57,6 +57,15 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
         <textarea id="description" name="description" placeholder="请详细描述遇到的问题、复现步骤等信息"></textarea>
       </div>
 
+      <div class="field">
+        <label for="contact_name">您的称呼（选填）</label>
+        <input type="text" id="contact_name" name="contact_name" placeholder="方便我们联系您">
+      </div>
+      <div class="field">
+        <label for="contact_email">邮箱（选填）</label>
+        <input type="text" id="contact_email" name="contact_email" placeholder="用于回复通知">
+      </div>
+
       <!-- Dynamic custom fields injected here -->
       <div id="customFieldsContainer"></div>
 
@@ -357,6 +366,8 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
       fd.append('project_id', projectId);
       fd.append('title', title);
       fd.append('description', document.getElementById('description').value.trim());
+      fd.append('contact_name', document.getElementById('contact_name').value.trim());
+      fd.append('contact_email', document.getElementById('contact_email').value.trim());
 
       // Custom data as JSON
       var customData = collectCustomData();

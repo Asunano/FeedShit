@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,14 +16,29 @@ import (
 
 // Feedback represents a single feedback submission.
 type Feedback struct {
-	ID          int64     `json:"id"`
-	ProjectID   string    `json:"project_id"`
-	Title       string    `json:"title"`
-	Description string    `json:"description"`
-	CustomData  string    `json:"custom_data"`
-	FilePaths   string    `json:"file_paths"`
-	ClientIP    string    `json:"client_ip"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID           int64     `json:"id"`
+	ProjectID    string    `json:"project_id"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	CustomData   string    `json:"custom_data"`
+	FilePaths    string    `json:"file_paths"`
+	ClientIP     string    `json:"client_ip"`
+	Status       string    `json:"status"`
+	Tags         string    `json:"tags"`
+	Assignee     string    `json:"assignee"`
+	ContactName  string    `json:"contact_name"`
+	ContactEmail string    `json:"contact_email"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// FeedbackNote represents an admin reply or internal note on a feedback.
+type FeedbackNote struct {
+	ID         int64     `json:"id"`
+	FeedbackID int64     `json:"feedback_id"`
+	Content    string    `json:"content"`
+	Author     string    `json:"author"`
+	IsPublic   bool      `json:"is_public"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // Project represents a feedback collection project.
@@ -42,6 +58,16 @@ type DBConfig struct {
 	Key         string `json:"key"`
 	Value       string `json:"value"`
 	Description string `json:"description"`
+}
+
+// AuditLog represents an admin action audit record.
+type AuditLog struct {
+	ID        int64     `json:"id"`
+	Action    string    `json:"action"`
+	Detail    string    `json:"detail"`
+	User      string    `json:"user"`
+	IP        string    `json:"ip"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // Database wraps the sql.DB connection and provides application-specific operations.
@@ -110,10 +136,13 @@ func (d *Database) migrate() error {
 		custom_data TEXT    NOT NULL DEFAULT '{}',
 		file_paths  TEXT    NOT NULL DEFAULT '[]',
 		client_ip   TEXT    NOT NULL DEFAULT '',
+		status      TEXT    NOT NULL DEFAULT 'pending',
+		tags        TEXT    NOT NULL DEFAULT '',
 		created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 	);
 	CREATE INDEX IF NOT EXISTS idx_feedbacks_project ON feedbacks(project_id);
 	CREATE INDEX IF NOT EXISTS idx_feedbacks_created ON feedbacks(created_at DESC);
+	CREATE INDEX IF NOT EXISTS idx_feedbacks_status ON feedbacks(status);
 
 	CREATE TABLE IF NOT EXISTS config (
 		key         TEXT PRIMARY KEY,
@@ -131,6 +160,16 @@ func (d *Database) migrate() error {
 		created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 	);
 	CREATE INDEX IF NOT EXISTS idx_projects_slug ON projects(slug);
+
+	CREATE TABLE IF NOT EXISTS audit_logs (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		action     TEXT    NOT NULL,
+		detail     TEXT    NOT NULL DEFAULT '',
+		user       TEXT    NOT NULL DEFAULT '',
+		ip         TEXT    NOT NULL DEFAULT '',
+		created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+	);
+	CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at DESC);
 	`
 	if _, err := d.db.Exec(schema); err != nil {
 		return err
@@ -138,6 +177,25 @@ func (d *Database) migrate() error {
 	// Add columns for existing databases (ignore "duplicate column" errors)
 	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN custom_data TEXT NOT NULL DEFAULT '{}'`)
 	d.db.Exec(`ALTER TABLE projects ADD COLUMN form_schema TEXT NOT NULL DEFAULT '[]'`)
+	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'`)
+	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN tags TEXT NOT NULL DEFAULT ''`)
+	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN assignee TEXT NOT NULL DEFAULT ''`)
+	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN contact_name TEXT NOT NULL DEFAULT ''`)
+	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''`)
+
+	// Feedback notes table (admin replies / internal notes)
+	d.db.Exec(`
+		CREATE TABLE IF NOT EXISTS feedback_notes (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			feedback_id INTEGER NOT NULL,
+			content     TEXT    NOT NULL,
+			author      TEXT    NOT NULL DEFAULT '',
+			is_public   INTEGER NOT NULL DEFAULT 0,
+			created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_notes_feedback ON feedback_notes(feedback_id);
+	`)
+
 	return nil
 }
 
@@ -146,10 +204,14 @@ func (d *Database) InsertFeedback(f *Feedback) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	status := f.Status
+	if status == "" {
+		status = "pending"
+	}
 	res, err := d.db.Exec(
-		`INSERT INTO feedbacks (project_id, title, description, custom_data, file_paths, client_ip, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, strftime('%s', 'now'))`,
-		f.ProjectID, f.Title, f.Description, f.CustomData, f.FilePaths, f.ClientIP,
+		`INSERT INTO feedbacks (project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))`,
+		f.ProjectID, f.Title, f.Description, f.CustomData, f.FilePaths, f.ClientIP, status, f.Tags, f.Assignee, f.ContactName, f.ContactEmail,
 	)
 	if err != nil {
 		return 0, err
@@ -172,14 +234,15 @@ func (d *Database) ListFeedbacks(projectID string, limit, offset int) ([]Feedbac
 	var rows *sql.Rows
 	var err error
 
+	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, created_at`
+
 	if projectID != "" {
 		err = d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks WHERE project_id = ?`, projectID).Scan(&total)
 		if err != nil {
 			return nil, 0, err
 		}
 		rows, err = d.db.Query(
-			`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, created_at
-			 FROM feedbacks WHERE project_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+			`SELECT `+cols+` FROM feedbacks WHERE project_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
 			projectID, limit, offset,
 		)
 	} else {
@@ -188,8 +251,7 @@ func (d *Database) ListFeedbacks(projectID string, limit, offset int) ([]Feedbac
 			return nil, 0, err
 		}
 		rows, err = d.db.Query(
-			`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, created_at
-			 FROM feedbacks ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+			`SELECT `+cols+` FROM feedbacks ORDER BY created_at DESC LIMIT ? OFFSET ?`,
 			limit, offset,
 		)
 	}
@@ -202,7 +264,59 @@ func (d *Database) ListFeedbacks(projectID string, limit, offset int) ([]Feedbac
 	for rows.Next() {
 		var f Feedback
 		var createdAt int64
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &createdAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &createdAt); err != nil {
+			return nil, 0, err
+		}
+		f.CreatedAt = time.Unix(createdAt, 0)
+		list = append(list, f)
+	}
+	return list, total, nil
+}
+
+// SearchFeedbacks supports keyword search, status filter, and project filter.
+func (d *Database) SearchFeedbacks(projectID, keyword, status string, limit, offset int) ([]Feedback, int, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	where := "WHERE 1=1"
+	args := []interface{}{}
+
+	if projectID != "" {
+		where += " AND project_id = ?"
+		args = append(args, projectID)
+	}
+	if status != "" {
+		where += " AND status = ?"
+		args = append(args, status)
+	}
+	if keyword != "" {
+		where += " AND (title LIKE ? OR description LIKE ?)"
+		args = append(args, "%"+keyword+"%", "%"+keyword+"%")
+	}
+
+	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, created_at`
+
+	var total int
+	err := d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks `+where, args...).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	queryArgs := append(args, limit, offset)
+	rows, err := d.db.Query(
+		`SELECT `+cols+` FROM feedbacks `+where+` ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		queryArgs...,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var list []Feedback
+	for rows.Next() {
+		var f Feedback
+		var createdAt int64
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &createdAt); err != nil {
 			return nil, 0, err
 		}
 		f.CreatedAt = time.Unix(createdAt, 0)
@@ -219,14 +333,23 @@ func (d *Database) GetFeedback(id int64) (*Feedback, error) {
 	var f Feedback
 	var createdAt int64
 	err := d.db.QueryRow(
-		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, created_at
+		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, created_at
 		 FROM feedbacks WHERE id = ?`, id,
-	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &createdAt)
+	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &createdAt)
 	if err != nil {
 		return nil, err
 	}
 	f.CreatedAt = time.Unix(createdAt, 0)
 	return &f, nil
+}
+
+// UpdateFeedbackStatus updates the status and/or tags of a feedback.
+func (d *Database) UpdateFeedbackStatus(id int64, status, tags string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.Exec(`UPDATE feedbacks SET status = ?, tags = ? WHERE id = ?`, status, tags, id)
+	return err
 }
 
 // GetProjects returns distinct project IDs.
@@ -387,12 +510,25 @@ func (d *Database) UpdateProject(p *Project) error {
 	return err
 }
 
-// DeleteProject removes a project by ID.
+// DeleteProject removes a project and all associated feedbacks (cascade).
 func (d *Database) DeleteProject(id int64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	_, err := d.db.Exec(`DELETE FROM projects WHERE id = ?`, id)
+	// First get the project slug to delete associated feedbacks
+	var slug string
+	err := d.db.QueryRow(`SELECT slug FROM projects WHERE id = ?`, id).Scan(&slug)
+	if err != nil {
+		return err
+	}
+
+	// Delete associated feedbacks
+	if _, err := d.db.Exec(`DELETE FROM feedbacks WHERE project_id = ?`, slug); err != nil {
+		return err
+	}
+
+	// Delete the project
+	_, err = d.db.Exec(`DELETE FROM projects WHERE id = ?`, id)
 	return err
 }
 
@@ -481,7 +617,7 @@ func (d *Database) ListProjects() ([]Project, error) {
 }
 
 // IsProjectActive checks if a project slug exists and is active.
-// Returns true if the project doesn't exist (backward compatible with auto-created projects).
+// Returns false if the project doesn't exist (security fix: prevent spam to non-existent projects).
 func (d *Database) IsProjectActive(slug string) bool {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -489,8 +625,8 @@ func (d *Database) IsProjectActive(slug string) bool {
 	var isActive int
 	err := d.db.QueryRow(`SELECT is_active FROM projects WHERE slug = ?`, slug).Scan(&isActive)
 	if err != nil {
-		// Project not in table — treat as active (backward compatible)
-		return true
+		// Project not found — deny submission
+		return false
 	}
 	return isActive == 1
 }
@@ -548,16 +684,16 @@ func (d *Database) ExportFeedbacks(projectID string) ([]Feedback, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
+	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, created_at`
+
 	var rows *sql.Rows
 	var err error
 	if projectID != "" {
 		rows, err = d.db.Query(
-			`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, created_at
-			 FROM feedbacks WHERE project_id = ? ORDER BY created_at DESC`, projectID)
+			`SELECT `+cols+` FROM feedbacks WHERE project_id = ? ORDER BY created_at DESC`, projectID)
 	} else {
 		rows, err = d.db.Query(
-			`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, created_at
-			 FROM feedbacks ORDER BY created_at DESC`)
+			`SELECT `+cols+` FROM feedbacks ORDER BY created_at DESC`)
 	}
 	if err != nil {
 		return nil, err
@@ -568,13 +704,67 @@ func (d *Database) ExportFeedbacks(projectID string) ([]Feedback, error) {
 	for rows.Next() {
 		var f Feedback
 		var createdAt int64
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &createdAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &createdAt); err != nil {
 			return nil, err
 		}
 		f.CreatedAt = time.Unix(createdAt, 0)
 		list = append(list, f)
 	}
 	return list, nil
+}
+
+// ========== Audit Logs ==========
+
+// InsertAuditLog inserts a new audit log entry.
+func (d *Database) InsertAuditLog(action, detail, user, ip string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.Exec(
+		`INSERT INTO audit_logs (action, detail, user, ip) VALUES (?, ?, ?, ?)`,
+		action, detail, user, ip,
+	)
+	return err
+}
+
+// ListAuditLogs returns recent audit log entries.
+func (d *Database) ListAuditLogs(limit, offset int) ([]AuditLog, int, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var total int
+	err := d.db.QueryRow(`SELECT COUNT(*) FROM audit_logs`).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := d.db.Query(
+		`SELECT id, action, detail, user, ip, created_at FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		limit, offset,
+	)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var list []AuditLog
+	for rows.Next() {
+		var a AuditLog
+		var createdAt int64
+		if err := rows.Scan(&a.ID, &a.Action, &a.Detail, &a.User, &a.IP, &createdAt); err != nil {
+			return nil, 0, err
+		}
+		a.CreatedAt = time.Unix(createdAt, 0)
+		list = append(list, a)
+	}
+	return list, total, nil
+}
+
+// ========== Health Check ==========
+
+// Ping checks if the database is responsive.
+func (d *Database) Ping() error {
+	return d.db.Ping()
 }
 
 // ========== Config Helpers ==========
@@ -611,4 +801,205 @@ func (d *Database) SetMaxOpenConns(n int) {
 // Close closes the database connection.
 func (d *Database) Close() error {
 	return d.db.Close()
+}
+
+// ========== Feedback Notes ==========
+
+// InsertFeedbackNote adds a note/reply to a feedback.
+func (d *Database) InsertFeedbackNote(feedbackID int64, content, author string, isPublic bool) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	pub := 0
+	if isPublic {
+		pub = 1
+	}
+	res, err := d.db.Exec(
+		`INSERT INTO feedback_notes (feedback_id, content, author, is_public) VALUES (?, ?, ?, ?)`,
+		feedbackID, content, author, pub,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// ListFeedbackNotes returns all notes for a feedback, ordered by creation time.
+func (d *Database) ListFeedbackNotes(feedbackID int64) ([]FeedbackNote, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(
+		`SELECT id, feedback_id, content, author, is_public, created_at FROM feedback_notes WHERE feedback_id = ? ORDER BY created_at ASC`,
+		feedbackID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var notes []FeedbackNote
+	for rows.Next() {
+		var n FeedbackNote
+		var createdAt int64
+		var isPublic int
+		if err := rows.Scan(&n.ID, &n.FeedbackID, &n.Content, &n.Author, &isPublic, &createdAt); err != nil {
+			return nil, err
+		}
+		n.IsPublic = isPublic == 1
+		n.CreatedAt = time.Unix(createdAt, 0)
+		notes = append(notes, n)
+	}
+	return notes, nil
+}
+
+// DeleteFeedbackNote removes a note by ID.
+func (d *Database) DeleteFeedbackNote(id int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.Exec(`DELETE FROM feedback_notes WHERE id = ?`, id)
+	return err
+}
+
+// ========== Feedback Assignee ==========
+
+// UpdateFeedbackAssignee updates the assignee field of a feedback.
+func (d *Database) UpdateFeedbackAssignee(id int64, assignee string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.Exec(`UPDATE feedbacks SET assignee = ? WHERE id = ?`, assignee, id)
+	return err
+}
+
+// ========== Bulk Operations ==========
+
+// BulkDeleteFeedbacks deletes multiple feedbacks by ID.
+func (d *Database) BulkDeleteFeedbacks(ids []int64) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	query := `DELETE FROM feedbacks WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+	res, err := d.db.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// BulkUpdateFeedbackStatus updates status for multiple feedbacks.
+func (d *Database) BulkUpdateFeedbackStatus(ids []int64, status string) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, 0, len(ids)+1)
+	args = append(args, status)
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+	query := `UPDATE feedbacks SET status = ? WHERE id IN (` + strings.Join(placeholders, ",") + `)`
+	res, err := d.db.Exec(query, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// ========== Chart Data ==========
+
+// GetDailyTrend returns feedback counts per day for the last N days.
+func (d *Database) GetDailyTrend(days int) ([]map[string]interface{}, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(`
+		SELECT date(created_at, 'unixepoch') as day, COUNT(*) as cnt
+		FROM feedbacks
+		WHERE created_at >= strftime('%s', 'now', '-' || ? || ' days')
+		GROUP BY day ORDER BY day ASC
+	`, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		var day string
+		var count int
+		if err := rows.Scan(&day, &count); err != nil {
+			return nil, err
+		}
+		result = append(result, map[string]interface{}{
+			"date":  day,
+			"count": count,
+		})
+	}
+	return result, nil
+}
+
+// GetStatusDistribution returns feedback counts grouped by status.
+func (d *Database) GetStatusDistribution() ([]map[string]interface{}, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(`
+		SELECT status, COUNT(*) as cnt FROM feedbacks GROUP BY status ORDER BY cnt DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		result = append(result, map[string]interface{}{
+			"status": status,
+			"count":  count,
+		})
+	}
+	return result, nil
+}
+
+// ========== Backup ==========
+
+// BackupDatabase creates a backup copy of the SQLite database file.
+func (d *Database) BackupDatabase(backupDir string) (string, error) {
+	// Use SQLite's VACUUM INTO for a consistent backup
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return "", fmt.Errorf("create backup dir: %w", err)
+	}
+
+	backupName := fmt.Sprintf("feedbacks_%s.db", time.Now().Format("20060102_150405"))
+	backupPath := filepath.Join(backupDir, backupName)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.Exec(`VACUUM INTO ?`, backupPath)
+	if err != nil {
+		return "", fmt.Errorf("vacuum into backup: %w", err)
+	}
+
+	return backupPath, nil
 }

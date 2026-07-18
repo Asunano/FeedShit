@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all application configuration, sourced from environment variables.
@@ -24,6 +25,8 @@ type Config struct {
 	PoWDifficulty    int
 	RateLimitPerHour int
 	MaxUploadSize    int64
+	TrustedProxies   []string
+	WebhookURL       string
 }
 
 func LoadConfig() *Config {
@@ -43,6 +46,16 @@ func LoadConfig() *Config {
 		PoWDifficulty:    getEnvInt("POW_DIFFICULTY", 4),
 		RateLimitPerHour: getEnvInt("RATE_LIMIT_PER_HOUR", 3),
 		MaxUploadSize:    int64(getEnvInt("MAX_UPLOAD_MB", 20)) * 1024 * 1024,
+		WebhookURL:       getEnv("WEBHOOK_URL", ""),
+	}
+	// Parse trusted proxies from comma-separated env var
+	if tp := getEnv("TRUSTED_PROXIES", ""); tp != "" {
+		for _, p := range strings.Split(tp, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				cfg.TrustedProxies = append(cfg.TrustedProxies, p)
+			}
+		}
 	}
 	cfg.UploadDir = cfg.DataDir + "/uploads"
 	cfg.DBPath = cfg.DataDir + "/feedbacks.db"
