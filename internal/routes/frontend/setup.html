@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>初始设置 - FeedShit</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;line-height:1.5}
+
+.container{max-width:520px;margin:60px auto;padding:0 16px}
+.card{background:#fff;border:1px solid #e2e2e2;border-radius:8px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.card h2{font-size:1.2rem;font-weight:600;margin-bottom:4px}
+.card .sub{color:#888;font-size:.85rem;margin-bottom:28px}
+
+.field{margin-bottom:18px}
+.field label{display:block;font-size:.8rem;font-weight:500;color:#555;margin-bottom:4px}
+.field input,.field select{width:100%;padding:8px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.9rem}
+.field input:focus,.field select:focus{outline:none;border-color:#888}
+
+.db-section{margin-top:24px;padding-top:20px;border-top:1px solid #eee}
+.db-section h3{font-size:.9rem;font-weight:600;margin-bottom:12px}
+.db-options{display:flex;gap:12px;margin-bottom:16px}
+.db-option{flex:1}
+.db-option label{display:flex;align-items:center;gap:8px;padding:12px;border:1px solid #d0d0d0;border-radius:6px;cursor:pointer;font-size:.85rem;transition:border-color .15s}
+.db-option label:hover{border-color:#888}
+.db-option input[type=radio]{accent-color:#333}
+.db-option.selected label{border-color:#333;background:#fafafa}
+.db-external{display:none;margin-top:12px}
+.db-external.active{display:block}
+.db-external .field{margin-bottom:12px}
+.db-external .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+
+.btn{display:block;width:100%;padding:12px;background:#333;color:#fff;border:none;border-radius:4px;font-size:.95rem;cursor:pointer;transition:background .15s;margin-top:24px}
+.btn:hover{background:#555}
+.btn:disabled{background:#aaa;cursor:not-allowed}
+
+.error{color:#c00;font-size:.8rem;margin-top:8px;display:none}
+.success-msg{text-align:center;padding:24px}
+.success-msg h3{font-size:1.1rem;margin-bottom:8px;color:#1a7a1a}
+.success-msg p{color:#666;font-size:.9rem}
+.success-msg a{display:inline-block;margin-top:16px;padding:10px 24px;background:#333;color:#fff;border-radius:4px;text-decoration:none}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <div class="card" id="setupCard">
+    <h2>初始设置</h2>
+    <p class="sub">首次使用 FeedShit，请完成以下配置</p>
+
+    <form id="setupForm">
+      <div class="field">
+        <label>管理员用户名 *</label>
+        <input type="text" id="adminUser" required minlength="2" placeholder="admin" value="admin">
+      </div>
+      <div class="field">
+        <label>管理员密码 *</label>
+        <input type="password" id="adminPwd" required minlength="6" placeholder="至少 6 位">
+      </div>
+      <div class="field">
+        <label>确认密码 *</label>
+        <input type="password" id="adminPwdConfirm" required minlength="6" placeholder="再次输入密码">
+      </div>
+
+      <div class="db-section">
+        <h3>数据库配置</h3>
+        <div class="db-options">
+          <div class="db-option selected" id="dbSqliteOpt">
+            <label><input type="radio" name="dbType" value="sqlite" checked> 内置 SQLite</label>
+          </div>
+          <div class="db-option" id="dbExternalOpt">
+            <label><input type="radio" name="dbType" value="external"> 外部数据库</label>
+          </div>
+        </div>
+
+        <div class="db-external" id="dbExternalFields">
+          <div class="field">
+            <label>数据库类型</label>
+            <select id="extDbType">
+              <option value="mysql">MySQL</option>
+              <option value="postgres">PostgreSQL</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="field"><label>主机</label><input type="text" id="extHost" placeholder="127.0.0.1"></div>
+            <div class="field"><label>端口</label><input type="text" id="extPort" placeholder="3306"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>用户名</label><input type="text" id="extUser"></div>
+            <div class="field"><label>密码</label><input type="password" id="extPass"></div>
+          </div>
+          <div class="field"><label>数据库名</label><input type="text" id="extDbName" placeholder="feedshit"></div>
+          <p style="font-size:.75rem;color:#999;margin-top:4px">外部数据库支持为实验性功能，当前版本仍使用内置 SQLite 存储。</p>
+        </div>
+      </div>
+
+      <div class="error" id="setupError"></div>
+      <button type="submit" class="btn" id="setupBtn">完成设置</button>
+    </form>
+  </div>
+
+  <div class="card" id="successCard" style="display:none">
+    <div class="success-msg">
+      <h3>设置完成</h3>
+      <p>FeedShit 已准备就绪</p>
+      <a href="/">返回首页</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  // DB type toggle
+  var dbRadios = document.querySelectorAll('input[name=dbType]');
+  var sqliteOpt = document.getElementById('dbSqliteOpt');
+  var externalOpt = document.getElementById('dbExternalOpt');
+  var externalFields = document.getElementById('dbExternalFields');
+
+  dbRadios.forEach(function(r){
+    r.addEventListener('change', function(){
+      var isExternal = this.value === 'external';
+      sqliteOpt.classList.toggle('selected', !isExternal);
+      externalOpt.classList.toggle('selected', isExternal);
+      externalFields.classList.toggle('active', isExternal);
+    });
+  });
+
+  // Check if already setup
+  fetch('/api/v1/setup/status').then(function(r){ return r.json(); }).then(function(d){
+    if (d.setup_complete) {
+      window.location.href = '/';
+    }
+  });
+
+  // Form submit
+  document.getElementById('setupForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var user = document.getElementById('adminUser').value.trim();
+    var pwd = document.getElementById('adminPwd').value;
+    var confirm = document.getElementById('adminPwdConfirm').value;
+    var errEl = document.getElementById('setupError');
+    var btn = document.getElementById('setupBtn');
+
+    if (user.length < 2) {
+      errEl.textContent = '用户名至少 2 个字符';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (pwd !== confirm) {
+      errEl.textContent = '两次输入的密码不一致';
+      errEl.style.display = 'block';
+      return;
+    }
+    if (pwd.length < 6) {
+      errEl.textContent = '密码长度不能少于 6 位';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    var dbType = document.querySelector('input[name=dbType]:checked').value;
+    var body = {
+      admin_username: user,
+      admin_password: pwd,
+      db_type: dbType
+    };
+
+    if (dbType === 'external') {
+      body.ext_db_type = document.getElementById('extDbType').value;
+      body.ext_host = document.getElementById('extHost').value.trim();
+      body.ext_port = document.getElementById('extPort').value.trim();
+      body.ext_user = document.getElementById('extUser').value.trim();
+      body.ext_pass = document.getElementById('extPass').value;
+      body.ext_db_name = document.getElementById('extDbName').value.trim();
+    }
+
+    btn.disabled = true;
+    btn.textContent = '保存中...';
+    errEl.style.display = 'none';
+
+    fetch('/api/v1/setup', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.message) {
+        document.getElementById('setupCard').style.display = 'none';
+        document.getElementById('successCard').style.display = 'block';
+      } else {
+        errEl.textContent = d.error || '设置失败';
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '完成设置';
+      }
+    }).catch(function(){
+      errEl.textContent = '网络错误';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = '完成设置';
+    });
+  });
+})();
+</script>
+</body>
+</html>

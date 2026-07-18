@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FeedShit - 管理后台</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;font-size:.9rem}
+a{color:#2563eb;text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* Layout */
+.header{background:#fff;border-bottom:1px solid #e2e2e2;padding:0 24px;display:flex;align-items:center;height:48px;position:sticky;top:0;z-index:100}
+.header h1{font-size:1rem;font-weight:600;margin-right:32px}
+.header h1 span{color:#e53e3e}
+.nav{display:flex;gap:4px}
+.nav button{background:none;border:none;padding:6px 14px;cursor:pointer;font-size:.85rem;color:#666;border-radius:4px}
+.nav button:hover{background:#f0f0f0}
+.nav button.active{background:#333;color:#fff}
+.header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.header-right button{background:none;border:1px solid #ddd;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:.8rem;color:#666}
+.header-right button:hover{background:#f0f0f0}
+
+.main{max-width:1100px;margin:20px auto;padding:0 16px}
+
+/* Stats */
+.stats{display:flex;gap:12px;margin-bottom:20px}
+.stat-card{flex:1;background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:16px}
+.stat-card .num{font-size:1.6rem;font-weight:700;color:#333}
+.stat-card .lbl{font-size:.75rem;color:#888;margin-top:2px}
+
+/* Filter bar */
+.filter-bar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.filter-bar select{padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem;background:#fff}
+.filter-bar .count{color:#888;font-size:.8rem}
+.filter-bar .spacer{flex:1}
+.btn-sm{padding:5px 14px;border:1px solid #d0d0d0;border-radius:4px;cursor:pointer;font-size:.8rem;background:#fff;color:#555}
+.btn-sm:hover{background:#f0f0f0}
+.btn-danger{color:#c00;border-color:#f5c6c6}
+.btn-danger:hover{background:#fde8e8}
+
+/* Table */
+.table-wrap{background:#fff;border:1px solid #e2e2e2;border-radius:6px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 14px;font-size:.75rem;font-weight:600;color:#888;text-transform:uppercase;border-bottom:1px solid #e2e2e2;background:#fafafa}
+td{padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:.85rem}
+tr:hover{background:#f9f9f9}
+tr:last-child td{border-bottom:none}
+.tag{display:inline-block;padding:1px 6px;background:#eee;border-radius:3px;font-size:.75rem;color:#666;font-family:monospace}
+.clickable{cursor:pointer}
+
+/* Toggle switch */
+.toggle-switch{position:relative;display:inline-block;width:36px;height:20px;vertical-align:middle}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:20px;transition:.2s}
+.toggle-slider:before{content:"";position:absolute;height:14px;width:14px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle-switch input:checked+.toggle-slider{background:#333}
+.toggle-switch input:checked+.toggle-slider:before{transform:translateX(16px)}
+
+/* Detail panel */
+.detail-panel{display:none}
+.detail-panel.active{display:block}
+.detail-back{display:inline-flex;align-items:center;gap:4px;margin-bottom:16px;cursor:pointer;color:#666;font-size:.85rem}
+.detail-back:hover{color:#333}
+.detail-card{background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:24px}
+.detail-card h2{font-size:1.1rem;margin-bottom:12px}
+.detail-meta{display:flex;gap:16px;margin-bottom:16px;font-size:.8rem;color:#888;flex-wrap:wrap}
+.detail-meta span{display:flex;align-items:center;gap:4px}
+.detail-desc{margin-bottom:20px;line-height:1.7;white-space:pre-wrap;color:#444}
+.detail-files h3{font-size:.85rem;font-weight:600;margin-bottom:8px;color:#666}
+.file-preview{margin-bottom:12px}
+.file-preview img{max-width:100%;max-height:400px;border:1px solid #e2e2e2;border-radius:4px}
+.file-preview .log-view{background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:4px;font-family:'Cascadia Code',Consolas,monospace;font-size:.8rem;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.file-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.file-header .fname{font-size:.8rem;color:#666}
+.file-header a{font-size:.75rem}
+
+/* Custom data display */
+.custom-data-section{margin-top:16px;padding-top:16px;border-top:1px solid #f0f0f0}
+.custom-data-section h3{font-size:.85rem;font-weight:600;margin-bottom:8px;color:#666}
+.custom-data-item{display:flex;gap:8px;margin-bottom:6px;font-size:.85rem}
+.custom-data-item .cd-label{color:#888;min-width:100px;flex-shrink:0}
+.custom-data-item .cd-value{color:#333;word-break:break-word}
+
+/* Settings */
+.settings-layout{display:flex;gap:20px}
+.settings-nav{width:160px;flex-shrink:0}
+.settings-nav button{display:block;width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;font-size:.85rem;color:#666;border-radius:4px;margin-bottom:2px}
+.settings-nav button:hover{background:#f0f0f0}
+.settings-nav button.active{background:#333;color:#fff}
+.settings-content{flex:1;min-width:0}
+.settings-card{background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:24px}
+.settings-card h2{font-size:1rem;margin-bottom:16px}
+.settings-field{margin-bottom:14px}
+.settings-field label{display:block;font-size:.8rem;color:#666;margin-bottom:3px}
+.settings-field input,.settings-field select,.settings-field textarea{width:100%;padding:7px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem;font-family:inherit}
+.settings-field textarea{resize:vertical;min-height:60px}
+.settings-field .toggle{display:flex;align-items:center;gap:8px}
+.settings-field .toggle input{width:auto}
+.settings-field .hint{font-size:.75rem;color:#999;margin-top:2px}
+.settings-actions{margin-top:20px;display:flex;gap:8px}
+.settings-actions button{padding:8px 20px;border:none;border-radius:4px;cursor:pointer;font-size:.85rem}
+.btn-save{background:#333;color:#fff}
+.btn-save:hover{background:#555}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300;align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal{background:#fff;border-radius:8px;padding:24px;width:560px;max-width:90vw;max-height:85vh;overflow-y:auto}
+.modal h3{font-size:1rem;font-weight:600;margin-bottom:16px}
+.modal .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modal-actions{margin-top:20px;display:flex;gap:8px;justify-content:flex-end}
+.modal-actions button{padding:8px 20px;border:none;border-radius:4px;cursor:pointer;font-size:.85rem}
+
+/* Donut chart */
+.donut-container{display:flex;align-items:center;gap:24px;margin-top:12px}
+.donut-svg{width:160px;height:160px;flex-shrink:0}
+.donut-legend{flex:1}
+.donut-legend-item{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.8rem}
+.donut-legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.donut-legend-label{flex:1;color:#555}
+.donut-legend-count{color:#888;font-size:.75rem}
+
+/* Project detail */
+.project-detail-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.project-detail-header h2{margin-bottom:0}
+.project-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.project-info-card{background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:14px}
+.project-info-card .label{font-size:.75rem;color:#888;margin-bottom:2px}
+.project-info-card .value{font-size:.9rem;color:#333;word-break:break-all}
+
+/* Form builder */
+.form-builder{margin-top:16px}
+.form-builder h3{font-size:.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.fb-field{background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:12px;margin-bottom:8px;display:flex;align-items:flex-start;gap:8px}
+.fb-field-info{flex:1;min-width:0}
+.fb-field-title{font-size:.85rem;font-weight:500;color:#333}
+.fb-field-meta{font-size:.75rem;color:#888;margin-top:2px}
+.fb-field-actions{display:flex;gap:4px;flex-shrink:0}
+.fb-field-actions button{background:none;border:1px solid #ddd;border-radius:3px;cursor:pointer;font-size:.75rem;padding:2px 6px;color:#666}
+.fb-field-actions button:hover{background:#f0f0f0}
+.fb-field-actions button.del:hover{background:#fde8e8;color:#c00}
+.fb-add-btn{display:inline-block;padding:6px 14px;border:1px dashed #ccc;border-radius:4px;cursor:pointer;font-size:.8rem;color:#888;background:none;margin-top:4px}
+.fb-add-btn:hover{border-color:#888;color:#555}
+
+/* Field editor (inside modal) */
+.field-editor{background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:16px;margin-bottom:12px}
+.field-editor h4{font-size:.85rem;font-weight:600;margin-bottom:12px}
+.field-editor .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.field-editor .field-row.full{grid-template-columns:1fr}
+.field-editor label{font-size:.75rem;color:#666;display:block;margin-bottom:2px}
+.field-editor input,.field-editor select,.field-editor textarea{width:100%;padding:6px 8px;border:1px solid #d0d0d0;border-radius:4px;font-size:.8rem;font-family:inherit}
+.field-editor textarea{resize:vertical;min-height:40px}
+.field-editor .toggle{display:flex;align-items:center;gap:6px}
+.field-editor .toggle input{width:auto}
+.options-editor{margin-top:6px}
+.options-editor .opt-row{display:flex;gap:6px;margin-bottom:4px;align-items:center}
+.options-editor .opt-row input{flex:1;padding:5px 8px;border:1px solid #d0d0d0;border-radius:3px;font-size:.8rem}
+.options-editor .opt-row button{background:none;border:none;cursor:pointer;color:#c00;font-size:.8rem;padding:2px 4px}
+.options-editor .add-opt{font-size:.75rem;color:#888;cursor:pointer;border:none;background:none;padding:2px 0}
+.options-editor .add-opt:hover{color:#555}
+
+/* Toast */
+.toast{position:fixed;top:60px;right:20px;padding:10px 18px;border-radius:4px;font-size:.85rem;z-index:400;display:none}
+.toast.success{display:block;background:#e6f9e6;color:#1a7a1a;border:1px solid #b2e0b2}
+.toast.error{display:block;background:#fde8e8;color:#c00;border:1px solid #f5c6c6}
+
+.empty{text-align:center;padding:40px;color:#999}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>Feed</span>Shit</h1>
+  <div class="nav">
+    <button class="active" data-tab="dashboard" onclick="switchTab('dashboard')">概览</button>
+    <button data-tab="projects" onclick="switchTab('projects')">项目</button>
+    <button data-tab="settings" onclick="switchTab('settings')">设置</button>
+  </div>
+  <div class="header-right">
+    <button onclick="logout()">退出登录</button>
+  </div>
+</div>
+
+<div class="main">
+  <!-- ===== Dashboard Tab ===== -->
+  <div id="tab-dashboard">
+    <div class="stats" id="statsRow">
+      <div class="stat-card"><div class="num" id="statTotal">-</div><div class="lbl">总反馈数</div></div>
+      <div class="stat-card"><div class="num" id="statProjects">-</div><div class="lbl">项目数</div></div>
+      <div class="stat-card"><div class="num" id="statToday">-</div><div class="lbl">今日新增</div></div>
+    </div>
+
+    <div id="listView">
+      <div class="filter-bar">
+        <select id="projectFilter" onchange="loadFeedbacks()">
+          <option value="">全部项目</option>
+        </select>
+        <span class="count" id="feedbackCount"></span>
+        <span class="spacer"></span>
+        <button class="btn-sm" onclick="exportCSV()">导出 CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>ID</th><th>项目</th><th>标题</th><th>IP</th><th>时间</th></tr></thead>
+          <tbody id="feedbackTable"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="detail-panel" id="detailView">
+      <div class="detail-back" onclick="showList()">&#8592; 返回列表</div>
+      <div class="detail-card" id="detailContent"></div>
+    </div>
+  </div>
+
+  <!-- ===== Projects Tab ===== -->
+  <div id="tab-projects" style="display:none">
+    <!-- Project list view -->
+    <div id="projectListView">
+      <div class="filter-bar">
+        <strong style="font-size:.95rem">反馈项目</strong>
+        <span class="spacer"></span>
+        <button class="btn-sm" onclick="openProjectModal()">+ 新建项目</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>项目名称</th><th>标识</th><th>状态</th><th>反馈数</th><th>反馈链接</th><th>操作</th></tr></thead>
+          <tbody id="projectTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:20px">
+        <div class="settings-card">
+          <h2>项目反馈统计</h2>
+          <div id="projectStatsChart"><p class="empty">加载中...</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Project detail view -->
+    <div id="projectDetailView" style="display:none">
+      <div class="detail-back" onclick="showProjectList()">&#8592; 返回项目列表</div>
+      <div id="projectDetailContent"></div>
+    </div>
+  </div>
+
+  <!-- ===== Settings Tab ===== -->
+  <div id="tab-settings" style="display:none">
+    <div class="settings-layout">
+      <div class="settings-nav">
+        <button class="active" onclick="switchSettings('email',this)">邮件通知</button>
+        <button onclick="switchSettings('account',this)">账户安全</button>
+        <button onclick="switchSettings('system',this)">系统设置</button>
+      </div>
+      <div class="settings-content">
+        <div class="settings-card" id="settings-email">
+          <h2>邮件通知设置</h2>
+          <div id="emailForm"></div>
+          <div class="settings-actions">
+            <button class="btn-save" onclick="saveEmailSettings()">保存设置</button>
+          </div>
+        </div>
+        <div class="settings-card" id="settings-account" style="display:none">
+          <h2>账户安全</h2>
+          <div id="accountForm"></div>
+          <div class="settings-actions">
+            <button class="btn-save" onclick="saveAccount()">保存修改</button>
+          </div>
+        </div>
+        <div class="settings-card" id="settings-system" style="display:none">
+          <h2>系统设置</h2>
+          <div id="systemForm"></div>
+          <div class="settings-actions">
+            <button class="btn-save" onclick="saveSystemSettings()">保存设置</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Project Modal (create/edit) -->
+<div class="modal-overlay" id="projectModal">
+  <div class="modal">
+    <h3 id="projectModalTitle">新建项目</h3>
+    <input type="hidden" id="pfId">
+    <div class="row">
+      <div class="settings-field"><label>项目名称 *</label><input type="text" id="pfName" placeholder="例：官网、App"></div>
+      <div class="settings-field"><label>项目标识 *</label><input type="text" id="pfSlug" placeholder="例：website、app（小写字母/数字/连字符）"></div>
+    </div>
+    <div class="settings-field"><label>项目描述</label><input type="text" id="pfDesc" placeholder="可选"></div>
+    <div class="settings-field"><div class="toggle"><input type="checkbox" id="pfActive" checked><span>启用（关闭后该项目无法提交新反馈）</span></div></div>
+    <div class="modal-actions">
+      <button class="btn-sm" onclick="closeProjectModal()">取消</button>
+      <button class="btn-save" onclick="saveProject()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- Field Editor Modal -->
+<div class="modal-overlay" id="fieldEditorModal">
+  <div class="modal">
+    <h3 id="fieldEditorTitle">添加字段</h3>
+    <div class="field-editor">
+      <div class="field-row">
+        <div><label>字段类型</label><select id="feType" onchange="onFieldTypeChange()">
+          <option value="text">单行文本</option>
+          <option value="textarea">多行文本</option>
+          <option value="select">下拉选择</option>
+          <option value="checkbox">复选框</option>
+          <option value="radio">单选</option>
+        </select></div>
+        <div><label>字段名称（英文标识）</label><input type="text" id="feName" placeholder="例：priority"></div>
+      </div>
+      <div class="field-row full">
+        <div><label>显示标签</label><input type="text" id="feLabel" placeholder="例：优先级"></div>
+      </div>
+      <div class="field-row full" id="fePlaceholderRow">
+        <div><label>占位提示</label><input type="text" id="fePlaceholder" placeholder="可选"></div>
+      </div>
+      <div class="field-row full" id="feOptionsRow" style="display:none">
+        <div>
+          <label>选项（每行一个）</label>
+          <div class="options-editor" id="feOptionsEditor">
+            <div id="feOptionsList"></div>
+            <button class="add-opt" onclick="addOptionRow()">+ 添加选项</button>
+          </div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="toggle"><input type="checkbox" id="feRequired"><span>必填</span></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm" onclick="closeFieldEditor()">取消</button>
+      <button class="btn-save" onclick="saveFieldEditor()">确定</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  var currentTab = 'dashboard';
+  var feedbacks = [];
+  var allProjects = [];
+  var currentProjectId = null;
+  var currentFormSchema = [];
+  var editingFieldIndex = -1; // -1 = adding new, >=0 = editing existing
+
+  // --- Tab switching with hash routing ---
+  window.switchTab = function(tab) {
+    currentTab = tab;
+    window.location.hash = tab;
+    document.querySelectorAll('.nav button').forEach(function(b){
+      b.classList.toggle('active', b.dataset.tab === tab);
+    });
+    document.getElementById('tab-dashboard').style.display = tab === 'dashboard' ? '' : 'none';
+    document.getElementById('tab-projects').style.display = tab === 'projects' ? '' : 'none';
+    document.getElementById('tab-settings').style.display = tab === 'settings' ? '' : 'none';
+    if (tab === 'projects') { showProjectList(); loadProjects(); loadProjectStats(); }
+    if (tab === 'settings') loadEmailSettings();
+    if (tab === 'dashboard') { showList(); loadStats(); loadFeedbacks(); }
+  };
+
+  // --- API helpers ---
+  async function api(url, opts) {
+    var resp = await fetch(url, opts);
+    if (resp.status === 401) { window.location.href = '/admin/login'; return null; }
+    return resp;
+  }
+
+  // --- Load stats ---
+  async function loadStats() {
+    var resp = await api('/api/v1/admin/stats');
+    if (!resp) return;
+    var d = await resp.json();
+    document.getElementById('statTotal').textContent = d.total_feedbacks || 0;
+    document.getElementById('statProjects').textContent = d.total_projects || 0;
+    document.getElementById('statToday').textContent = d.today_feedbacks || 0;
+  }
+
+  // --- Load feedbacks ---
+  window.loadFeedbacks = async function() {
+    var project = document.getElementById('projectFilter').value;
+    var url = '/api/v1/admin/feedbacks?limit=100';
+    if (project) url += '&project=' + encodeURIComponent(project);
+    var resp = await api(url);
+    if (!resp) return;
+    var d = await resp.json();
+    feedbacks = d.feedbacks || [];
+    var projects = d.projects || [];
+
+    var sel = document.getElementById('projectFilter');
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">全部项目</option>';
+    projects.forEach(function(p){
+      var opt = document.createElement('option');
+      opt.value = p; opt.textContent = p;
+      if (p === cur) opt.selected = true;
+      sel.appendChild(opt);
+    });
+
+    document.getElementById('feedbackCount').textContent = '共 ' + (d.total || 0) + ' 条';
+    renderTable();
+  };
+
+  function renderTable() {
+    var tbody = document.getElementById('feedbackTable');
+    if (feedbacks.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无反馈记录</td></tr>';
+      return;
+    }
+    tbody.innerHTML = feedbacks.map(function(f){
+      var dt = f.created_at ? f.created_at.replace('T',' ').substring(0,16) : '-';
+      return '<tr class="clickable" onclick="showDetail('+f.id+')">' +
+        '<td>#'+f.id+'</td>' +
+        '<td><span class="tag">'+esc(f.project_id)+'</span></td>' +
+        '<td>'+esc(f.title)+'</td>' +
+        '<td style="font-family:monospace;font-size:.8rem;color:#888">'+esc(f.client_ip)+'</td>' +
+        '<td style="color:#888;font-size:.8rem">'+dt+'</td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  // --- Feedback Detail view ---
+  window.showDetail = function(id) {
+    window.location.hash = 'feedback/' + id;
+    showDetailInner(id);
+  };
+
+  async function showDetailInner(id) {
+    var resp = await api('/api/v1/admin/feedbacks/' + id);
+    if (!resp) return;
+    var f = await resp.json();
+    document.getElementById('listView').style.display = 'none';
+    var dv = document.getElementById('detailView');
+    dv.classList.add('active');
+    var dt = f.created_at ? f.created_at.replace('T',' ').substring(0,19) : '-';
+    var html = '<h2>' + esc(f.title) + '</h2>' +
+      '<div class="detail-meta">' +
+        '<span>项目：<span class="tag">'+esc(f.project_id)+'</span></span>' +
+        '<span>IP：'+esc(f.client_ip)+'</span>' +
+        '<span>时间：'+dt+'</span>' +
+        '<span><a href="#" onclick="deleteFeedback('+f.id+');return false;" style="color:#c00">删除</a></span>' +
+      '</div>';
+    if (f.description) html += '<div class="detail-desc">' + esc(f.description) + '</div>';
+
+    // Custom data
+    var customData = {};
+    try { customData = JSON.parse(f.custom_data || '{}'); } catch(e){}
+    var cdKeys = Object.keys(customData);
+    if (cdKeys.length > 0) {
+      html += '<div class="custom-data-section"><h3>自定义字段</h3>';
+      cdKeys.forEach(function(k){
+        var val = customData[k];
+        var displayVal = Array.isArray(val) ? val.join(', ') : String(val);
+        html += '<div class="custom-data-item"><span class="cd-label">'+esc(k)+'</span><span class="cd-value">'+esc(displayVal)+'</span></div>';
+      });
+      html += '</div>';
+    }
+
+    var files = [];
+    try { files = JSON.parse(f.file_paths || '[]'); } catch(e){}
+    if (files.length > 0) {
+      html += '<div class="detail-files"><h3>附件 ('+files.length+')</h3>';
+      files.forEach(function(fp){
+        var fname = fp.split('/').pop();
+        var isImage = /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(fname);
+        var isLog = /\.(log|txt|csv|json)$/i.test(fname);
+        var fileUrl = '/admin/files/' + fp;
+        html += '<div class="file-preview">';
+        html += '<div class="file-header"><span class="fname">'+esc(fname)+'</span>';
+        html += '<a href="'+fileUrl+'" target="_blank" download="'+esc(fname)+'">下载</a></div>';
+        if (isImage) html += '<img src="'+fileUrl+'" alt="'+esc(fname)+'" loading="lazy">';
+        else if (isLog) {
+          var logId = 'log-'+btoa(fp).replace(/[^a-zA-Z0-9]/g,'');
+          html += '<div class="log-view" id="'+logId+'">加载中...</div>';
+          loadLogContent(fileUrl, logId);
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    document.getElementById('detailContent').innerHTML = html;
+  }
+
+  async function loadLogContent(url, elemId) {
+    try {
+      var resp = await fetch(url);
+      var text = await resp.text();
+      var el = document.getElementById(elemId);
+      if (el) {
+        if (text.length > 51200) text = text.substring(0, 51200) + '\n... (仅显示前 50KB)';
+        el.textContent = text;
+      }
+    } catch(e) {
+      var el = document.getElementById(elemId);
+      if (el) el.textContent = '加载失败';
+    }
+  }
+
+  window.showList = function() {
+    document.getElementById('detailView').classList.remove('active');
+    document.getElementById('listView').style.display = '';
+    window.location.hash = currentTab;
+  };
+
+  window.deleteFeedback = async function(id) {
+    if (!confirm('确认删除此反馈记录？')) return;
+    var resp = await api('/api/v1/admin/feedbacks/' + id, { method: 'DELETE' });
+    if (!resp) return;
+    showToast('已删除', 'success');
+    showList(); loadFeedbacks(); loadStats();
+  };
+
+  // --- CSV Export ---
+  window.exportCSV = function() {
+    var project = document.getElementById('projectFilter').value;
+    var url = '/api/v1/admin/feedbacks/export';
+    if (project) url += '?project=' + encodeURIComponent(project);
+    window.open(url, '_blank');
+  };
+
+  // ========== Projects ==========
+  window.loadProjects = async function() {
+    var resp = await api('/api/v1/admin/projects');
+    if (!resp) return;
+    var d = await resp.json();
+    allProjects = d.projects || [];
+    var tbody = document.getElementById('projectTable');
+    if (allProjects.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无项目，点击右上角创建</td></tr>';
+      return;
+    }
+    tbody.innerHTML = allProjects.map(function(p){
+      var checked = p.is_active ? ' checked' : '';
+      var toggleHtml = '<label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox"' + checked + ' onchange="toggleProjectActive(' + p.id + ',this.checked)"><span class="toggle-slider"></span></label>';
+      var fbUrl = window.location.origin + '/fb/' + encodeURIComponent(p.slug);
+      var fbCount = (typeof p.feedback_count === 'number') ? p.feedback_count : 0;
+      return '<tr>' +
+        '<td><strong>'+esc(p.name)+'</strong>' + (p.description ? '<br><span style="font-size:.75rem;color:#888">'+esc(p.description)+'</span>' : '') + '</td>' +
+        '<td><span class="tag">'+esc(p.slug)+'</span></td>' +
+        '<td>'+toggleHtml+'</td>' +
+        '<td>'+fbCount+'</td>' +
+        '<td style="font-size:.75rem"><code>'+esc(fbUrl)+'</code> <a href="#" onclick="copyUrl(\''+fbUrl+'\');return false;" title="复制">复制</a></td>' +
+        '<td><a href="#" onclick="viewProjectDetail('+p.id+');return false;">详情</a> ' +
+        '<a href="#" onclick="editProject('+p.id+');return false;">编辑</a> ' +
+        '<a href="#" onclick="deleteProject('+p.id+',\''+esc(p.name).replace(/'/g,"\\'")+'\');return false;" style="color:#c00">删除</a></td>' +
+        '</tr>';
+    }).join('');
+  };
+
+  // Quick toggle project active status
+  window.toggleProjectActive = async function(id, active) {
+    var project = allProjects.find(function(p){ return p.id === id; });
+    if (!project) { showToast('项目不存在', 'error'); return; }
+    var resp = await api('/api/v1/admin/projects/' + id, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: project.name,
+        slug: project.slug,
+        description: project.description || '',
+        is_active: active,
+        form_schema: project.form_schema || '[]'
+      })
+    });
+    if (!resp) return;
+    var data = await resp.json();
+    if (data.error) { showToast(data.error, 'error'); loadProjects(); return; }
+    showToast(active ? '已启用' : '已停用', 'success');
+    loadStats();
+    // Update local cache
+    project.is_active = active;
+  };
+
+  window.copyUrl = function(url) {
+    navigator.clipboard.writeText(url).then(function(){ showToast('链接已复制', 'success'); });
+  };
+
+  // --- Project Modal ---
+  window.openProjectModal = function() {
+    document.getElementById('projectModalTitle').textContent = '新建项目';
+    document.getElementById('pfId').value = '';
+    document.getElementById('pfName').value = '';
+    document.getElementById('pfSlug').value = '';
+    document.getElementById('pfSlug').readOnly = false;
+    document.getElementById('pfDesc').value = '';
+    document.getElementById('pfActive').checked = true;
+    document.getElementById('projectModal').classList.add('active');
+  };
+
+  window.closeProjectModal = function() {
+    document.getElementById('projectModal').classList.remove('active');
+  };
+
+  window.editProject = function(id) {
+    var project = allProjects.find(function(p){ return p.id === id; });
+    if (!project) return;
+    document.getElementById('projectModalTitle').textContent = '编辑项目';
+    document.getElementById('pfId').value = id;
+    document.getElementById('pfName').value = project.name;
+    document.getElementById('pfSlug').value = project.slug;
+    document.getElementById('pfSlug').readOnly = true;
+    document.getElementById('pfDesc').value = project.description || '';
+    document.getElementById('pfActive').checked = project.is_active;
+    document.getElementById('projectModal').classList.add('active');
+  };
+
+  window.saveProject = async function() {
+    var id = document.getElementById('pfId').value;
+    var body = {
+      name: document.getElementById('pfName').value.trim(),
+      slug: document.getElementById('pfSlug').value.trim(),
+      description: document.getElementById('pfDesc').value.trim(),
+      is_active: document.getElementById('pfActive').checked
+    };
+    if (!body.name || !body.slug) { showToast('名称和标识不能为空', 'error'); return; }
+    var url = id ? '/api/v1/admin/projects/' + id : '/api/v1/admin/projects';
+    var method = id ? 'PUT' : 'POST';
+    var resp = await api(url, { method: method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!resp) return;
+    var d = await resp.json();
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast(d.message, 'success');
+    closeProjectModal();
+    loadProjects(); loadStats();
+  };
+
+  window.deleteProject = async function(id, name) {
+    if (!confirm('确认删除项目 "'+name+'"？关联的反馈数据不会被删除。')) return;
+    var resp = await api('/api/v1/admin/projects/' + id, { method: 'DELETE' });
+    if (!resp) return;
+    showToast('已删除', 'success');
+    loadProjects(); loadStats();
+  };
+
+  // --- Donut Chart ---
+  var chartColors = ['#333','#e53e3e','#2563eb','#38a169','#d69e2e','#805ad5','#dd6b20','#319795','#d53f8c','#718096'];
+
+  window.loadProjectStats = async function() {
+    var resp = await api('/api/v1/admin/project-stats');
+    if (!resp) return;
+    var d = await resp.json();
+    var stats = d.stats || [];
+    var chart = document.getElementById('projectStatsChart');
+    if (stats.length === 0) { chart.innerHTML = '<p class="empty">暂无数据</p>'; return; }
+
+    var total = stats.reduce(function(s,x){ return s + x.count; }, 0);
+    if (total === 0) { chart.innerHTML = '<p class="empty">暂无数据</p>'; return; }
+
+    // Build SVG donut
+    var size = 160, cx = 80, cy = 80, r = 60, strokeW = 24;
+    var circumference = 2 * Math.PI * r;
+    var offset = 0;
+    var svgPaths = '';
+    var legendHtml = '';
+
+    stats.forEach(function(s, i){
+      var pct = s.count / total;
+      var dashLen = pct * circumference;
+      var color = chartColors[i % chartColors.length];
+      var label = s.project_name || s.project_id;
+
+      svgPaths += '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="'+strokeW+'" ' +
+        'stroke-dasharray="'+dashLen+' '+(circumference - dashLen)+'" ' +
+        'stroke-dashoffset="'+(-offset)+'" ' +
+        'transform="rotate(-90 '+cx+' '+cy+')" />';
+      offset += dashLen;
+
+      legendHtml += '<div class="donut-legend-item">' +
+        '<div class="donut-legend-dot" style="background:'+color+'"></div>' +
+        '<span class="donut-legend-label">'+esc(label)+'</span>' +
+        '<span class="donut-legend-count">'+s.count+' ('+Math.round(pct*100)+'%)</span>' +
+        '</div>';
+    });
+
+    var svg = '<svg class="donut-svg" viewBox="0 0 '+size+' '+size+'">' + svgPaths +
+      '<text x="'+cx+'" y="'+cy+'" text-anchor="middle" dominant-baseline="central" font-size="18" font-weight="700" fill="#333">'+total+'</text>' +
+      '<text x="'+cx+'" y="'+(cy+16)+'" text-anchor="middle" font-size="10" fill="#888">总计</text>' +
+      '</svg>';
+
+    chart.innerHTML = '<div class="donut-container">' + svg + '<div class="donut-legend">' + legendHtml + '</div></div>';
+  };
+
+  // ========== Project Detail ==========
+  window.viewProjectDetail = function(id) {
+    currentProjectId = id;
+    window.location.hash = 'project/' + id;
+    loadProjectDetail(id);
+  };
+
+  window.showProjectList = function() {
+    currentProjectId = null;
+    document.getElementById('projectDetailView').style.display = 'none';
+    document.getElementById('projectListView').style.display = '';
+    window.location.hash = 'projects';
+  };
+
+  async function loadProjectDetail(id) {
+    // Load project data
+    var resp = await api('/api/v1/admin/projects');
+    if (!resp) return;
+    var d = await resp.json();
+    var project = (d.projects || []).find(function(p){ return p.id === id; });
+    if (!project) { showToast('项目不存在', 'error'); showProjectList(); return; }
+
+    // Parse form schema
+    try { currentFormSchema = JSON.parse(project.form_schema || '[]'); } catch(e) { currentFormSchema = []; }
+
+    document.getElementById('projectListView').style.display = 'none';
+    var dv = document.getElementById('projectDetailView');
+    dv.style.display = '';
+
+    var fbUrl = window.location.origin + '/fb/' + encodeURIComponent(project.slug);
+    var statusText = project.is_active ? '启用' : '停用';
+    var statusColor = project.is_active ? '#1a7a1a' : '#c00';
+
+    var html = '<div class="project-detail-header">' +
+      '<h2>' + esc(project.name) + '</h2>' +
+      '<span class="tag">' + esc(project.slug) + '</span>' +
+      '<span style="color:'+statusColor+';font-size:.8rem">' + statusText + '</span>' +
+      '<span class="spacer" style="flex:1"></span>' +
+      '<button class="btn-sm" onclick="editProject('+project.id+')">编辑基本信息</button>' +
+      '</div>';
+
+    if (project.description) {
+      html += '<p style="color:#666;font-size:.85rem;margin-bottom:16px">' + esc(project.description) + '</p>';
+    }
+
+    html += '<div class="project-info-grid">' +
+      '<div class="project-info-card"><div class="label">反馈链接</div><div class="value"><code>' + esc(fbUrl) + '</code> <a href="#" onclick="copyUrl(\''+fbUrl+'\');return false;" style="font-size:.75rem">复制</a></div></div>' +
+      '<div class="project-info-card"><div class="label">反馈数量</div><div class="value" style="font-size:1.2rem;font-weight:700">' + (project.feedback_count || 0) + '</div></div>' +
+      '</div>';
+
+    // Form schema builder
+    html += '<div class="settings-card" style="margin-bottom:20px">' +
+      '<h2>自定义表单字段</h2>' +
+      '<p style="font-size:.8rem;color:#888;margin-bottom:12px">配置反馈页面除标题和描述外的额外收集字段。拖拽排序，点击编辑或删除。</p>' +
+      '<div class="form-builder" id="formBuilder">';
+
+    if (currentFormSchema.length === 0) {
+      html += '<p style="color:#999;font-size:.8rem;margin-bottom:8px">暂无自定义字段，反馈页仅收集标题和描述。</p>';
+    } else {
+      currentFormSchema.forEach(function(f, i){
+        var typeLabels = {text:'单行文本',textarea:'多行文本',select:'下拉选择',checkbox:'复选框',radio:'单选'};
+        var typeLabel = typeLabels[f.type] || f.type;
+        var reqMark = f.required ? ' <span style="color:#c00">*</span>' : '';
+        var optInfo = '';
+        if (f.options && f.options.length > 0) {
+          optInfo = ' &mdash; ' + f.options.length + ' 个选项';
+        }
+        html += '<div class="fb-field">' +
+          '<div class="fb-field-info">' +
+          '<div class="fb-field-title">' + esc(f.label) + reqMark + '</div>' +
+          '<div class="fb-field-meta">' + typeLabel + ' &middot; <code>' + esc(f.name) + '</code>' + optInfo + '</div>' +
+          '</div>' +
+          '<div class="fb-field-actions">' +
+          (i > 0 ? '<button onclick="moveField('+i+',-1)" title="上移">&uarr;</button>' : '') +
+          (i < currentFormSchema.length - 1 ? '<button onclick="moveField('+i+',1)" title="下移">&darr;</button>' : '') +
+          '<button onclick="editField('+i+')">编辑</button>' +
+          '<button class="del" onclick="removeField('+i+')">删除</button>' +
+          '</div></div>';
+      });
+    }
+
+    html += '<button class="fb-add-btn" onclick="addField()">+ 添加字段</button>';
+    html += '</div>';
+    html += '<div class="settings-actions"><button class="btn-save" onclick="saveFormSchema()">保存表单配置</button></div>';
+    html += '</div>';
+
+    // Recent feedbacks for this project
+    html += '<div class="settings-card">' +
+      '<h2>最近反馈</h2>' +
+      '<div id="projectFeedbacks"><p class="empty">加载中...</p></div>' +
+      '</div>';
+
+    document.getElementById('projectDetailContent').innerHTML = html;
+
+    // Load feedbacks for this project
+    loadProjectFeedbacks(project.slug);
+  }
+
+  async function loadProjectFeedbacks(slug) {
+    var resp = await api('/api/v1/admin/feedbacks?limit=20&project=' + encodeURIComponent(slug));
+    if (!resp) return;
+    var d = await resp.json();
+    var fbs = d.feedbacks || [];
+    var container = document.getElementById('projectFeedbacks');
+    if (!container) return;
+    if (fbs.length === 0) {
+      container.innerHTML = '<p class="empty">暂无反馈</p>';
+      return;
+    }
+    var html = '<div class="table-wrap"><table><thead><tr><th>ID</th><th>标题</th><th>IP</th><th>时间</th></tr></thead><tbody>';
+    fbs.forEach(function(f){
+      var dt = f.created_at ? f.created_at.replace('T',' ').substring(0,16) : '-';
+      html += '<tr class="clickable" onclick="showDetail('+f.id+')">' +
+        '<td>#'+f.id+'</td>' +
+        '<td>'+esc(f.title)+'</td>' +
+        '<td style="font-family:monospace;font-size:.8rem;color:#888">'+esc(f.client_ip)+'</td>' +
+        '<td style="color:#888;font-size:.8rem">'+dt+'</td>' +
+        '</tr>';
+    });
+    html += '</tbody></table></div>';
+    if (d.total > 20) {
+      html += '<p style="text-align:center;margin-top:8px;font-size:.8rem;color:#888">仅显示最近 20 条，共 ' + d.total + ' 条</p>';
+    }
+    container.innerHTML = html;
+  }
+
+  // --- Form Schema Builder ---
+  window.moveField = function(index, direction) {
+    var newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= currentFormSchema.length) return;
+    var tmp = currentFormSchema[index];
+    currentFormSchema[index] = currentFormSchema[newIndex];
+    currentFormSchema[newIndex] = tmp;
+    // Re-render detail
+    loadProjectDetail(currentProjectId);
+  };
+
+  window.removeField = function(index) {
+    currentFormSchema.splice(index, 1);
+    loadProjectDetail(currentProjectId);
+  };
+
+  window.addField = function() {
+    editingFieldIndex = -1;
+    document.getElementById('fieldEditorTitle').textContent = '添加字段';
+    document.getElementById('feType').value = 'text';
+    document.getElementById('feName').value = '';
+    document.getElementById('feLabel').value = '';
+    document.getElementById('fePlaceholder').value = '';
+    document.getElementById('feRequired').checked = false;
+    document.getElementById('feOptionsList').innerHTML = '';
+    onFieldTypeChange();
+    document.getElementById('fieldEditorModal').classList.add('active');
+  };
+
+  window.editField = function(index) {
+    editingFieldIndex = index;
+    var field = currentFormSchema[index];
+    document.getElementById('fieldEditorTitle').textContent = '编辑字段';
+    document.getElementById('feType').value = field.type;
+    document.getElementById('feName').value = field.name;
+    document.getElementById('feLabel').value = field.label;
+    document.getElementById('fePlaceholder').value = field.placeholder || '';
+    document.getElementById('feRequired').checked = !!field.required;
+    onFieldTypeChange();
+    // Populate options
+    var optList = document.getElementById('feOptionsList');
+    optList.innerHTML = '';
+    if (field.options) {
+      field.options.forEach(function(opt){
+        addOptionRow(opt);
+      });
+    }
+    document.getElementById('fieldEditorModal').classList.add('active');
+  };
+
+  window.closeFieldEditor = function() {
+    document.getElementById('fieldEditorModal').classList.remove('active');
+    editingFieldIndex = -1;
+  };
+
+  window.onFieldTypeChange = function() {
+    var type = document.getElementById('feType').value;
+    var needsOptions = (type === 'select' || type === 'radio' || type === 'checkbox');
+    document.getElementById('feOptionsRow').style.display = needsOptions ? '' : 'none';
+    document.getElementById('fePlaceholderRow').style.display = (type === 'text' || type === 'textarea') ? '' : 'none';
+  };
+
+  window.addOptionRow = function(value) {
+    var list = document.getElementById('feOptionsList');
+    var div = document.createElement('div');
+    div.className = 'opt-row';
+    div.innerHTML = '<input type="text" placeholder="选项值" value="' + esc(value || '') + '">' +
+      '<button onclick="this.parentNode.remove()" title="删除">&times;</button>';
+    list.appendChild(div);
+  };
+
+  window.saveFieldEditor = function() {
+    var type = document.getElementById('feType').value;
+    var name = document.getElementById('feName').value.trim();
+    var label = document.getElementById('feLabel').value.trim();
+    var placeholder = document.getElementById('fePlaceholder').value.trim();
+    var required = document.getElementById('feRequired').checked;
+
+    if (!name || !label) { showToast('字段名称和标签不能为空', 'error'); return; }
+    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) { showToast('字段名称须为英文字母开头，仅含字母数字下划线', 'error'); return; }
+
+    // Check for duplicate name (except when editing the same field)
+    var isDuplicate = currentFormSchema.some(function(f, i){ return f.name === name && i !== editingFieldIndex; });
+    if (isDuplicate) { showToast('字段名称已存在', 'error'); return; }
+
+    var field = { type: type, name: name, label: label, required: required };
+    if (placeholder) field.placeholder = placeholder;
+
+    // Collect options if needed
+    var needsOptions = (type === 'select' || type === 'radio' || type === 'checkbox');
+    if (needsOptions) {
+      var optInputs = document.getElementById('feOptionsList').querySelectorAll('input');
+      var options = [];
+      optInputs.forEach(function(inp){
+        var v = inp.value.trim();
+        if (v) options.push(v);
+      });
+      if (options.length === 0) { showToast('请至少添加一个选项', 'error'); return; }
+      field.options = options;
+    }
+
+    if (editingFieldIndex >= 0) {
+      currentFormSchema[editingFieldIndex] = field;
+    } else {
+      currentFormSchema.push(field);
+    }
+
+    closeFieldEditor();
+    loadProjectDetail(currentProjectId);
+  };
+
+  window.saveFormSchema = async function() {
+    var project = allProjects.find(function(p){ return p.id === currentProjectId; });
+    if (!project) return;
+    var resp = await api('/api/v1/admin/projects/' + currentProjectId, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: project.name,
+        slug: project.slug,
+        description: project.description || '',
+        is_active: project.is_active,
+        form_schema: JSON.stringify(currentFormSchema)
+      })
+    });
+    if (!resp) return;
+    var d = await resp.json();
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast('表单配置已保存', 'success');
+    // Update local cache
+    project.form_schema = JSON.stringify(currentFormSchema);
+  };
+
+  // ========== Settings ==========
+  window.switchSettings = function(section, btn) {
+    document.querySelectorAll('.settings-nav button').forEach(function(b){ b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    document.getElementById('settings-email').style.display = section === 'email' ? '' : 'none';
+    document.getElementById('settings-account').style.display = section === 'account' ? '' : 'none';
+    document.getElementById('settings-system').style.display = section === 'system' ? '' : 'none';
+    if (section === 'email') loadEmailSettings();
+    if (section === 'account') loadAccountSettings();
+    if (section === 'system') loadSystemSettings();
+  };
+
+  // --- Email ---
+  async function loadEmailSettings() {
+    var resp = await api('/api/v1/admin/config/email');
+    if (!resp) return;
+    var d = await resp.json();
+    var configs = d.config || [];
+    var labels = { smtp_host:'SMTP 服务器', smtp_port:'SMTP 端口', smtp_user:'SMTP 用户名', smtp_pass:'SMTP 密码', smtp_from:'发件人地址', smtp_to:'收件人地址（多个用逗号分隔）', notify_enable:'启用邮件通知' };
+    var html = '';
+    configs.forEach(function(c){
+      var label = labels[c.key] || c.key;
+      if (c.key === 'notify_enable') {
+        var checked = c.value === 'true' ? ' checked' : '';
+        html += '<div class="settings-field"><label>'+label+'</label><div class="toggle"><input type="checkbox" id="ecfg_'+c.key+'"'+checked+'><span>'+(c.value==='true'?'已启用':'已禁用')+'</span></div></div>';
+      } else if (c.key === 'smtp_pass') {
+        html += '<div class="settings-field"><label>'+label+'</label><input type="password" id="ecfg_'+c.key+'" value="'+esc(c.value)+'"></div>';
+      } else {
+        html += '<div class="settings-field"><label>'+label+'</label><input type="text" id="ecfg_'+c.key+'" value="'+esc(c.value)+'"></div>';
+      }
+    });
+    document.getElementById('emailForm').innerHTML = html;
+  }
+
+  window.saveEmailSettings = async function() {
+    var updates = [];
+    ['smtp_host','smtp_port','smtp_user','smtp_pass','smtp_from','smtp_to'].forEach(function(k){
+      var el = document.getElementById('ecfg_'+k);
+      if (el) updates.push({key:k, value:el.value});
+    });
+    var nEl = document.getElementById('ecfg_notify_enable');
+    if (nEl) updates.push({key:'notify_enable', value:nEl.checked?'true':'false'});
+    var resp = await api('/api/v1/admin/config/email', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(updates) });
+    if (!resp) return;
+    var d = await resp.json();
+    showToast(d.message || '已保存', 'success');
+  };
+
+  // --- Account ---
+  async function loadAccountSettings() {
+    var resp = await api('/api/v1/admin/config/account');
+    if (!resp) return;
+    var d = await resp.json();
+    document.getElementById('accountForm').innerHTML =
+      '<div class="settings-field"><label>当前用户名</label><input type="text" id="accUser" value="'+esc(d.username)+'"></div>' +
+      '<div class="settings-field"><label>当前密码</label><input type="password" id="accOldPwd" placeholder="修改用户名或密码需验证当前密码"></div>' +
+      '<div class="settings-field"><label>新密码（留空不修改）</label><input type="password" id="accNewPwd" placeholder="至少 6 位"></div>' +
+      '<div class="settings-field"><label>确认新密码</label><input type="password" id="accNewPwd2" placeholder="再次输入新密码"></div>';
+  }
+
+  window.saveAccount = async function() {
+    var oldPwd = document.getElementById('accOldPwd').value;
+    if (!oldPwd) { showToast('请输入当前密码', 'error'); return; }
+    var newPwd = document.getElementById('accNewPwd').value;
+    var newPwd2 = document.getElementById('accNewPwd2').value;
+    if (newPwd && newPwd !== newPwd2) { showToast('两次新密码不一致', 'error'); return; }
+    if (newPwd && newPwd.length < 6) { showToast('密码至少 6 位', 'error'); return; }
+    var resp = await api('/api/v1/admin/config/account', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ username: document.getElementById('accUser').value.trim(), new_password: newPwd, old_password: oldPwd })
+    });
+    if (!resp) return;
+    var d = await resp.json();
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast(d.message, 'success');
+  };
+
+  // --- System ---
+  async function loadSystemSettings() {
+    var resp = await api('/api/v1/admin/config/system');
+    if (!resp) return;
+    var d = await resp.json();
+    document.getElementById('systemForm').innerHTML =
+      '<div class="settings-field"><label>系统基础 URL</label><input type="text" id="sysBase" value="'+esc(d.base_url)+'"><div class="hint">用于邮件通知中的链接</div></div>' +
+      '<div class="settings-field"><label>PoW 难度（前导零位数）</label><input type="number" id="sysPoW" value="'+d.pow_difficulty+'" min="1" max="10"><div class="hint">越高越安全，但客户端计算时间更长</div></div>' +
+      '<div class="settings-field"><label>每小时提交上限（每 IP）</label><input type="number" id="sysRate" value="'+d.rate_limit_per_hr+'" min="1"></div>';
+  }
+
+  window.saveSystemSettings = async function() {
+    var resp = await api('/api/v1/admin/config/system', {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        base_url: document.getElementById('sysBase').value.trim(),
+        pow_difficulty: parseInt(document.getElementById('sysPoW').value) || 4,
+        rate_limit_per_hr: parseInt(document.getElementById('sysRate').value) || 3
+      })
+    });
+    if (!resp) return;
+    var d = await resp.json();
+    showToast(d.message, 'success');
+  };
+
+  // --- Logout ---
+  window.logout = async function() {
+    await api('/api/v1/admin/logout', { method: 'POST' });
+    window.location.href = '/admin/login';
+  };
+
+  // --- Helpers ---
+  function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function showToast(msg, type) {
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast ' + type;
+    setTimeout(function(){ t.className = 'toast'; }, 3000);
+  }
+
+  // --- Init with hash-based routing ---
+  function handleHash() {
+    var hash = window.location.hash.replace('#','');
+
+    // Feedback detail: #feedback/123
+    if (hash.startsWith('feedback/')) {
+      var id = parseInt(hash.split('/')[1]);
+      if (id && currentTab === 'dashboard') {
+        switchTab('dashboard');
+        setTimeout(function(){ showDetailInner(id); }, 100);
+      }
+      return;
+    }
+
+    // Project detail: #project/123
+    if (hash.startsWith('project/')) {
+      var pid = parseInt(hash.split('/')[1]);
+      if (pid) {
+        currentTab = 'projects';
+        document.querySelectorAll('.nav button').forEach(function(b){
+          b.classList.toggle('active', b.dataset.tab === 'projects');
+        });
+        document.getElementById('tab-dashboard').style.display = 'none';
+        document.getElementById('tab-projects').style.display = '';
+        document.getElementById('tab-settings').style.display = 'none';
+        loadProjects().then(function(){ viewProjectDetail(pid); });
+      }
+      return;
+    }
+
+    var validTabs = ['dashboard','projects','settings'];
+    if (validTabs.indexOf(hash) >= 0) {
+      switchTab(hash);
+    } else {
+      currentTab = 'dashboard';
+      window.location.hash = 'dashboard';
+    }
+  }
+
+  window.addEventListener('hashchange', handleHash);
+
+  // Initial load
+  loadStats();
+  loadFeedbacks();
+  handleHash();
+})();
+</script>
+</body>
+</html>

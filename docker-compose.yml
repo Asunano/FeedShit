@@ -1,0 +1,27 @@
+services:
+  feedshit:
+    build: .
+    container_name: feedshit
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=changeme
+      - BASE_URL=http://localhost:8080
+      # Email (optional, can also be configured via admin UI)
+      - SMTP_HOST=
+      - SMTP_PORT=587
+      - SMTP_USER=
+      - SMTP_PASS=
+      - SMTP_FROM=
+      - SMTP_TO=
+      - NOTIFY_ENABLE=false
+      # PoW difficulty (leading hex zeros)
+      - POW_DIFFICULTY=4
+      # Rate limit: max submissions per IP per hour
+      - RATE_LIMIT_PER_HOUR=3
+      # Max upload size in MB
+      - MAX_UPLOAD_MB=20

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>反馈提交</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;line-height:1.6}
+.container{max-width:560px;margin:40px auto;padding:0 16px}
+h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
+.subtitle{color:#888;font-size:.85rem;margin-bottom:24px}
+.card{background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:24px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:.85rem;font-weight:500;margin-bottom:4px;color:#555}
+.field .req{color:#c00;margin-left:2px}
+.field input[type=text],.field textarea,.field select{width:100%;padding:8px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.9rem;font-family:inherit;transition:border-color .15s}
+.field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:#888}
+.field textarea{resize:vertical;min-height:100px}
+.field select{background:#fff}
+.checkbox-group,.radio-group{display:flex;flex-direction:column;gap:6px}
+.checkbox-group label,.radio-group label{display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;font-size:.85rem}
+.checkbox-group input,.radio-group input{width:auto;margin:0}
+.file-area{margin-bottom:16px}
+.file-area .label{font-size:.85rem;font-weight:500;margin-bottom:4px;color:#555}
+.file-input-wrap{position:relative;border:1px dashed #ccc;border-radius:4px;padding:12px;text-align:center;cursor:pointer;transition:border-color .15s}
+.file-input-wrap:hover{border-color:#888}
+.file-input-wrap input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.file-input-wrap .hint{color:#999;font-size:.8rem}
+.file-list{margin-top:8px;font-size:.8rem;color:#666}
+.file-list .item{display:flex;justify-content:space-between;align-items:center;padding:3px 0}
+.file-list .item .remove{color:#c00;cursor:pointer;font-size:.75rem}
+.project-badge{display:inline-block;background:#eee;padding:2px 8px;border-radius:3px;font-size:.8rem;color:#666;font-family:monospace}
+.btn{display:block;width:100%;padding:10px;background:#333;color:#fff;border:none;border-radius:4px;font-size:.9rem;cursor:pointer;transition:background .15s}
+.btn:hover{background:#555}
+.btn:disabled{background:#aaa;cursor:not-allowed}
+.status{margin-top:12px;padding:10px;border-radius:4px;font-size:.85rem;display:none}
+.status.success{display:block;background:#e6f9e6;color:#1a7a1a;border:1px solid #b2e0b2}
+.status.error{display:block;background:#fde8e8;color:#c00;border:1px solid #f5c6c6}
+.status.loading{display:block;background:#fff8e1;color:#856404;border:1px solid #ffeeba}
+.pow-indicator{margin-top:8px;font-size:.75rem;color:#999;display:none}
+.pow-indicator.active{display:block}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1 id="pageTitle">反馈提交</h1>
+  <p class="subtitle" id="pageSubtitle">项目：<span class="project-badge" id="projectDisplay">-</span></p>
+  <div class="card">
+    <form id="feedbackForm" enctype="multipart/form-data">
+      <div class="field">
+        <label for="title">问题标题 <span class="req">*</span></label>
+        <input type="text" id="title" name="title" required placeholder="简要描述问题">
+      </div>
+      <div class="field">
+        <label for="description">详细描述</label>
+        <textarea id="description" name="description" placeholder="请详细描述遇到的问题、复现步骤等信息"></textarea>
+      </div>
+
+      <!-- Dynamic custom fields injected here -->
+      <div id="customFieldsContainer"></div>
+
+      <div class="file-area">
+        <div class="label">截图上传</div>
+        <div class="file-input-wrap">
+          <input type="file" id="images" name="images" multiple accept="image/*">
+          <span class="hint">点击或拖拽图片到此处</span>
+        </div>
+        <div class="file-list" id="imageList"></div>
+      </div>
+      <div class="file-area">
+        <div class="label">日志文件</div>
+        <div class="file-input-wrap">
+          <input type="file" id="files" name="files" multiple accept=".log,.txt,.csv,.json">
+          <span class="hint">点击或拖拽文件到此处（.log / .txt / .csv / .json）</span>
+        </div>
+        <div class="file-list" id="fileList"></div>
+      </div>
+      <button type="submit" class="btn" id="submitBtn">提交反馈</button>
+      <div class="pow-indicator" id="powIndicator">正在计算工作量证明...</div>
+      <div class="status" id="statusMsg"></div>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  // Project data injected by server — unique per /fb/{slug} page
+  var PROJECT = /*__PROJECT_DATA__*/null;
+  if (!PROJECT) {
+    document.body.innerHTML = '<div style="text-align:center;padding:60px;font-family:sans-serif"><h1>页面错误</h1><p>项目信息未加载</p></div>';
+    return;
+  }
+
+  // Set page title and project display
+  document.title = PROJECT.name + ' - 反馈提交';
+  document.getElementById('pageTitle').textContent = PROJECT.name + ' 反馈';
+  document.getElementById('projectDisplay').textContent = PROJECT.slug;
+  if (PROJECT.description) {
+    document.getElementById('pageSubtitle').innerHTML =
+      '项目：<span class="project-badge">' + escHtml(PROJECT.slug) + '</span> ' +
+      '<span style="color:#aaa;font-size:.8rem">' + escHtml(PROJECT.description) + '</span>';
+  }
+
+  // ========== Render custom fields from form_schema ==========
+  var formSchema = PROJECT.form_schema || [];
+  var customContainer = document.getElementById('customFieldsContainer');
+
+  function renderCustomFields() {
+    if (formSchema.length === 0) return;
+    var html = '';
+    formSchema.forEach(function(field){
+      var reqMark = field.required ? ' <span class="req">*</span>' : '';
+      var reqAttr = field.required ? ' required' : '';
+      var fName = 'cf_' + field.name;
+
+      html += '<div class="field">';
+
+      switch (field.type) {
+        case 'text':
+          html += '<label for="' + fName + '">' + escHtml(field.label) + reqMark + '</label>';
+          html += '<input type="text" id="' + fName + '" name="' + fName + '"' + reqAttr + ' placeholder="' + escAttr(field.placeholder || '') + '">';
+          break;
+
+        case 'textarea':
+          html += '<label for="' + fName + '">' + escHtml(field.label) + reqMark + '</label>';
+          html += '<textarea id="' + fName + '" name="' + fName + '"' + reqAttr + ' placeholder="' + escAttr(field.placeholder || '') + '" style="min-height:80px"></textarea>';
+          break;
+
+        case 'select':
+          html += '<label for="' + fName + '">' + escHtml(field.label) + reqMark + '</label>';
+          html += '<select id="' + fName + '" name="' + fName + '"' + reqAttr + '>';
+          html += '<option value="">请选择...</option>';
+          (field.options || []).forEach(function(opt){
+            html += '<option value="' + escAttr(opt) + '">' + escHtml(opt) + '</option>';
+          });
+          html += '</select>';
+          break;
+
+        case 'checkbox':
+          html += '<label>' + escHtml(field.label) + reqMark + '</label>';
+          html += '<div class="checkbox-group">';
+          (field.options || []).forEach(function(opt, i){
+            html += '<label><input type="checkbox" name="' + fName + '" value="' + escAttr(opt) + '"> ' + escHtml(opt) + '</label>';
+          });
+          html += '</div>';
+          break;
+
+        case 'radio':
+          html += '<label>' + escHtml(field.label) + reqMark + '</label>';
+          html += '<div class="radio-group">';
+          (field.options || []).forEach(function(opt, i){
+            html += '<label><input type="radio" name="' + fName + '" value="' + escAttr(opt) + '"' + (i === 0 && field.required ? ' required' : '') + '> ' + escHtml(opt) + '</label>';
+          });
+          html += '</div>';
+          break;
+      }
+
+      html += '</div>';
+    });
+    customContainer.innerHTML = html;
+  }
+
+  function escHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function escAttr(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  renderCustomFields();
+
+  // ========== File management ==========
+  var imageList = document.getElementById('imageList');
+  var fileList = document.getElementById('fileList');
+  var imagesInput = document.getElementById('images');
+  var filesInput = document.getElementById('files');
+
+  // Managed file arrays for removal support
+  var imageFiles = [];
+  var logFiles = [];
+
+  function renderManagedList(files, container, onRemove) {
+    container.innerHTML = '';
+    files.forEach(function(f, i) {
+      var div = document.createElement('div');
+      div.className = 'item';
+      div.innerHTML = '<span>' + escHtml(f.name) + ' (' + formatSize(f.size) + ')</span>' +
+        '<span class="remove" data-idx="' + i + '">移除</span>';
+      div.querySelector('.remove').addEventListener('click', function(){
+        onRemove(i);
+      });
+      container.appendChild(div);
+    });
+  }
+
+  function rebuildDataTransfer(input, filesArr) {
+    var dt = new DataTransfer();
+    filesArr.forEach(function(f){ dt.items.add(f); });
+    input.files = dt.files;
+  }
+
+  imagesInput.addEventListener('change', function(){
+    Array.from(this.files).forEach(function(f){ imageFiles.push(f); });
+    renderManagedList(imageFiles, imageList, function(idx){
+      imageFiles.splice(idx, 1);
+      rebuildDataTransfer(imagesInput, imageFiles);
+      renderManagedList(imageFiles, imageList, arguments.callee);
+    });
+    // Re-bind with proper closure
+    rebindImageList();
+  });
+
+  filesInput.addEventListener('change', function(){
+    Array.from(this.files).forEach(function(f){ logFiles.push(f); });
+    renderManagedList(logFiles, fileList, function(idx){
+      logFiles.splice(idx, 1);
+      rebuildDataTransfer(filesInput, logFiles);
+      rebindFileList();
+    });
+    rebindFileList();
+  });
+
+  function rebindImageList() {
+    renderManagedList(imageFiles, imageList, function(idx){
+      imageFiles.splice(idx, 1);
+      rebuildDataTransfer(imagesInput, imageFiles);
+      rebindImageList();
+    });
+  }
+
+  function rebindFileList() {
+    renderManagedList(logFiles, fileList, function(idx){
+      logFiles.splice(idx, 1);
+      rebuildDataTransfer(filesInput, logFiles);
+      rebindFileList();
+    });
+  }
+
+  function formatSize(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+    return (b/1048576).toFixed(1) + ' MB';
+  }
+
+  // ========== Collect custom data ==========
+  function collectCustomData() {
+    var data = {};
+    formSchema.forEach(function(field){
+      var fName = 'cf_' + field.name;
+      switch (field.type) {
+        case 'text':
+        case 'textarea':
+        case 'select':
+          var el = document.getElementById(fName);
+          if (el) data[field.name] = el.value.trim();
+          break;
+        case 'checkbox':
+          var checks = document.querySelectorAll('input[name="' + fName + '"]:checked');
+          data[field.name] = Array.from(checks).map(function(c){ return c.value; });
+          break;
+        case 'radio':
+          var radio = document.querySelector('input[name="' + fName + '"]:checked');
+          data[field.name] = radio ? radio.value : '';
+          break;
+      }
+    });
+    return data;
+  }
+
+  // ========== PoW + Submit ==========
+  async function computePoW(projectId, timestamp, difficulty) {
+    var prefix = '0'.repeat(difficulty);
+    var encoder = new TextEncoder();
+    var nonce = 0;
+    var base = projectId + timestamp;
+
+    while (true) {
+      var payload = base + nonce;
+      var hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(payload));
+      var hashArray = Array.from(new Uint8Array(hashBuffer));
+      var hashHex = hashArray.map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+
+      if (hashHex.startsWith(prefix)) {
+        return { nonce: nonce, hash: hashHex };
+      }
+      nonce++;
+
+      if (nonce % 10000 === 0) {
+        await new Promise(function(r){ setTimeout(r, 0); });
+      }
+    }
+  }
+
+  var form = document.getElementById('feedbackForm');
+  var submitBtn = document.getElementById('submitBtn');
+  var statusMsg = document.getElementById('statusMsg');
+  var powIndicator = document.getElementById('powIndicator');
+
+  // Fetch PoW difficulty from server
+  var powDifficulty = 4;
+  fetch('/api/v1/setup/status').then(function(r){ return r.json(); }).then(function(d){
+    if (d.pow_difficulty) powDifficulty = d.pow_difficulty;
+  }).catch(function(){});
+
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    statusMsg.className = 'status';
+    statusMsg.style.display = 'none';
+
+    var title = document.getElementById('title').value.trim();
+    if (!title) {
+      showStatus('error', '请填写问题标题');
+      return;
+    }
+
+    // Validate required custom fields
+    for (var i = 0; i < formSchema.length; i++) {
+      var field = formSchema[i];
+      if (!field.required) continue;
+      var fName = 'cf_' + field.name;
+      var valid = false;
+      switch (field.type) {
+        case 'text':
+        case 'textarea':
+          var el = document.getElementById(fName);
+          valid = el && el.value.trim() !== '';
+          break;
+        case 'select':
+          var sel = document.getElementById(fName);
+          valid = sel && sel.value !== '';
+          break;
+        case 'checkbox':
+        case 'radio':
+          valid = document.querySelector('input[name="' + fName + '"]:checked') !== null;
+          break;
+      }
+      if (!valid) {
+        showStatus('error', '请填写必填字段：' + field.label);
+        return;
+      }
+    }
+
+    submitBtn.disabled = true;
+    powIndicator.classList.add('active');
+
+    try {
+      var projectId = PROJECT.slug;
+      var timestamp = Math.floor(Date.now() / 1000).toString();
+      powIndicator.textContent = '正在计算工作量证明...';
+      var pow = await computePoW(projectId, timestamp, powDifficulty);
+      powIndicator.textContent = 'PoW 完成 (nonce: ' + pow.nonce + ')';
+
+      var fd = new FormData();
+      fd.append('project_id', projectId);
+      fd.append('title', title);
+      fd.append('description', document.getElementById('description').value.trim());
+
+      // Custom data as JSON
+      var customData = collectCustomData();
+      fd.append('custom_data', JSON.stringify(customData));
+
+      // Files from managed arrays
+      imageFiles.forEach(function(f){ fd.append('images', f); });
+      logFiles.forEach(function(f){ fd.append('files', f); });
+
+      powIndicator.textContent = '正在提交...';
+      var resp = await fetch('/api/v1/feedback/submit', {
+        method: 'POST',
+        headers: {
+          'X-PoW-Timestamp': timestamp,
+          'X-PoW-Nonce': pow.nonce.toString()
+        },
+        body: fd
+      });
+
+      var data = await resp.json();
+      if (resp.ok) {
+        showStatus('success', '反馈提交成功！编号 #' + data.id);
+        form.reset();
+        imageFiles = [];
+        logFiles = [];
+        imageList.innerHTML = '';
+        fileList.innerHTML = '';
+      } else {
+        showStatus('error', data.error || '提交失败，请重试');
+      }
+    } catch (err) {
+      showStatus('error', '网络错误：' + err.message);
+    } finally {
+      submitBtn.disabled = false;
+      powIndicator.classList.remove('active');
+    }
+  });
+
+  function showStatus(type, msg) {
+    statusMsg.className = 'status ' + type;
+    statusMsg.textContent = msg;
+    statusMsg.style.display = 'block';
+  }
+})();
+</script>
+</body>
+</html>
