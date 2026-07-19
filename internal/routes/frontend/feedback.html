@@ -648,7 +648,9 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     });
   };
 
-  renderFormBySchema();  // ---- File list (log files) ----
+  renderFormBySchema();
+
+  // ---- File list (log files) ----
   function renderFileList() {
     fileList.innerHTML = '';
     logFiles.forEach(function(f, i) {
