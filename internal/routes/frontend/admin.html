@@ -2144,6 +2144,7 @@ tr:last-child td{border-bottom:none}
       var statusText = a.is_active ? '<span style="color:#1a7a1a">启用</span>' : '<span style="color:#c00">停用</span>';
       var isSelf = a.username === currentUsername;
       var email = a.email || '-';
+      var roleBadge = '<span class="tag">'+(roleLabels[a.role] || a.role)+(isSelf ? ' <span style="color:var(--muted);font-size:.7rem">(我)</span>' : '')+'</span>';
       var actions = '<button class="btn-sm" onclick="editAdmin('+a.id+',\''+esc(a.username)+'\',\''+esc(email)+'\',\''+a.role+'\','+a.is_active+')">编辑</button>' +
         ' <button class="btn-sm" onclick="editMemberGrants('+a.id+')">授权</button>';
       if (!isSelf) {
@@ -2152,7 +2153,7 @@ tr:last-child td{border-bottom:none}
       return '<tr>' +
         '<td>'+esc(a.username)+(isSelf ? ' <span style="color:#888;font-size:.75rem">(我)</span>' : '')+'</td>' +
         '<td style="color:#888;font-size:.8rem">'+esc(email)+'</td>' +
-        '<td><span class="tag">'+(roleLabels[a.role] || a.role)+'</span></td>' +
+        '<td>'+roleBadge+'</td>' +
         '<td>'+statusText+'</td>' +
         '<td style="color:#888;font-size:.8rem">'+dt+'</td>' +
         '<td>'+actions+'</td>' +

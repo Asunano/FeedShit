@@ -140,6 +140,33 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
   var currentToken = '';
   var currentId = 0;
   var ratingScore = 0;
+  var THEME_KEY = 'feedshit_theme';
+
+  function prefersDark(){ return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
+  function applyTheme(t){
+    document.documentElement.setAttribute('data-theme', t);
+    var btn = document.getElementById('themeBtn');
+    if (btn) btn.textContent = (t === 'dark') ? '☀️ 明亮' : '🌙 暗黑';
+  }
+  function initTheme(){
+    var saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
+    applyTheme(saved || (prefersDark() ? 'dark' : 'light'));
+  }
+  window.toggleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    applyTheme(cur);
+    try { localStorage.setItem(THEME_KEY, cur); } catch (e) {}
+  };
+  if (window.matchMedia){
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    mq.addEventListener('change', function(e){
+      var saved = null;
+      try { saved = localStorage.getItem(THEME_KEY); } catch (err) {}
+      if (!saved) applyTheme(e.matches ? 'dark' : 'light');
+    });
+  }
+  initTheme();
 
   // Check URL hash for token
   function initFromHash() {
@@ -365,25 +392,6 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
   document.getElementById('tokenInput').addEventListener('keydown', function(e){
     if (e.key === 'Enter') { e.preventDefault(); doLookup(); }
   });
-
-  // Dark mode toggle
-  window.toggleTheme = function() {
-    var html = document.documentElement;
-    var btn = document.getElementById('themeBtn');
-    if (html.getAttribute('data-theme') === 'dark') {
-      html.removeAttribute('data-theme');
-      btn.textContent = '🌙 暗黑';
-      localStorage.setItem('trackTheme', 'light');
-    } else {
-      html.setAttribute('data-theme', 'dark');
-      btn.textContent = '☀️ 明亮';
-      localStorage.setItem('trackTheme', 'dark');
-    }
-  };
-  if (localStorage.getItem('trackTheme') === 'dark') {
-    document.documentElement.setAttribute('data-theme', 'dark');
-    document.getElementById('themeBtn').textContent = '☀️ 明亮';
-  }
 
   // File input display
   document.getElementById('replyFile').addEventListener('change', function(){

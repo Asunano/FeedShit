@@ -1,9 +1,11 @@
 package email
 
 import (
+	"crypto/tls"
 	"fmt"
 	"html"
 	"log"
+	"net"
 	"net/smtp"
 	"strconv"
 	"strings"
@@ -112,7 +114,7 @@ func (m *Mailer) SendFeedbackNotification(fb *database.Feedback) {
 	}
 
 	auth := smtp.PlainAuth("", user, pass, host)
-	if err := smtp.SendMail(addr, auth, from, recipients, []byte(msg)); err != nil {
+	if err := smtpSend(addr, auth, from, recipients, []byte(msg)); err != nil {
 		log.Printf("[MAIL] Failed to send notification for feedback #%d: %v", fb.ID, err)
 	} else {
 		log.Printf("[MAIL] Notification sent for feedback #%d to %s", fb.ID, to)
@@ -279,7 +281,7 @@ func (m *Mailer) SendStatusChangeNotification(fb *database.Feedback, subject, ht
 
 	addr := fmt.Sprintf("%s:%d", host, portNum)
 	auth := smtp.PlainAuth("", user, pass, host)
-	if err := smtp.SendMail(addr, auth, from, []string{fb.ContactEmail}, []byte(msg)); err != nil {
+	if err := smtpSend(addr, auth, from, []string{fb.ContactEmail}, []byte(msg)); err != nil {
 		log.Printf("[MAIL] Failed to send submitter notification for feedback #%d: %v", fb.ID, err)
 	} else {
 		log.Printf("[MAIL] Submitter notification sent for feedback #%d to %s", fb.ID, fb.ContactEmail)
@@ -357,7 +359,7 @@ func (m *Mailer) SendCSATInvite(fb *database.Feedback, trackURL string) {
 
 	addr := fmt.Sprintf("%s:%d", host, portNum)
 	auth := smtp.PlainAuth("", user, pass, host)
-	if err := smtp.SendMail(addr, auth, from, []string{fb.ContactEmail}, []byte(msg)); err != nil {
+	if err := smtpSend(addr, auth, from, []string{fb.ContactEmail}, []byte(msg)); err != nil {
 		log.Printf("[MAIL] Failed to send CSAT invite for feedback #%d: %v", fb.ID, err)
 	} else {
 		log.Printf("[MAIL] CSAT invite sent for feedback #%d to %s", fb.ID, fb.ContactEmail)
@@ -401,9 +403,54 @@ func (m *Mailer) Send(to, subject, htmlBody string) {
 	}
 
 	auth := smtp.PlainAuth("", user, pass, host)
-	if err := smtp.SendMail(addr, auth, from, recipients, []byte(msg)); err != nil {
+
+	if err := smtpSend(addr, auth, from, recipients, []byte(msg)); err != nil {
 		log.Printf("[MAIL] Failed to send to %s: %v", to, err)
 	} else {
 		log.Printf("[MAIL] Sent to %s, subject=%s", to, subject)
 	}
+}
+
+// smtpSend 发送 SMTP 邮件，自动处理端口 465 (SSL/TLS) 与 STARTTLS。
+// addr: "host:port", auth: SMTP 认证, from: 发件人, to: 收件人列表, msg: 完整的 MIME 消息。
+func smtpSend(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("parse addr: %w", err)
+	}
+	portNum, _ := strconv.Atoi(port)
+	if portNum == 465 {
+		// Port 465 = SMTP over TLS (implicit SSL).
+		conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: host})
+		if err != nil {
+			return fmt.Errorf("tls dial: %w", err)
+		}
+		c, err := smtp.NewClient(conn, host)
+		if err != nil {
+			conn.Close()
+			return fmt.Errorf("smtp client: %w", err)
+		}
+		defer c.Close()
+		if err = c.Auth(auth); err != nil {
+			return fmt.Errorf("auth: %w", err)
+		}
+		if err = c.Mail(from); err != nil {
+			return fmt.Errorf("mail from: %w", err)
+		}
+		for _, r := range to {
+			if err = c.Rcpt(r); err != nil {
+				return fmt.Errorf("rcpt %s: %w", r, err)
+			}
+		}
+		w, err := c.Data()
+		if err != nil {
+			return fmt.Errorf("data: %w", err)
+		}
+		if _, err = w.Write(msg); err != nil {
+			return fmt.Errorf("write: %w", err)
+		}
+		return w.Close()
+	}
+	// Port 25/587: STARTTLS via smtp.SendMail.
+	return smtp.SendMail(addr, auth, from, to, msg)
 }
