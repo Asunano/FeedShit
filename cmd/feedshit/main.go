@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"log"
 	"net/http"
 	"os"
@@ -24,11 +25,19 @@ import (
 func main() {
 	cfg := config.LoadConfig()
 
-	// Fail-fast: the master key is required for at-rest encryption of secrets
-	// (SMTP password, webhook secrets). Without it we cannot safely decrypt
-	// stored secrets, so the process must not continue.
+	// Initialize encryption key: if FEEDSHIT_MASTER_KEY is not set, generate a
+	// random key for the session (development mode). In production, always set
+	// FEEDSHIT_MASTER_KEY to persist encrypted secrets across restarts.
 	if err := security.Init(); err != nil {
-		log.Fatalf("Failed to initialize security (FEEDSHIT_MASTER_KEY): %v", err)
+		key := make([]byte, 32)
+		if _, rErr := rand.Read(key); rErr != nil {
+			log.Fatalf("Failed to generate temporary master key: %v", rErr)
+		}
+		if err := security.InitWithKey(key); err != nil {
+			log.Fatalf("Failed to set temporary master key: %v", err)
+		}
+		log.Println("[WARN] FEEDSHIT_MASTER_KEY not set — using ephemeral key (encrypted secrets will not persist across restarts)")
+		log.Println("[WARN] Set FEEDSHIT_MASTER_KEY in production: openssl rand -hex 32")
 	}
 
 	// Ensure data directory exists

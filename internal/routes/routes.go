@@ -275,10 +275,10 @@ func Register(r *gin.Engine, application *app.App) {
 		adminAPI.POST("/feedbacks/bulk-category", middleware.RequireRole("editor"), application.AdminBulkUpdateCategory)
 
 		// FAQ self-service knowledge base (editor+)
-		adminAPI.GET("/projects/:slug/faqs", middleware.RequireRole("editor"), application.AdminListFAQs)
-		adminAPI.POST("/projects/:slug/faqs", middleware.RequireRole("editor"), application.AdminCreateFAQ)
-		adminAPI.PUT("/projects/:slug/faqs/:id", middleware.RequireRole("editor"), application.AdminUpdateFAQ)
-		adminAPI.DELETE("/projects/:slug/faqs/:id", middleware.RequireRole("admin"), application.AdminDeleteFAQ)
+		adminAPI.GET("/projects/:id/faqs", middleware.RequireRole("editor"), application.AdminListFAQs)
+		adminAPI.POST("/projects/:id/faqs", middleware.RequireRole("editor"), application.AdminCreateFAQ)
+		adminAPI.PUT("/projects/:id/faqs/:faqId", middleware.RequireRole("editor"), application.AdminUpdateFAQ)
+		adminAPI.DELETE("/projects/:id/faqs/:faqId", middleware.RequireRole("admin"), application.AdminDeleteFAQ)
 
 		// Duplicate detection (editor+): candidate similar feedback for a given feedback
 		adminAPI.GET("/feedbacks/:id/similar", middleware.RequireRole("editor"), application.AdminSimilarFeedbacks)

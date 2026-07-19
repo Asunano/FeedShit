@@ -179,7 +179,7 @@ func TestAdminCreateFAQEmptyQuestion400(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	// Path params are only bound by the router; when calling the handler
 	// directly we must set them explicitly.
-	c.Params = gin.Params{{Key: "slug", Value: "proj-x"}}
+	c.Params = gin.Params{{Key: "id", Value: "proj-x"}}
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/projects/proj-x/faqs", strings.NewReader(`{"question":"   ","answer":"a"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	app.AdminCreateFAQ(c)
@@ -198,7 +198,7 @@ func TestAdminCreateFAQDuplicate409(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "slug", Value: "proj-x"}}
+	c.Params = gin.Params{{Key: "id", Value: "proj-x"}}
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/projects/proj-x/faqs", strings.NewReader(`{"question":"Same Q?","answer":"b"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	app.AdminCreateFAQ(c)
@@ -214,7 +214,7 @@ func TestAdminUpdateFAQNotFound404(t *testing.T) {
 	mustCreateProject(t, app.DB, "proj-x")
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "slug", Value: "proj-x"}, {Key: "id", Value: "99999999"}}
+	c.Params = gin.Params{{Key: "id", Value: "proj-x"}, {Key: "faqId", Value: "99999999"}}
 	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/projects/proj-x/faqs/99999999", strings.NewReader(`{"question":"Q","answer":"a"}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	app.AdminUpdateFAQ(c)
@@ -230,7 +230,7 @@ func TestAdminDeleteFAQNotFound404(t *testing.T) {
 	mustCreateProject(t, app.DB, "proj-x")
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "slug", Value: "proj-x"}, {Key: "id", Value: "99999999"}}
+	c.Params = gin.Params{{Key: "id", Value: "proj-x"}, {Key: "faqId", Value: "99999999"}}
 	c.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/projects/proj-x/faqs/99999999", nil)
 	app.AdminDeleteFAQ(c)
 	if w.Code != http.StatusNotFound {
@@ -249,7 +249,7 @@ func TestAdminListFAQsInactiveFlag(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "slug", Value: "proj-x"}}
+	c.Params = gin.Params{{Key: "id", Value: "proj-x"}}
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/projects/proj-x/faqs", nil)
 	app.AdminListFAQs(c)
 	if w.Code != http.StatusOK {
@@ -284,7 +284,7 @@ func TestAdminCRUDAuditLogs(t *testing.T) {
 	// create
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Params = gin.Params{{Key: "slug", Value: "proj-x"}}
+	c.Params = gin.Params{{Key: "id", Value: "proj-x"}}
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/projects/proj-x/faqs", strings.NewReader(`{"question":"Audit Q?","answer":"a","is_active":true}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	app.AdminCreateFAQ(c)
@@ -305,7 +305,7 @@ func TestAdminCRUDAuditLogs(t *testing.T) {
 	// update
 	w2 := httptest.NewRecorder()
 	c2, _ := gin.CreateTestContext(w2)
-	c2.Params = gin.Params{{Key: "slug", Value: "proj-x"}, {Key: "id", Value: strconv.FormatInt(id, 10)}}
+	c2.Params = gin.Params{{Key: "id", Value: "proj-x"}, {Key: "faqId", Value: strconv.FormatInt(id, 10)}}
 	c2.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/projects/proj-x/faqs/"+strconv.FormatInt(id, 10), strings.NewReader(`{"question":"Audit Q?","answer":"updated"}`))
 	c2.Request.Header.Set("Content-Type", "application/json")
 	app.AdminUpdateFAQ(c2)
@@ -316,7 +316,7 @@ func TestAdminCRUDAuditLogs(t *testing.T) {
 	// delete
 	w3 := httptest.NewRecorder()
 	c3, _ := gin.CreateTestContext(w3)
-	c3.Params = gin.Params{{Key: "slug", Value: "proj-x"}, {Key: "id", Value: strconv.FormatInt(id, 10)}}
+	c3.Params = gin.Params{{Key: "id", Value: "proj-x"}, {Key: "faqId", Value: strconv.FormatInt(id, 10)}}
 	c3.Request = httptest.NewRequest(http.MethodDelete, "/api/v1/admin/projects/proj-x/faqs/"+strconv.FormatInt(id, 10), nil)
 	app.AdminDeleteFAQ(c3)
 	if w3.Code != http.StatusOK {

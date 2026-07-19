@@ -64,9 +64,9 @@ func (a *App) PublicSearchFAQ(c *gin.Context) {
 }
 
 // AdminListFAQs lists every FAQ of a project (including inactive ones).
-// GET /api/v1/admin/projects/:slug/faqs
+// GET /api/v1/admin/projects/:id/faqs
 func (a *App) AdminListFAQs(c *gin.Context) {
-	slug := c.Param("slug")
+	slug := c.Param("id")
 	proj, projErr := a.DB.GetProjectBySlug(slug)
 	if projErr != nil || proj == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
@@ -84,9 +84,9 @@ func (a *App) AdminListFAQs(c *gin.Context) {
 }
 
 // AdminCreateFAQ creates a new FAQ for a project.
-// POST /api/v1/admin/projects/:slug/faqs
+// POST /api/v1/admin/projects/:id/faqs
 func (a *App) AdminCreateFAQ(c *gin.Context) {
-	slug := c.Param("slug")
+	slug := c.Param("id")
 	proj, projErr := a.DB.GetProjectBySlug(slug)
 	if projErr != nil || proj == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
@@ -128,10 +128,10 @@ func (a *App) AdminCreateFAQ(c *gin.Context) {
 }
 
 // AdminUpdateFAQ updates an existing FAQ, constrained to its owning project.
-// PUT /api/v1/admin/projects/:slug/faqs/:id
+// PUT /api/v1/admin/projects/:id/faqs/:faqId
 func (a *App) AdminUpdateFAQ(c *gin.Context) {
-	slug := c.Param("slug")
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	slug := c.Param("id")
+	id, err := strconv.ParseInt(c.Param("faqId"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 		return
@@ -169,10 +169,10 @@ func (a *App) AdminUpdateFAQ(c *gin.Context) {
 }
 
 // AdminDeleteFAQ hard-deletes a FAQ, constrained to its owning project.
-// DELETE /api/v1/admin/projects/:slug/faqs/:id
+// DELETE /api/v1/admin/projects/:id/faqs/:faqId
 func (a *App) AdminDeleteFAQ(c *gin.Context) {
-	slug := c.Param("slug")
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	slug := c.Param("id")
+	id, err := strconv.ParseInt(c.Param("faqId"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 		return
