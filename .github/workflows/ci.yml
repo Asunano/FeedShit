@@ -67,7 +67,9 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq upx
           BEFORE=$(stat -c%s "${{ env.BIN }}")
-          upx --best --lzma -o "${{ env.BIN }}-upx" "${{ env.BIN }}"
+          UPX_FLAGS="--best --lzma"
+          [ "${{ matrix.goos }}" = "darwin" ] && UPX_FLAGS="$UPX_FLAGS --force-macos"
+          upx $UPX_FLAGS -o "${{ env.BIN }}-upx" "${{ env.BIN }}"
           mv "${{ env.BIN }}-upx" "${{ env.BIN }}"
           sha256sum "${{ env.BIN }}" > "${{ env.BIN }}.sha256"
           AFTER=$(stat -c%s "${{ env.BIN }}")
@@ -128,7 +130,9 @@ jobs:
 
       - name: UPX compress
         run: |
-          upx --best --lzma -o "${{ env.BIN }}-upx" "${{ env.BIN }}"
+          UPX_FLAGS="--best --lzma"
+          [ "${{ matrix.goos }}" = "darwin" ] && UPX_FLAGS="$UPX_FLAGS --force-macos"
+          upx $UPX_FLAGS -o "${{ env.BIN }}-upx" "${{ env.BIN }}"
           mv "${{ env.BIN }}-upx" "${{ env.BIN }}"
 
       - name: Checksum
