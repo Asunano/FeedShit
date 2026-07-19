@@ -838,6 +838,19 @@ tr:last-child td{border-bottom:none}
       <div class="settings-field"><label>项目名称 *</label><input type="text" id="pfName" placeholder="例：官网、App"></div>
       <div class="settings-field"><label>项目标识 *</label><input type="text" id="pfSlug" placeholder="例：website、app"></div>
     </div>
+    <div class="row">
+      <div class="settings-field" style="flex:1">
+        <label>表单模板</label>
+        <select id="pfTemplate" onchange="onProjectTemplateChange()">
+          <option value="empty">空模板（无自定义字段）</option>
+          <option value="bug_report">🐛 Bug 反馈</option>
+          <option value="feature_request">💡 功能建议</option>
+          <option value="contact">📞 联系我们</option>
+          <option value="support">🎫 工单支持</option>
+          <option value="product_review">⭐ 产品评价</option>
+        </select>
+      </div>
+    </div>
     <div class="settings-field"><label>项目描述</label><input type="text" id="pfDesc" placeholder="可选"></div>
     <div class="settings-field"><div class="toggle"><input type="checkbox" id="pfActive" checked><span>启用（关闭后该项目无法提交新反馈）</span></div></div>
     <div class="settings-field"><div class="toggle"><input type="checkbox" id="pfArchived"><span>归档（归档后项目隐藏且不接受反馈，数据保留）</span></div></div>
@@ -1795,6 +1808,73 @@ tr:last-child td{border-bottom:none}
     document.getElementById('projectModal').classList.add('active');
   };
 
+  // ========== Project form templates ==========
+  var FORM_TEMPLATES = {
+    bug_report: [
+      {type:'select', name:'severity', label:'严重程度', required:true, options:['严重','较高','一般','较低'], width:'half', help_text:'该 Bug 对用户的影响程度'},
+      {type:'select', name:'browser', label:'浏览器', options:['Chrome','Firefox','Safari','Edge','其他'], width:'half'},
+      {type:'text', name:'os', label:'操作系统', placeholder:'如 Windows 11 / macOS 14', width:'half'},
+      {type:'text', name:'url', label:'问题页面 URL', placeholder:'https://', width:'half'},
+      {type:'textarea', name:'steps', label:'复现步骤', required:true, placeholder:'1. 打开...\n2. 点击...\n3. 出现...', rows:5},
+      {type:'textarea', name:'expected', label:'预期行为', placeholder:'应该发生什么？', rows:3},
+      {type:'textarea', name:'actual', label:'实际行为', placeholder:'实际发生了什么？', rows:3},
+      {type:'file', name:'screenshot', label:'截图', accept:'.png,.jpg,.gif', multiple:true}
+    ],
+    feature_request: [
+      {type:'select', name:'category', label:'分类', required:true, options:['新功能','改进','性能','UI/UX','其他'], width:'half'},
+      {type:'select', name:'priority', label:'优先级', options:['急需','重要','可以考虑','低优先级'], width:'half'},
+      {type:'textarea', name:'problem', label:'当前问题', placeholder:'目前在使用中遇到了什么不便？', rows:3},
+      {type:'textarea', name:'solution', label:'期望方案', required:true, placeholder:'你希望如何解决？', rows:4},
+      {type:'textarea', name:'alternatives', label:'替代方案', placeholder:'是否考虑过其他解决方式？', rows:3}
+    ],
+    contact: [
+      {type:'text', name:'company', label:'公司/组织', placeholder:'可选', width:'half'},
+      {type:'select', name:'department', label:'部门', options:['销售','市场','技术','客服','管理','其他'], width:'half'},
+      {type:'select', name:'subject', label:'咨询类型', required:true, options:['商务合作','技术支持','投诉建议','其他']},
+      {type:'textarea', name:'message', label:'留言内容', required:true, placeholder:'请详细描述...', rows:5}
+    ],
+    support: [
+      {type:'select', name:'tier', label:'优先级', required:true, options:['P0: 紧急','P1: 高','P2: 中','P3: 低'], width:'half'},
+      {type:'select', name:'type', label:'工单类型', required:true, options:['故障报修','使用咨询','账号问题','数据修复','其他'], width:'half'},
+      {type:'url', name:'related_url', label:'相关链接', placeholder:'https://', help_text:'问题相关的页面或文档链接'},
+      {type:'textarea', name:'detail', label:'问题描述', required:true, placeholder:'请详细描述您遇到的问题...', rows:6},
+      {type:'file', name:'attachment', label:'附件', multiple:true, help_text:'支持截图、日志文件等'}
+    ],
+    product_review: [
+      {type:'rating', name:'rating', label:'总体评分', required:true, max:5, icon:'star'},
+      {type:'select', name:'recommend', label:'推荐给朋友', options:['肯定会','可能会','不确定','可能不会','肯定不会'], width:'half'},
+      {type:'textarea', name:'pros', label:'优点', placeholder:'你最喜欢哪些方面？', rows:3},
+      {type:'textarea', name:'cons', label:'不足', placeholder:'哪些方面需要改进？', rows:3},
+      {type:'tags', name:'tags', label:'标签', placeholder:'输入标签后回车'}
+    ]
+  };
+
+  window.onProjectTemplateChange = function() {
+    // Preview the template description
+    var tpl = document.getElementById('pfTemplate').value;
+    var desc = {
+      empty: '无自定义字段，只包含标题和描述。',
+      bug_report: '收集 Bug 严重程度、浏览器/OS、复现步骤、截图等。',
+      feature_request: '收集功能分类、优先级、当前问题和期望方案。',
+      contact: '收集公司信息、咨询类型和留言内容。',
+      support: '工单式的优先级、类型、问题描述、附件。',
+      product_review: '星级评分、推荐意愿、优缺点标签。'
+    };
+    var el = document.getElementById('pfTemplateDesc');
+    if (!el) {
+      el = document.createElement('p');
+      el.id = 'pfTemplateDesc';
+      el.style.cssText = 'font-size:.75rem;color:#888;margin:4px 0 0 0';
+      document.getElementById('pfTemplate').parentNode.appendChild(el);
+    }
+    el.textContent = desc[tpl] || '';
+  };
+
+  function getFormTemplate(name) {
+    if (name === 'empty' || !FORM_TEMPLATES[name]) return '[]';
+    return JSON.stringify(FORM_TEMPLATES[name]);
+  }
+
   window.saveProject = async function() {
     var id = document.getElementById('pfId').value;
     var project = id ? allProjects.find(function(p){ return p.id === parseInt(id); }) : null;
@@ -1808,7 +1888,7 @@ tr:last-child td{border-bottom:none}
         var ps = project.form_schema;
         if (typeof ps === 'string') { try { var p = JSON.parse(ps); if (Array.isArray(p)) ps = p; } catch(e){} }
         return Array.isArray(ps) ? JSON.stringify(ps) : '[]';
-      })() : '[]'
+      })() : getFormTemplate(document.getElementById('pfTemplate').value)
     };
     if (!body.name || !body.slug) { showToast('名称和标识不能为空', 'error'); return; }
     var url = id ? '/api/v1/admin/projects/' + id : '/api/v1/admin/projects';
@@ -2033,8 +2113,8 @@ tr:last-child td{border-bottom:none}
     document.getElementById('feToggleLabelRow').style.display = (type === 'toggle') ? '' : 'none';
     document.getElementById('feCollapsibleRow').style.display = (type === 'section') ? '' : 'none';
     document.getElementById('feContentRow').style.display = (type === 'html') ? '' : 'none';
-    document.getElementById('feName').style.display = (type === 'section' || type === 'html') ? 'none' : '';
-    document.getElementById('feName').closest('.field-row').style.display = (type === 'section' || type === 'html') ? 'none' : '';
+    var nameRow = document.getElementById('feName').parentNode;
+    if (nameRow) nameRow.style.display = (type === 'section' || type === 'html') ? 'none' : '';
   };
   window.addOptionRow = function(value) {
     var list = document.getElementById('feOptionsList');
