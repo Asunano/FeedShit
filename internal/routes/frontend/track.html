@@ -6,8 +6,8 @@
 <title>反馈跟踪</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#f5f5f5;--fg:#333;--card-bg:#fff;--card-border:#e2e2e2;--input-border:#d0d0d0;--muted:#888;--note-bg:#f9f9f9;--note-border:#eee;--note-admin-bg:#f0f7ff;--note-admin-border:#d0e3f7}
-[data-theme="dark"]{--bg:#1a1a2e;--fg:#e0e0e0;--card-bg:#16213e;--card-border:#2a2a4a;--input-border:#3a3a5a;--muted:#8888aa;--note-bg:#1e1e3a;--note-border:#2a2a4a;--note-admin-bg:#1a2a4a;--note-admin-border:#2a4a6a}
+:root{--bg:#f5f5f5;--fg:#333;--card-bg:#fff;--card-border:#e2e2e2;--input-border:#d0d0d0;--muted:#888;--note-bg:#f9f9f9;--note-border:#eee;--note-admin-bg:#f0f7ff;--note-admin-border:#d0e3f7;--primary:#333;--primary-fg:#fff;--danger:#c00;--danger-bg:#fde8e8;--subtle:#fafafa;--hover:#f0f0f0;--link:#2563eb;--status-pending-bg:#fff3cd;--status-pending-fg:#856404;--status-processing-bg:#cce5ff;--status-processing-fg:#004085;--status-resolved-bg:#d4edda;--status-resolved-fg:#155724;--status-closed-bg:#e2e3e5;--status-closed-fg:#383d41;--success-bg:#e6f9e6;--success-fg:#1a7a1a;--success-border:#b2e0b2}
+[data-theme="dark"]{--bg:#1a1a2e;--fg:#e0e0e0;--card-bg:#16213e;--card-border:#2a2a4a;--input-border:#3a3a5a;--muted:#8888aa;--note-bg:#1e1e3a;--note-border:#2a2a4a;--note-admin-bg:#1a2a4a;--note-admin-border:#2a4a6a;--primary:#2d2d4a;--primary-fg:#fff;--danger:#ff6b6b;--danger-bg:#3a1f1f;--subtle:#1e1e3a;--hover:#2a2a4a;--link:#7fb6eb;--status-pending-bg:#4a4318;--status-pending-fg:#f1d56e;--status-processing-bg:#1f3a56;--status-processing-fg:#7fb6eb;--status-resolved-bg:#1c3a28;--status-resolved-fg:#7ac99a;--status-closed-bg:#3a3a3a;--status-closed-fg:#bbb;--success-bg:#1c3a28;--success-fg:#7ac99a;--success-border:#2a4a3a}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6}
 .container{max-width:600px;margin:40px auto;padding:0 16px}
 h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
@@ -18,13 +18,13 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 .field input[type=text],.field textarea{width:100%;padding:8px 10px;border:1px solid var(--input-border);border-radius:4px;font-size:.9rem;font-family:inherit;background:var(--card-bg);color:var(--fg);transition:border-color .15s}
 .field input:focus,.field textarea:focus{outline:none;border-color:#888}
 .field textarea{resize:vertical;min-height:80px}
-.btn{display:inline-block;padding:10px 24px;background:#333;color:#fff;border:none;border-radius:4px;font-size:.9rem;cursor:pointer;transition:background .15s}
-.btn:hover{background:#555}
-.btn:disabled{background:#aaa;cursor:not-allowed}
+.btn{display:inline-block;padding:10px 24px;background:var(--primary);color:var(--primary-fg);border:none;border-radius:4px;font-size:.9rem;cursor:pointer;transition:background .15s}
+.btn:hover{background:var(--hover)}
+.btn:disabled{background:#3a3a3a;color:#666;cursor:not-allowed}
 .btn-sm{padding:6px 16px;font-size:.8rem}
 .status{margin-top:12px;padding:10px;border-radius:4px;font-size:.85rem;display:none}
-.status.success{display:block;background:#e6f9e6;color:#1a7a1a;border:1px solid #b2e0b2}
-.status.error{display:block;background:#fde8e8;color:#c00;border:1px solid #f5c6c6}
+.status.success{display:block;background:var(--success-bg);color:var(--success-fg);border:1px solid var(--success-border)}
+.status.error{display:block;background:var(--danger-bg);color:var(--danger);border:1px solid #f5c6c6}
 /* Lookup form */
 .lookup-section{text-align:center}
 .lookup-section .token-input{display:flex;gap:8px;max-width:400px;margin:0 auto}
@@ -33,10 +33,10 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 .fb-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
 .fb-header h2{font-size:1.1rem;font-weight:600;flex:1}
 .fb-status{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.75rem;font-weight:500;white-space:nowrap}
-.fb-status.pending{background:#fff3cd;color:#856404}
-.fb-status.processing{background:#cce5ff;color:#004085}
-.fb-status.resolved{background:#d4edda;color:#155724}
-.fb-status.closed{background:#e2e3e5;color:#383d41}
+.fb-status.pending{background:var(--status-pending-bg);color:var(--status-pending-fg)}
+.fb-status.processing{background:var(--status-processing-bg);color:var(--status-processing-fg)}
+.fb-status.resolved{background:var(--status-resolved-bg);color:var(--status-resolved-fg)}
+.fb-status.closed{background:var(--status-closed-bg);color:var(--status-closed-fg)}
 .fb-meta{font-size:.8rem;color:var(--muted);margin-bottom:16px}
 .fb-desc{font-size:.9rem;color:var(--fg);white-space:pre-wrap;margin-bottom:20px;padding:12px;background:var(--note-bg);border-radius:4px;border:1px solid var(--note-border)}
 /* Notes timeline */
@@ -66,6 +66,17 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 .loading{text-align:center;padding:40px;color:var(--muted)}
 .loading .spinner{display:inline-block;width:24px;height:24px;border:3px solid #e0e0e0;border-top-color:#888;border-radius:50%;animation:spin .6s linear infinite;margin-bottom:8px}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* ===== Dark mode surface repaint ===== */
+[data-theme="dark"] body{background:var(--bg);color:var(--fg)}
+[data-theme="dark"] a{color:var(--link)}
+[data-theme="dark"] .btn{background:var(--primary);color:var(--primary-fg)}
+[data-theme="dark"] .btn:hover{background:var(--hover)}
+[data-theme="dark"] .btn:disabled{background:#3a3a3a;color:#666}
+[data-theme="dark"] .status.success{background:var(--success-bg);color:var(--success-fg);border-color:var(--success-border)}
+[data-theme="dark"] .status.error{background:var(--danger-bg);color:var(--danger);border-color:#5a2a2a}
+[data-theme="dark"] .loading .spinner{border-color:#3a3a5a;border-top-color:#8888aa}
+[data-theme="dark"] .theme-toggle button{color:var(--muted);border-color:var(--input-border)}
+[data-theme="dark"] .theme-toggle button:hover{background:var(--hover)}
 </style>
 </head>
 <body>
@@ -140,7 +151,7 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
   var currentToken = '';
   var currentId = 0;
   var ratingScore = 0;
-  var THEME_KEY = 'feedshit_theme';
+  var THEME_KEY = 'feedshit-theme';
 
   function prefersDark(){ return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; }
   function applyTheme(t){
