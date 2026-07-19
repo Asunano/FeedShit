@@ -261,13 +261,22 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
         </select>
       </div>
 
+      <!-- Notification opt-in -->
       <div class="field">
-        <label for="contact_name">您的称呼（选填）</label>
-        <input type="text" id="contact_name" name="contact_name" placeholder="方便我们联系您">
+        <label class="checkbox-label" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
+          <input type="checkbox" id="notify_consent" onchange="toggleContactFields()" style="margin-top:2px;width:auto">
+          <span>📬 接收反馈处理通知<br><small style="color:#888;font-weight:normal">勾选后可填写称呼和邮箱，当反馈状态更新或有回复时您将收到邮件通知，并获取反馈跟踪链接。</small></span>
+        </label>
       </div>
-      <div class="field">
-        <label for="contact_email">邮箱（选填）</label>
-        <input type="text" id="contact_email" name="contact_email" placeholder="用于回复通知">
+      <div id="contactFields" style="display:none">
+        <div class="field">
+          <label for="contact_name">您的称呼</label>
+          <input type="text" id="contact_name" name="contact_name" placeholder="如何称呼您？">
+        </div>
+        <div class="field">
+          <label for="contact_email">邮箱 <span class="req">*</span></label>
+          <input type="email" id="contact_email" name="contact_email" placeholder="用于接收通知和跟踪链接" required>
+        </div>
       </div>
 
       <!-- Dynamic custom fields injected here -->
@@ -646,6 +655,15 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     list.querySelectorAll('.tag-item').forEach(function(el){
       if (el.textContent.indexOf(val) === 0) el.remove();
     });
+  };
+
+  // ========== Contact fields toggle ==========
+  window.toggleContactFields = function() {
+    var checked = document.getElementById('notify_consent').checked;
+    var container = document.getElementById('contactFields');
+    container.style.display = checked ? '' : 'none';
+    document.getElementById('contact_name').required = checked;
+    document.getElementById('contact_email').required = checked;
   };
 
   renderFormBySchema();
