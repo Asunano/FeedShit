@@ -280,6 +280,20 @@ func (d *Database) migrate() error {
 				locked_until INTEGER NOT NULL
 			);
 		`},
+		{23, "invitation_tokens table", `
+			CREATE TABLE IF NOT EXISTS invitation_tokens (
+				id           INTEGER PRIMARY KEY AUTOINCREMENT,
+				token        TEXT    NOT NULL UNIQUE,
+				role         TEXT    NOT NULL DEFAULT 'editor',
+				project_ids  TEXT    NOT NULL DEFAULT '[]',
+				max_uses     INTEGER NOT NULL DEFAULT 1,
+				used_count   INTEGER NOT NULL DEFAULT 0,
+				created_by   TEXT    NOT NULL,
+				created_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+				expires_at   INTEGER NOT NULL DEFAULT 0
+			);
+			CREATE INDEX IF NOT EXISTS idx_invite_token ON invitation_tokens(token);
+		`},
 		// Future migrations go here — never renumber existing entries.
 	}
 

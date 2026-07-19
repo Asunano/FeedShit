@@ -170,6 +170,10 @@ func Register(r *gin.Engine, application *app.App) {
 	faqPub.Use(middleware.RateLimitMiddleware(application.RL))
 	faqPub.GET("/faq", application.PublicSearchFAQ)
 
+	// Invitation registration
+	r.GET("/invite/:token", application.PublicRegisterPage)
+	r.POST("/api/v1/invite/:token/register", application.PublicRegister)
+
 	// API Token feedback submission (external systems like CI, monitoring)
 	apiSubmit := r.Group("/api/v1/external")
 	apiSubmit.Use(middleware.RateLimitMiddleware(application.RL))
@@ -280,6 +284,10 @@ func Register(r *gin.Engine, application *app.App) {
 		adminAPI.GET("/admins/:id/grants", middleware.RequireRole("admin"), application.AdminGetMemberGrants)
 		adminAPI.PUT("/admins/:id/grants", middleware.RequireRole("admin"), application.AdminSetMemberGrants)
 		adminAPI.DELETE("/admins/:id/grants/:grantId", middleware.RequireRole("admin"), application.AdminDeleteMemberGrant)
+
+		// Invitations
+		adminAPI.POST("/invitations", middleware.RequireRole("admin"), application.AdminCreateInvitation)
+		adminAPI.GET("/invitations", middleware.RequireRole("admin"), application.AdminListInvitations)
 
 		// Category management (editor+)
 		adminAPI.GET("/projects/:id/categories", middleware.RequireRole("editor"), application.AdminListCategories)

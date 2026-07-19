@@ -719,12 +719,15 @@ tr:last-child td{border-bottom:none}
       <strong style="font-size:.95rem">团队成员</strong>
       <span class="spacer"></span>
       <button class="btn-sm" onclick="openAdminModal()">+ 新建成员</button>
+      <button class="btn-sm" onclick="openInviteModal()" style="margin-left:4px">+ 邀请链接</button>
     </div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>用户名</th><th>邮箱</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
         <tbody id="adminTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
       </table>
+    </div>
+    <div id="invitationList" style="margin-top:16px"></div>
     </div>
   </div>
 
@@ -980,6 +983,35 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- Invitation Modal -->
+<div class="modal-overlay" id="inviteModal">
+  <div class="modal" style="max-width:500px">
+    <h3>创建邀请链接</h3>
+    <p style="font-size:.8rem;color:#888;margin-bottom:16px">生成一个邀请链接，分享给他人即可注册成为团队成员。邀请链接达到使用次数后自动失效。</p>
+    <div class="settings-field"><label>角色</label><select id="inviteRole" onchange="onInviteRoleChange()">
+      <option value="manager">经理（项目内全部权限）</option>
+      <option value="editor" selected>编辑（管理反馈+项目）</option>
+      <option value="viewer">只读（仅查看）</option>
+    </select></div>
+    <div class="settings-field" id="inviteProjectsField"><label>授权项目 <span style="font-weight:400;color:#888">（勾选可访问的项目）</span></label>
+      <div id="inviteProjectsArea" style="max-height:200px;overflow-y:auto;border:1px solid #eee;border-radius:4px;padding:8px"></div>
+    </div>
+    <div class="settings-field"><label>使用次数</label><input type="number" id="inviteMaxUses" value="1" min="1" style="width:100px;padding:8px 10px;border:1px solid #ddd;border-radius:4px"></div>
+    <div class="settings-field"><label>有效期（天，0 表示不过期）</label><input type="number" id="inviteExpireDays" value="7" min="0" style="width:100px;padding:8px 10px;border:1px solid #ddd;border-radius:4px"></div>
+    <div id="inviteResultArea" style="display:none;margin-bottom:12px">
+      <label>邀请链接</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="inviteURL" readonly style="flex:1;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:.8rem;background:#f9f9f9">
+        <button class="btn-sm" onclick="copyInviteURL()">复制</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm" onclick="closeInviteModal()">取消</button>
+      <button class="btn-save" onclick="createInvitation()">生成链接</button>
+    </div>
+  </div>
+</div>
+
 <!-- Token Modal -->
 <div class="modal-overlay" id="tokenModal">
   <div class="modal">
@@ -1121,7 +1153,7 @@ tr:last-child td{border-bottom:none}
     if (tab === 'settings') { loadEmailSettings(); loadBackupList(); }
     if (tab === 'dashboard') { showList(); loadStats(); loadFeedbacks(); loadChart(); }
     if (tab === 'audit') loadAuditLogs();
-    if (tab === 'team') loadAdmins();
+    if (tab === 'team') { loadAdmins(); loadInvitations(); }
     if (tab === 'kb') { renderKbProjects(); loadFaqs(); }
   };
 
@@ -2387,6 +2419,70 @@ tr:last-child td{border-bottom:none}
       var el = document.getElementById(id);
       if (el) el.style.display = isAdmin ? '' : 'none';
     });
+  }
+
+  // ========== Invitations ==========
+  window.openInviteModal = async function() {
+    document.getElementById('inviteModal').classList.add('active');
+    document.getElementById('inviteResultArea').style.display = 'none';
+    // Load projects for selection
+    var resp = await api('/api/v1/admin/projects');
+    if (!resp) return;
+    var d = await resp.json();
+    var projs = d.projects || [];
+    var area = document.getElementById('inviteProjectsArea');
+    if (projs.length === 0) {
+      area.innerHTML = '<p style="font-size:.8rem;color:#888">暂无可选项目</p>';
+    } else {
+      area.innerHTML = projs.map(function(p){ return '<label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:.85rem"><input type="checkbox" class="invite-project-cb" value="' + esc(p.slug) + '"> ' + esc(p.name) + '</label>'; }).join('');
+    }
+    onInviteRoleChange();
+  };
+  window.onInviteRoleChange = function() {
+    var isAdmin = document.getElementById('inviteRole').value === 'admin';
+    document.getElementById('inviteProjectsField').style.display = isAdmin ? 'none' : '';
+  };
+  window.closeInviteModal = function() { document.getElementById('inviteModal').classList.remove('active'); };
+  window.createInvitation = async function() {
+    var role = document.getElementById('inviteRole').value;
+    var cbs = document.querySelectorAll('.invite-project-cb:checked');
+    var projectIds = Array.from(cbs).map(function(cb){ return cb.value; });
+    var maxUses = parseInt(document.getElementById('inviteMaxUses').value) || 1;
+    var expireDays = parseInt(document.getElementById('inviteExpireDays').value) || 0;
+    var d = await apiJSON('/api/v1/admin/invitations', {method:'POST', body:JSON.stringify({role:role, project_ids:projectIds, max_uses:maxUses, expires_in_days:expireDays})});
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); return; }
+    document.getElementById('inviteURL').value = d.url;
+    document.getElementById('inviteResultArea').style.display = '';
+    showToast('邀请链接已生成', 'success');
+    loadInvitations();
+  };
+  window.copyInviteURL = function() {
+    var input = document.getElementById('inviteURL');
+    input.select();
+    document.execCommand('copy');
+    showToast('已复制到剪贴板', 'success');
+  };
+  async function loadInvitations() {
+    var container = document.getElementById('invitationList');
+    if (!container) return;
+    var resp = await api('/api/v1/admin/invitations');
+    if (!resp) return;
+    var d = await resp.json();
+    var invites = d.invitations || [];
+    if (invites.length === 0) { container.innerHTML = ''; return; }
+    var html = '<h3 style="font-size:.9rem;margin-bottom:8px">邀请记录</h3><table style="width:100%;font-size:.8rem"><thead><tr><th>链接</th><th>角色</th><th>已用/上限</th><th>创建者</th><th>创建时间</th><th>状态</th></tr></thead>';
+    invites.forEach(function(inv){
+      var status = inv.expired ? '<span style="color:#999">已失效</span>' : '<span style="color:#2d6">有效</span>';
+      html += '<tr><td style="font-family:monospace;font-size:.7rem;max-width:200px;overflow:hidden;text-overflow:ellipsis">' + esc(inv.url) + '</td>' +
+        '<td>' + inv.role + '</td>' +
+        '<td>' + inv.used_count + '/' + inv.max_uses + '</td>' +
+        '<td>' + esc(inv.created_by) + '</td>' +
+        '<td>' + (inv.created_at ? new Date(inv.created_at*1000).toLocaleDateString() : '-') + '</td>' +
+        '<td>' + status + '</td></tr>';
+    });
+    html += '</table>';
+    container.innerHTML = html;
   }
 
   async function loadAdmins() {
