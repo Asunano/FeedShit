@@ -1840,7 +1840,7 @@ tr:last-child td{border-bottom:none}
     // Form schema builder
     html += '<div class="settings-card" style="margin-bottom:20px"><h2>自定义表单字段</h2>' +
       '<p style="font-size:.8rem;color:#888;margin-bottom:12px">配置反馈页面除标题和描述外的额外收集字段。</p>' +
-      '<div class="form-builder" id="formBuilder">';
+      '<div class="form-builder" id="formBuilder"><div id="formSchemaListContainer">';
     if (currentFormSchema.length === 0) {
       html += '<p style="color:#999;font-size:.8rem;margin-bottom:8px">暂无自定义字段。</p>';
     } else {
@@ -1858,6 +1858,7 @@ tr:last-child td{border-bottom:none}
           '<button class="del" onclick="removeField('+i+')">删除</button></div></div>';
       });
     }
+    html += '</div>'; // close formSchemaListContainer
     html += '<button class="fb-add-btn" onclick="addField()">+ 添加字段</button></div>';
     html += '<div class="settings-actions"><button class="btn-save" onclick="saveFormSchema()">保存表单配置</button></div></div>';
     html += '<div class="settings-card"><h2>最近反馈</h2><div id="projectFeedbacks"><p class="empty">加载中...</p></div></div>';
@@ -1889,9 +1890,9 @@ tr:last-child td{border-bottom:none}
     var tmp = currentFormSchema[index];
     currentFormSchema[index] = currentFormSchema[newIndex];
     currentFormSchema[newIndex] = tmp;
-    loadProjectDetail(currentProjectId);
+    renderFormSchemaList();
   };
-  window.removeField = function(index) { currentFormSchema.splice(index, 1); loadProjectDetail(currentProjectId); };
+  window.removeField = function(index) { currentFormSchema.splice(index, 1); renderFormSchemaList(); };
   window.addField = function() {
     editingFieldIndex = -1;
     document.getElementById('fieldEditorTitle').textContent = '添加字段';
@@ -1956,8 +1957,33 @@ tr:last-child td{border-bottom:none}
     if (editingFieldIndex >= 0) currentFormSchema[editingFieldIndex] = field;
     else currentFormSchema.push(field);
     closeFieldEditor();
-    loadProjectDetail(currentProjectId);
+    renderFormSchemaList();
   };
+  // Re-render the form schema field list (no API call)
+  function renderFormSchemaList() {
+    var container = document.getElementById('formSchemaListContainer');
+    if (!container) return;
+    var html = '';
+    if (!currentFormSchema || currentFormSchema.length === 0) {
+      html = '<p style="color:#999;font-size:.8rem;margin-bottom:8px">暂无自定义字段。</p>';
+    } else {
+      var typeLabels = {text:'单行文本',textarea:'多行文本',select:'下拉选择',checkbox:'复选框',radio:'单选'};
+      currentFormSchema.forEach(function(f, i){
+        var typeLabel = typeLabels[f.type] || f.type;
+        var reqMark = f.required ? ' <span style="color:#c00">*</span>' : '';
+        var optInfo = (f.options && f.options.length > 0) ? ' &mdash; ' + f.options.length + ' 个选项' : '';
+        html += '<div class="fb-field"><div class="fb-field-info"><div class="fb-field-title">' + esc(f.label) + reqMark + '</div>' +
+          '<div class="fb-field-meta">' + typeLabel + ' &middot; <code>' + esc(f.name) + '</code>' + optInfo + '</div></div>' +
+          '<div class="fb-field-actions">' +
+          (i > 0 ? '<button onclick="moveField('+i+',-1)">&uarr;</button>' : '') +
+          (i < currentFormSchema.length - 1 ? '<button onclick="moveField('+i+',1)">&darr;</button>' : '') +
+          '<button onclick="editField('+i+')">编辑</button>' +
+          '<button class="del" onclick="removeField('+i+')">删除</button></div></div>';
+      });
+    }
+    html += '<button class="fb-add-btn" onclick="addField()">+ 添加字段</button>';
+    container.innerHTML = html;
+  }
   window.saveFormSchema = async function() {
     var project = allProjects.find(function(p){ return p.id === currentProjectId; });
     if (!project) return;
