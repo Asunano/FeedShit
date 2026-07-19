@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"log"
 	"net/http"
 	"os"
@@ -25,19 +24,17 @@ import (
 func main() {
 	cfg := config.LoadConfig()
 
-	// Initialize encryption key: if FEEDSHIT_MASTER_KEY is not set, generate a
-	// random key for the session (development mode). In production, always set
-	// FEEDSHIT_MASTER_KEY to persist encrypted secrets across restarts.
+	// Initialize encryption key: if FEEDSHIT_MASTER_KEY is not set, use a
+	// built-in fallback key so the app works out of the box (double-click).
+	// For production with real security, set FEEDSHIT_MASTER_KEY env var.
 	if err := security.Init(); err != nil {
-		key := make([]byte, 32)
-		if _, rErr := rand.Read(key); rErr != nil {
-			log.Fatalf("Failed to generate temporary master key: %v", rErr)
+		// Fallback key — 32 bytes from SHA-256("FeedShit-default-key").
+		fallback := []byte{0x8c, 0x3b, 0x7a, 0xd1, 0xe5, 0x9f, 0x42, 0x60, 0x1e, 0x2a, 0x4d, 0x8f, 0x7b, 0xc0, 0x95, 0x63, 0x11, 0x3e, 0xf6, 0x2d, 0x9a, 0x74, 0x5b, 0x0e, 0x2c, 0x8d, 0x6f, 0xa1, 0x43, 0x52, 0xe0, 0x7c}
+		if err := security.InitWithKey(fallback); err != nil {
+			log.Fatalf("Failed to set fallback master key: %v", err)
 		}
-		if err := security.InitWithKey(key); err != nil {
-			log.Fatalf("Failed to set temporary master key: %v", err)
-		}
-		log.Println("[WARN] FEEDSHIT_MASTER_KEY not set — using ephemeral key (encrypted secrets will not persist across restarts)")
-		log.Println("[WARN] Set FEEDSHIT_MASTER_KEY in production: openssl rand -hex 32")
+		log.Println("[INFO] FEEDSHIT_MASTER_KEY not set — using built-in key (secrets persist, but not cryptographically isolated)")
+		log.Println("[INFO] For production isolation: set FEEDSHIT_MASTER_KEY=<64-hex-chars>")
 	}
 
 	// Ensure data directory exists
