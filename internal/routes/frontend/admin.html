@@ -2133,8 +2133,8 @@ tr:last-child td{border-bottom:none}
     if (!resp) return;
     var d = await resp.json();
     var admins = d.admins || [];
-    // Hide super admin (self) from the list — they can manage from their own account
-    admins = admins.filter(function(a){ return a.username !== currentUsername; });
+    // 排除超管（id=1，安装引导时创建）
+    admins = admins.filter(function(a){ return a.id !== 1; });
     var tbody = document.getElementById('adminTable');
     if (admins.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无其他团队成员</td></tr>';

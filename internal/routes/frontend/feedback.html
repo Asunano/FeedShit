@@ -618,9 +618,12 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
   function searchFAQ() {
     if (!PROJECT || !PROJECT.slug) return;
     var q = (document.getElementById('title').value + ' ' + document.getElementById('description').value).trim();
-    if (q.length < 3) {
-      faqHint.className = 'dup-warning';
-      faqHint.innerHTML = '';
+    if (q.length < 1) {
+      // Don't clear hint for very short queries — FAQ search works on any input
+      if (q.length === 0) {
+        faqHint.className = 'dup-warning';
+        faqHint.innerHTML = '';
+      }
       lastFaqQuery = '';
       return;
     }
