@@ -24,9 +24,9 @@ import (
 
 func main() {
 	cfg := config.LoadConfig()
-
-	// Ensure data directory exists before security init (needs DATA_DIR/key/)
 	dataDir := cfg.DataDir
+
+	// Ensure data directories exist
 	if err := os.MkdirAll(dataDir+"/key", 0755); err != nil {
 		log.Fatalf("Failed to create key dir: %v", err)
 	}
@@ -34,29 +34,23 @@ func main() {
 		log.Fatalf("Failed to create upload dir: %v", err)
 	}
 
-	// Initialize encryption key:
-	//   1. If FEEDSHIT_MASTER_KEY env var is set, use it (production isolation).
-	//   2. Else if data/key/master.key exists, read it (persisted across restarts).
-	//   3. Else generate a random key, save to data/key/master.key (first run).
+	// Initialize encryption key (env var → key file → auto-generate)
 	keyPath := dataDir + "/key/master.key"
 	if err := security.Init(); err != nil {
 		key, rErr := os.ReadFile(keyPath)
 		if rErr != nil || len(key) != 32 {
-			// Generate a new random key
 			key = make([]byte, 32)
 			if _, genErr := rand.Read(key); genErr != nil {
 				log.Fatalf("Failed to generate master key: %v", genErr)
 			}
 			if wErr := os.WriteFile(keyPath, key, 0600); wErr != nil {
-				log.Fatalf("Failed to save master key to %s: %v", keyPath, wErr)
+				log.Fatalf("Failed to save master key: %v", wErr)
 			}
-			keyGenerated := true
 			if err := security.InitWithKey(key); err != nil {
 				log.Fatalf("Failed to set master key: %v", err)
 			}
 			log.Printf("[INFO] 加密密钥已生成并保存到 %s", keyPath)
-			log.Printf("[INFO] 请备份此文件！丢失后将无法解密已存储的敏感信息")
-			_ = keyGenerated
+			log.Printf("[INFO] 请备份此文件！丢失后数据库将无法恢复")
 		} else {
 			if err := security.InitWithKey(key); err != nil {
 				log.Fatalf("Failed to set master key from file: %v", err)
@@ -67,19 +61,27 @@ func main() {
 		log.Println("[INFO] 使用 FEEDSHIT_MASTER_KEY 环境变量作为加密密钥")
 	}
 
+	// Decrypt database file if encrypted version exists
+	dbPath := cfg.DBPath
+	encPath := dbPath + ".encrypted"
+	if _, statErr := os.Stat(encPath); statErr == nil {
+		if err := security.DecryptFile(encPath, dbPath); err != nil {
+			log.Fatalf("Failed to decrypt database: %v", err)
+		}
+		os.Remove(encPath)
+		log.Println("[INFO] 数据库已解密")
+	}
+
 	// Initialize database
-	db, err := database.NewDatabase(cfg.DBPath)
+	db, err := database.NewDatabase(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
 
 	// Seed default config
 	db.InitDefaultConfig(cfg)
 
-	// Upgrade any legacy plaintext secrets (smtp_pass, webhook secrets) to
-	// encryption at rest. Idempotent: already-encrypted values are left alone.
-	// Fail-fast — an inconsistent secret store must not be left behind.
+	// Upgrade any legacy plaintext secrets
 	if err := db.ReEncryptSecrets(); err != nil {
 		log.Fatalf("Failed to re-encrypt secrets: %v", err)
 	}
@@ -88,11 +90,10 @@ func main() {
 	sm := middleware.NewSessionManager()
 	rl := middleware.NewRateLimiter(cfg.RateLimitPerHour)
 	mailer := email.NewMailer(db, cfg.BaseURL)
-
 	application := app.New(cfg, db, sm, rl, mailer)
 
 	// Auto backup on startup
-	backupDir := cfg.DataDir + "/backups"
+	backupDir := dataDir + "/backups"
 	if bp, err := db.BackupDatabase(backupDir); err != nil {
 		log.Printf("Startup backup failed: %v", err)
 	} else {
@@ -115,7 +116,7 @@ func main() {
 		}
 	}()
 
-	// Webhook outbox retry ticker (M6): delivers due webhook notifications with backoff.
+	// Webhook outbox retry ticker
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
@@ -124,14 +125,13 @@ func main() {
 		}
 	}()
 
-	// Weekly report ticker (M13): 每周一 08:00 发送周报邮件。
+	// Weekly report ticker
 	go func() {
 		for {
 			now := time.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day(), 8, 0, 0, 0, now.Location())
 			weekday := next.Weekday()
 			if weekday != time.Monday {
-				// 回退到最近的周一
 				offset := (7 - int(weekday) + 1) % 7
 				next = next.AddDate(0, 0, offset)
 			}
@@ -141,7 +141,6 @@ func main() {
 			sleepDuration := next.Sub(now)
 			log.Printf("[REPORT] 下次周报时间 %s（还有 %v）", next.Format(time.RFC3339), sleepDuration)
 			time.Sleep(sleepDuration)
-
 			if report.AcquireJobLock(db, "weekly_report", 1*time.Hour) {
 				if err := report.GenerateWeeklyReport(db, mailer); err != nil {
 					log.Printf("[REPORT] 周报生成失败: %v", err)
@@ -153,7 +152,7 @@ func main() {
 		}
 	}()
 
-	// Configure trusted proxies for CDN header validation
+	// Configure trusted proxies
 	middleware.SetTrustedProxies(cfg.TrustedProxies)
 
 	// Setup Gin
@@ -162,15 +161,13 @@ func main() {
 	r.Use(gin.Logger(), gin.Recovery())
 	r.RedirectTrailingSlash = false
 	r.RedirectFixedPath = false
-
-	// Configure Gin's trusted proxies
 	if len(cfg.TrustedProxies) > 0 {
 		r.SetTrustedProxies(cfg.TrustedProxies)
 	} else {
 		r.SetTrustedProxies(nil)
 	}
 
-	// Register all routes
+	// Register routes
 	routes.Register(r, application)
 
 	// --- Start server ---
@@ -178,19 +175,16 @@ func main() {
 	srv := &http.Server{Addr: addr, Handler: r}
 
 	log.Printf("FeedShit starting on %s", addr)
-	log.Printf("  Landing page:  http://localhost:%s/", cfg.Port)
-	log.Printf("  Admin panel:   http://localhost:%s/admin", cfg.Port)
-	log.Printf("  Feedback page: http://localhost:%s/fb/{project-slug}", cfg.Port)
-	if len(cfg.TrustedProxies) > 0 {
-		log.Printf("  Trusted proxies: %v", cfg.TrustedProxies)
-	}
+	log.Printf("  首页: http://localhost:%s/", cfg.Port)
+	log.Printf("  后台: http://localhost:%s/admin", cfg.Port)
+	log.Printf("  反馈页: http://localhost:%s/fb/{项目slug}", cfg.Port)
 
-	// Graceful shutdown: drain in-flight requests on SIGINT/SIGTERM
+	// Graceful shutdown: encrypt database on exit
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
-		log.Println("Shutting down...")
+		log.Println("正在关闭服务...")
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
@@ -201,12 +195,22 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Server failed: %v", err)
 	}
-	log.Println("Server stopped gracefully")
+	log.Println("服务已停止")
+
+	// Close database and encrypt for at-rest protection
+	db.Close()
+	log.Println("[INFO] 正在加密数据库...")
+	if err := security.EncryptFile(dbPath, encPath); err != nil {
+		log.Printf("[ERROR] 数据库加密失败: %v（明文未删除，请手动处理）", err)
+	} else {
+		os.Remove(dbPath)
+		os.Remove(dbPath + "-wal")
+		os.Remove(dbPath + "-shm")
+		log.Println("[INFO] 数据库已加密，明文已清除")
+	}
 }
 
 // pruneBackups prunes old backup files according to the retention policy.
-// A retention of <= 0 means "no automatic cleanup" and is a no-op, matching the
-// documented semantics of BACKUP_RETENTION_DAYS=0.
 func pruneBackups(db *database.Database, backupDir string, daysOld int) {
 	if daysOld <= 0 {
 		return

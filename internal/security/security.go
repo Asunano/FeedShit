@@ -148,3 +148,67 @@ func DecryptWithMaster(token string) (string, error) {
 func IsEncrypted(s string) bool {
 	return strings.HasPrefix(s, Prefix)
 }
+
+// EncryptFile encrypts an entire file using the master key and writes to dst.
+// The output format: [12 bytes nonce][GCM ciphertext + 16 byte auth tag].
+// Returns error if master key is not initialized.
+func EncryptFile(src, dst string) error {
+	if len(masterKey) != 32 {
+		return fmt.Errorf("master key not initialized")
+	}
+	plaintext, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+	block, err := aes.NewCipher(masterKey)
+	if err != nil {
+		return fmt.Errorf("aes new cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return fmt.Errorf("aes new gcm: %w", err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return fmt.Errorf("generate nonce: %w", err)
+	}
+	// Seal appends ciphertext+tag after nonce, yielding nonce||ciphertext||tag.
+	out := gcm.Seal(nonce, nonce, plaintext, nil)
+	if err := os.WriteFile(dst, out, 0600); err != nil {
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	return nil
+}
+
+// DecryptFile decrypts a file produced by EncryptFile using the master key.
+// Format: [12 bytes nonce][GCM ciphertext + 16 byte auth tag].
+func DecryptFile(src, dst string) error {
+	if len(masterKey) != 32 {
+		return fmt.Errorf("master key not initialized")
+	}
+	encrypted, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+	const nonceSize = 12
+	if len(encrypted) < nonceSize {
+		return fmt.Errorf("encrypted file too short")
+	}
+	nonce, ciphertext := encrypted[:nonceSize], encrypted[nonceSize:]
+	block, err := aes.NewCipher(masterKey)
+	if err != nil {
+		return fmt.Errorf("aes new cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return fmt.Errorf("aes new gcm: %w", err)
+	}
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return fmt.Errorf("decrypt (wrong key or tampered data): %w", err)
+	}
+	if err := os.WriteFile(dst, plaintext, 0600); err != nil {
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	return nil
+}
