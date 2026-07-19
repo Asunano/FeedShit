@@ -1,0 +1,36 @@
+# Binaries (root only — do NOT ignore the cmd/feedshit source dir)
+/feedshit
+/feedshit.exe
+*.exe
+
+# Data directory (SQLite, uploads)
+data/
+
+# Database files
+*.db
+*.db-wal
+*.db-shm
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Agent / editor workspace data (not part of the source)
+.codebuddy/
+
+# Environment
+.env
+*.env
+
+# Test artifacts
+test/data/
+test/feedshit.exe
+
+# Build
+/dist/

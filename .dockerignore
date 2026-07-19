@@ -1,0 +1,11 @@
+.git
+.github
+data
+test
+*.md
+*.exe
+*.db
+*.db-wal
+*.db-shm
+.dockerignore
+.gitignore

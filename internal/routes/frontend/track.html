@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>反馈跟踪</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;line-height:1.6}
+.container{max-width:600px;margin:40px auto;padding:0 16px}
+h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
+.subtitle{color:#888;font-size:.85rem;margin-bottom:24px}
+.card{background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:24px;margin-bottom:16px}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:.85rem;font-weight:500;margin-bottom:4px;color:#555}
+.field input[type=text],.field textarea{width:100%;padding:8px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.9rem;font-family:inherit;transition:border-color .15s}
+.field input:focus,.field textarea:focus{outline:none;border-color:#888}
+.field textarea{resize:vertical;min-height:80px}
+.btn{display:inline-block;padding:10px 24px;background:#333;color:#fff;border:none;border-radius:4px;font-size:.9rem;cursor:pointer;transition:background .15s}
+.btn:hover{background:#555}
+.btn:disabled{background:#aaa;cursor:not-allowed}
+.btn-sm{padding:6px 16px;font-size:.8rem}
+.status{margin-top:12px;padding:10px;border-radius:4px;font-size:.85rem;display:none}
+.status.success{display:block;background:#e6f9e6;color:#1a7a1a;border:1px solid #b2e0b2}
+.status.error{display:block;background:#fde8e8;color:#c00;border:1px solid #f5c6c6}
+/* Lookup form */
+.lookup-section{text-align:center}
+.lookup-section .token-input{display:flex;gap:8px;max-width:400px;margin:0 auto}
+.lookup-section .token-input input{flex:1}
+/* Feedback detail */
+.fb-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
+.fb-header h2{font-size:1.1rem;font-weight:600;flex:1}
+.fb-status{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.75rem;font-weight:500;white-space:nowrap}
+.fb-status.pending{background:#fff3cd;color:#856404}
+.fb-status.processing{background:#cce5ff;color:#004085}
+.fb-status.resolved{background:#d4edda;color:#155724}
+.fb-status.closed{background:#e2e3e5;color:#383d41}
+.fb-meta{font-size:.8rem;color:#999;margin-bottom:16px}
+.fb-desc{font-size:.9rem;color:#555;white-space:pre-wrap;margin-bottom:20px;padding:12px;background:#f9f9f9;border-radius:4px;border:1px solid #eee}
+/* Notes timeline */
+.notes-section h3{font-size:.9rem;font-weight:600;margin-bottom:12px;color:#555}
+.note-item{padding:12px;margin-bottom:8px;border-radius:6px;border:1px solid #eee}
+.note-item.admin{background:#f0f7ff;border-color:#d0e3f7}
+.note-item.submitter{background:#f9f9f9;border-color:#e2e2e2}
+.note-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.note-author{font-size:.8rem;font-weight:600;color:#555}
+.note-author.admin{color:#004085}
+.note-author.submitter{color:#666}
+.note-time{font-size:.7rem;color:#aaa}
+.note-content{font-size:.85rem;color:#444;white-space:pre-wrap}
+.no-notes{text-align:center;color:#bbb;font-size:.85rem;padding:20px 0}
+/* Reply form */
+.reply-section{margin-top:20px;padding-top:16px;border-top:1px solid #eee}
+.reply-section h3{font-size:.9rem;font-weight:600;margin-bottom:12px;color:#555}
+.reply-form textarea{margin-bottom:8px}
+.reply-form .btn-row{display:flex;justify-content:flex-end}
+/* Loading */
+.loading{text-align:center;padding:40px;color:#999}
+.loading .spinner{display:inline-block;width:24px;height:24px;border:3px solid #e0e0e0;border-top-color:#888;border-radius:50%;animation:spin .6s linear infinite;margin-bottom:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>反馈跟踪</h1>
+  <p class="subtitle">输入跟踪令牌查看反馈处理进度</p>
+
+  <!-- Lookup form -->
+  <div class="card lookup-section" id="lookupCard">
+    <div class="field">
+      <label for="tokenInput">跟踪令牌</label>
+      <div class="token-input">
+        <input type="text" id="tokenInput" placeholder="粘贴您的跟踪令牌" autocomplete="off">
+        <button class="btn" id="lookupBtn" onclick="doLookup()">查询</button>
+      </div>
+    </div>
+    <div class="status" id="lookupStatus"></div>
+  </div>
+
+  <!-- Feedback detail (hidden until lookup) -->
+  <div id="detailSection" style="display:none">
+    <div class="card">
+      <div class="fb-header">
+        <h2 id="fbTitle"></h2>
+        <span class="fb-status" id="fbStatus"></span>
+      </div>
+      <div class="fb-meta">
+        编号 #<span id="fbId"></span> &middot;
+        项目 <span id="fbProject"></span> &middot;
+        提交于 <span id="fbDate"></span>
+      </div>
+      <div class="fb-desc" id="fbDesc"></div>
+    </div>
+
+    <div class="card">
+      <div class="notes-section">
+        <h3>处理记录与回复</h3>
+        <div id="notesList"></div>
+      </div>
+      <div class="reply-section">
+        <h3>补充回复</h3>
+        <div class="reply-form">
+          <textarea id="replyContent" placeholder="如有补充信息请在此填写..."></textarea>
+          <div class="btn-row">
+            <button class="btn btn-sm" id="replyBtn" onclick="doReply()">提交回复</button>
+          </div>
+          <div class="status" id="replyStatus"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var statusLabels = {pending:'待处理',processing:'处理中',resolved:'已解决',closed:'已关闭'};
+  var currentToken = '';
+
+  // Check URL hash for token
+  function initFromHash() {
+    var hash = window.location.hash;
+    if (hash && hash.startsWith('#token=')) {
+      var token = decodeURIComponent(hash.substring(7));
+      if (token) {
+        document.getElementById('tokenInput').value = token;
+        doLookup();
+      }
+    }
+  }
+
+  window.doLookup = function() {
+    var token = document.getElementById('tokenInput').value.trim();
+    if (!token) {
+      showLookupStatus('error', '请输入跟踪令牌');
+      return;
+    }
+    currentToken = token;
+
+    // Show loading
+    document.getElementById('detailSection').style.display = 'none';
+    showLookupStatus('loading', '<div class="loading"><div class="spinner"></div><div>正在查询...</div></div>');
+
+    fetch('/api/v1/track/feedback?token=' + encodeURIComponent(token))
+      .then(function(r){ return r.json().then(function(d){ return {status: r.status, data: d}; }); })
+      .then(function(res){
+        if (res.status === 200) {
+          hideLookupStatus();
+          renderFeedback(res.data);
+        } else {
+          showLookupStatus('error', res.data.error || '查询失败');
+        }
+      })
+      .catch(function(){
+        showLookupStatus('error', '网络错误，请稍后重试');
+      });
+  };
+
+  function renderFeedback(data) {
+    document.getElementById('fbId').textContent = data.id;
+    document.getElementById('fbTitle').textContent = data.title;
+    document.getElementById('fbProject').textContent = data.project_id;
+    document.getElementById('fbDate').textContent = data.created_at;
+
+    var statusEl = document.getElementById('fbStatus');
+    statusEl.textContent = statusLabels[data.status] || data.status;
+    statusEl.className = 'fb-status ' + (data.status || '');
+
+    var desc = data.description || '（无详细描述）';
+    document.getElementById('fbDesc').textContent = desc;
+
+    // Render notes
+    var notesList = document.getElementById('notesList');
+    var notes = data.notes || [];
+    if (notes.length === 0) {
+      notesList.innerHTML = '<div class="no-notes">暂无回复记录</div>';
+    } else {
+      var html = '';
+      notes.forEach(function(n){
+        var isSubmitter = n.author === '提交者';
+        var cls = isSubmitter ? 'submitter' : 'admin';
+        var authorLabel = isSubmitter ? '提交者' : (n.author || '管理员');
+        html += '<div class="note-item ' + cls + '">' +
+          '<div class="note-header">' +
+          '<span class="note-author ' + cls + '">' + escHtml(authorLabel) + '</span>' +
+          '<span class="note-time">' + escHtml(formatTime(n.created_at)) + '</span>' +
+          '</div>' +
+          '<div class="note-content">' + escHtml(n.content) + '</div>' +
+          '</div>';
+      });
+      notesList.innerHTML = html;
+    }
+
+    document.getElementById('detailSection').style.display = 'block';
+  }
+
+  window.doReply = function() {
+    var content = document.getElementById('replyContent').value.trim();
+    if (!content) {
+      showReplyStatus('error', '请填写回复内容');
+      return;
+    }
+    if (content.length > 2000) {
+      showReplyStatus('error', '回复内容最多 2000 字');
+      return;
+    }
+
+    var btn = document.getElementById('replyBtn');
+    btn.disabled = true;
+
+    var fd = new FormData();
+    fd.append('token', currentToken);
+    fd.append('content', content);
+
+    fetch('/api/v1/track/reply', {method: 'POST', body: fd})
+      .then(function(r){ return r.json().then(function(d){ return {status: r.status, data: d}; }); })
+      .then(function(res){
+        if (res.status === 200) {
+          showReplyStatus('success', '回复已提交');
+          document.getElementById('replyContent').value = '';
+          // Refresh feedback data
+          setTimeout(function(){ doLookup(); }, 500);
+        } else {
+          showReplyStatus('error', res.data.error || '提交失败');
+        }
+      })
+      .catch(function(){
+        showReplyStatus('error', '网络错误');
+      })
+      .finally(function(){
+        btn.disabled = false;
+      });
+  };
+
+  function showLookupStatus(type, msg) {
+    var el = document.getElementById('lookupStatus');
+    el.className = 'status ' + type;
+    el.innerHTML = msg;
+    el.style.display = 'block';
+  }
+  function hideLookupStatus() {
+    document.getElementById('lookupStatus').style.display = 'none';
+  }
+  function showReplyStatus(type, msg) {
+    var el = document.getElementById('replyStatus');
+    el.className = 'status ' + type;
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function escHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  }
+
+  function formatTime(dateStr) {
+    if (!dateStr) return '';
+    // dateStr is "YYYY-MM-DD HH:MM:SS" from the API
+    return dateStr;
+  }
+
+  // Enter key triggers lookup
+  document.getElementById('tokenInput').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') { e.preventDefault(); doLookup(); }
+  });
+
+  initFromHash();
+})();
+</script>
+</body>
+</html>

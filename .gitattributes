@@ -1,0 +1,9 @@
+# 统一使用 LF 行尾，避免跨平台协作时 CRLF 警告
+* text=auto eol=lf
+
+*.go text
+*.html text
+*.md text
+*.yml text
+*.ps1 text eol=crlf
+*.bat text eol=crlf
