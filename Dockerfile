@@ -1,5 +1,7 @@
 # ---- Stage 1: Build ----
-FROM golang:1.26-alpine AS builder
+# Use `make docker` to build with pinned digests (see Makefile).
+ARG GO_IMAGE=golang:1.26-alpine
+FROM ${GO_IMAGE} AS builder
 
 # VERSION is injected at build time (e.g. `docker build --build-arg VERSION=1.2.3`).
 ARG VERSION=dev
@@ -20,7 +22,8 @@ ENV GOARCH=amd64
 RUN go build -ldflags="-s -w" -o feedshit ./cmd/feedshit/
 
 # ---- Stage 2: Runtime ----
-FROM alpine:3.20
+ARG ALPINE_IMAGE=alpine:3.20
+FROM ${ALPINE_IMAGE}
 
 ARG VERSION=dev
 LABEL org.opencontainers.image.title="FeedShit" \

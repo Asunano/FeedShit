@@ -174,7 +174,7 @@ func EncryptFile(src, dst string) error {
 	}
 	// Seal appends ciphertext+tag after nonce, yielding nonce||ciphertext||tag.
 	out := gcm.Seal(nonce, nonce, plaintext, nil)
-	if err := os.WriteFile(dst, out, 0600); err != nil {
+	if err := os.WriteFile(dst, out, 0400); err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
 	return nil

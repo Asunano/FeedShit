@@ -39,7 +39,7 @@ func LoadConfig() *Config {
 	cfg := &Config{
 		Port:             getEnv("PORT", "8080"),
 		AdminUsername:    getEnv("ADMIN_USERNAME", "admin"),
-		AdminPassword:    getEnv("ADMIN_PASSWORD", "changeme"),
+		AdminPassword:    getEnv("ADMIN_PASSWORD", ""),
 		DataDir:          getEnv("DATA_DIR", "./data"),
 		SMTPHost:         getEnv("SMTP_HOST", ""),
 		SMTPPort:         getEnvInt("SMTP_PORT", 587),

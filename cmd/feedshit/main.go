@@ -44,7 +44,7 @@ func main() {
 			if _, genErr := rand.Read(key); genErr != nil {
 				log.Fatalf("Failed to generate master key: %v", genErr)
 			}
-			if wErr := os.WriteFile(keyPath, key, 0600); wErr != nil {
+			if wErr := os.WriteFile(keyPath, key, 0400); wErr != nil {
 				log.Fatalf("Failed to save master key: %v", wErr)
 			}
 			if err := security.InitWithKey(key); err != nil {
@@ -132,11 +132,11 @@ func main() {
 			sleepDuration := next.Sub(now)
 			log.Printf("[REPORT] 下次周报时间 %s（还有 %v）", next.Format(time.RFC3339), sleepDuration)
 			time.Sleep(sleepDuration)
-			if report.AcquireJobLock(db, "weekly_report", 1*time.Hour) {
+			if token, ok := report.AcquireJobLock(db, "weekly_report", 1*time.Hour); ok {
 				if err := report.GenerateWeeklyReport(db, mailer); err != nil {
 					log.Printf("[REPORT] 周报生成失败: %v", err)
 				}
-				report.ReleaseJobLock(db, "weekly_report")
+				report.ReleaseJobLock(db, "weekly_report", token)
 			} else {
 				log.Println("[REPORT] 周报锁被其他实例持有，跳过本轮")
 			}

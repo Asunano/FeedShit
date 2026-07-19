@@ -13,9 +13,9 @@ import (
 // AcquireJobLock 尝试获取分布式锁。
 // key: 锁名称（如 "weekly_report"）
 // ttl: 锁持有时间
-// 返回 true 表示本实例成功获取锁。
-// 锁 token = hostname-PID-randomHex，用于重入和释放时校验身份。
-func AcquireJobLock(db *database.Database, key string, ttl time.Duration) bool {
+// 返回 token（成功时非空）和是否成功。
+// token 用于释放时校验身份，防止误删其他实例的锁。
+func AcquireJobLock(db *database.Database, key string, ttl time.Duration) (string, bool) {
 	// 生成锁 token
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -25,7 +25,7 @@ func AcquireJobLock(db *database.Database, key string, ttl time.Duration) bool {
 	randBytes := make([]byte, 8)
 	if _, err := rand.Read(randBytes); err != nil {
 		log.Printf("[JOBLOCK] 生成随机 token 失败: %v", err)
-		return false
+		return "", false
 	}
 	token := fmt.Sprintf("%s-%d-%x", hostname, pid, randBytes)
 
@@ -39,16 +39,16 @@ func AcquireJobLock(db *database.Database, key string, ttl time.Duration) bool {
 	)
 	if err != nil {
 		log.Printf("[JOBLOCK] UPDATE 抢锁失败 key=%s: %v", key, err)
-		return false
+		return "", false
 	}
 	rows, err := res.RowsAffected()
 	if err != nil {
 		log.Printf("[JOBLOCK] 读取影响行数失败: %v", err)
-		return false
+		return "", false
 	}
 	if rows > 0 {
 		log.Printf("[JOBLOCK] 抢锁成功 key=%s (续约/重入), token=%s", key, token)
-		return true
+		return token, true
 	}
 
 	// Step 2: 尝试插入新锁（INSERT OR IGNORE）
@@ -58,26 +58,26 @@ func AcquireJobLock(db *database.Database, key string, ttl time.Duration) bool {
 	)
 	if err != nil {
 		log.Printf("[JOBLOCK] INSERT 抢锁失败 key=%s: %v", key, err)
-		return false
+		return "", false
 	}
 	rows, err = res.RowsAffected()
 	if err != nil {
 		log.Printf("[JOBLOCK] 读取影响行数失败: %v", err)
-		return false
+		return "", false
 	}
 	if rows > 0 {
 		log.Printf("[JOBLOCK] 抢锁成功 key=%s (新插入), token=%s", key, token)
-		return true
+		return token, true
 	}
 
 	log.Printf("[JOBLOCK] 抢锁失败 key=%s（其他实例持有）", key)
-	return false
+	return "", false
 }
 
 // ReleaseJobLock 显式释放锁（将 locked_until 置为 0）。
 // 仅当 token 匹配时才会释放，防止误删其他实例的锁。
-func ReleaseJobLock(db *database.Database, key string) {
-	_, err := db.ExecRaw(`UPDATE job_locks SET locked_until = 0 WHERE key = ?`, key)
+func ReleaseJobLock(db *database.Database, key string, token string) {
+	_, err := db.ExecRaw(`UPDATE job_locks SET locked_until = 0 WHERE key = ? AND token = ?`, key, token)
 	if err != nil {
 		log.Printf("[JOBLOCK] 释放锁失败 key=%s: %v", key, err)
 	} else {

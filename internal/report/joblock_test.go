@@ -39,7 +39,7 @@ func readLockedUntil(t *testing.T, db *database.Database, key string) int64 {
 // TestAcquireJobLock_FirstCallSuccess 验证首次调用成功（第 2 项）。
 func TestAcquireJobLock_FirstCallSuccess(t *testing.T) {
 	db := setupJobLockDB(t)
-	ok := AcquireJobLock(db, "test_lock_1", 1*time.Hour)
+	_, ok := AcquireJobLock(db, "test_lock_1", 1*time.Hour)
 	if !ok {
 		t.Fatal("首次调用 AcquireJobLock 应成功")
 	}
@@ -62,7 +62,7 @@ func TestAcquireJobLock_SecondInstanceFails(t *testing.T) {
 		t.Fatalf("插入模拟锁记录失败: %v", err)
 	}
 
-	ok := AcquireJobLock(db, "test_lock_2", 1*time.Hour)
+	_, ok := AcquireJobLock(db, "test_lock_2", 1*time.Hour)
 	if ok {
 		t.Fatal("另一实例应无法获取已被持有的锁")
 	}
@@ -81,7 +81,7 @@ func TestAcquireJobLock_ExpiredLockReacquire(t *testing.T) {
 		t.Fatalf("插入过期锁记录失败: %v", err)
 	}
 
-	ok := AcquireJobLock(db, "test_lock_3", 1*time.Hour)
+	_, ok := AcquireJobLock(db, "test_lock_3", 1*time.Hour)
 	if !ok {
 		t.Fatal("过期锁应可被新实例抢走")
 	}
@@ -91,12 +91,12 @@ func TestAcquireJobLock_ExpiredLockReacquire(t *testing.T) {
 func TestReleaseJobLock(t *testing.T) {
 	db := setupJobLockDB(t)
 
-	ok := AcquireJobLock(db, "test_lock_5", 1*time.Hour)
+	token, ok := AcquireJobLock(db, "test_lock_5", 1*time.Hour)
 	if !ok {
 		t.Fatal("首次获取锁应成功")
 	}
 
-	ReleaseJobLock(db, "test_lock_5")
+	ReleaseJobLock(db, "test_lock_5", token)
 	lockedUntil := readLockedUntil(t, db, "test_lock_5")
 	if lockedUntil != 0 {
 		t.Fatalf("释放后 locked_until 应为 0，got %d", lockedUntil)
@@ -107,15 +107,15 @@ func TestReleaseJobLock(t *testing.T) {
 func TestReleaseJobLock_ThenReacquire(t *testing.T) {
 	db := setupJobLockDB(t)
 
-	AcquireJobLock(db, "test_lock_6", 1*time.Hour)
-	ReleaseJobLock(db, "test_lock_6")
+	token, _ := AcquireJobLock(db, "test_lock_6", 1*time.Hour)
+	ReleaseJobLock(db, "test_lock_6", token)
 
 	lockedUntil := readLockedUntil(t, db, "test_lock_6")
 	if lockedUntil != 0 {
 		t.Fatalf("释放后 locked_until 应为 0，got %d", lockedUntil)
 	}
 
-	ok := AcquireJobLock(db, "test_lock_6", 1*time.Hour)
+	_, ok := AcquireJobLock(db, "test_lock_6", 1*time.Hour)
 	if !ok {
 		t.Fatal("释放后应可重新获取锁")
 	}

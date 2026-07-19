@@ -542,6 +542,14 @@ func (a *App) cookieSecure(c *gin.Context) bool {
 	if proto := c.GetHeader("X-Forwarded-Proto"); proto == "https" {
 		return true
 	}
+	// AWS ELB sends X-Forwarded-Ssl: true when HTTPS is terminated at the LB.
+	if c.GetHeader("X-Forwarded-Ssl") == "true" {
+		return true
+	}
+	// Cloudflare sends CF-Visitor: {"scheme":"https"}.
+	if v := c.GetHeader("CF-Visitor"); strings.Contains(v, `"scheme":"https"`) {
+		return true
+	}
 	return strings.HasPrefix(a.Cfg.BaseURL, "https")
 }
 
