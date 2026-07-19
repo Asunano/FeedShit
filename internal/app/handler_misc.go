@@ -175,7 +175,12 @@ func (a *App) saveUpload(fh *multipart.FileHeader, projectID string) (string, er
 	uid := uuid.New().String()[:8]
 	safeName := fmt.Sprintf("%s_%s_%s", ts, uid, origName)
 
-	relDir := filepath.Join("uploads", projectID)
+	now := time.Now()
+	dateDir := fmt.Sprintf("%s/%s/%s/%s", projectID,
+		now.Format("2006"),
+		now.Format("01"),
+		now.Format("02"))
+	relDir := filepath.Join("uploads", dateDir, uid)
 	absDir := filepath.Join(a.Cfg.DataDir, relDir)
 	if err := os.MkdirAll(absDir, 0755); err != nil {
 		return "", fmt.Errorf("创建目录失败: %w", err)

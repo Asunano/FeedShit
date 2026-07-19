@@ -824,3 +824,46 @@ func (a *App) AdminPruneOldBackups(c *gin.Context) {
 		"pruned":  pruned,
 	})
 }
+
+// AdminListBackups lists all backup files with metadata.
+// Route: GET /api/v1/admin/system/backups
+func (a *App) AdminListBackups(c *gin.Context) {
+	backupDir := filepath.Join(a.Cfg.DataDir, "backups")
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"backups": []map[string]interface{}{}})
+		return
+	}
+	var backups []map[string]interface{}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		info, _ := e.Info()
+		backups = append(backups, map[string]interface{}{
+			"name":      e.Name(),
+			"size":      info.Size(),
+			"size_str":  formatFileSize(info.Size()),
+			"modified":  info.ModTime().Format("2006-01-02 15:04:05"),
+			"modified_unix": info.ModTime().Unix(),
+		})
+	}
+	if backups == nil {
+		backups = []map[string]interface{}{}
+	}
+	c.JSON(http.StatusOK, gin.H{"backups": backups})
+}
+
+// formatFileSize returns a human-readable size string.
+func formatFileSize(b int64) string {
+	const unit = 1024
+	if b < unit {
+		return fmt.Sprintf("%d B", b)
+	}
+	div, exp := int64(unit), 0
+	for n := b / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
+}

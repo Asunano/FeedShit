@@ -310,6 +310,7 @@ func Register(r *gin.Engine, application *app.App) {
 		// Backup
 		adminAPI.POST("/backup", application.AdminBackup)
 		adminAPI.GET("/backup/download", application.AdminBackupDownload)
+		adminAPI.GET("/backups", application.AdminListBackups)
 
 		// API Token management (admin only)
 		adminAPI.GET("/api-tokens", middleware.RequireRole("admin"), application.AdminListAPITokens)

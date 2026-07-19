@@ -808,7 +808,14 @@ tr:last-child td{border-bottom:none}
             </div>
           </div>
           <div style="padding-top:16px;border-top:1px solid #eee;margin-top:16px">
-            <h3 style="font-size:.9rem;margin-bottom:8px">清理旧备份</h3>
+            <h3 style="font-size:.9rem;margin-bottom:8px">数据库备份</h3>
+            <div id="backupListContainer">
+              <p style="font-size:.8rem;color:#888;margin-bottom:8px">加载中...</p>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn-save" onclick="triggerBackup()">创建备份</button>
+            </div>
+            <h3 style="font-size:.9rem;margin:16px 0 8px 0">清理旧备份</h3>
             <p style="font-size:.8rem;color:#888;margin-bottom:8px">删除超过指定天数的备份文件。设为 0 表示不自动清理。</p>
             <div style="display:flex;align-items:center;gap:8px">
               <input type="number" id="pruneDaysInput" min="0" value="0" style="width:80px;padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem">
@@ -1111,7 +1118,7 @@ tr:last-child td{border-bottom:none}
       if (el) el.style.display = t === tab ? '' : 'none';
     });
     if (tab === 'projects') { showProjectList(); loadProjects(); loadProjectStats(); }
-    if (tab === 'settings') loadEmailSettings();
+    if (tab === 'settings') { loadEmailSettings(); loadBackupList(); }
     if (tab === 'dashboard') { showList(); loadStats(); loadFeedbacks(); loadChart(); }
     if (tab === 'audit') loadAuditLogs();
     if (tab === 'team') loadAdmins();
@@ -3022,7 +3029,38 @@ tr:last-child td{border-bottom:none}
     if (!d) return;
     document.getElementById('pruneResult').textContent = d.message;
     showToast(d.message, 'success');
+    loadBackupList();
   };
+
+  window.triggerBackup = async function() {
+    var d = await apiJSON('/api/v1/admin/backup', {method:'POST'});
+    if (!d) return;
+    showToast(d.message, 'success');
+    loadBackupList();
+  };
+
+  async function loadBackupList() {
+    var container = document.getElementById('backupListContainer');
+    if (!container) return;
+    var resp = await api('/api/v1/admin/backups');
+    if (!resp) return;
+    var d = await resp.json();
+    var bk = d.backups || [];
+    if (bk.length === 0) {
+      container.innerHTML = '<p style="font-size:.8rem;color:#888">暂无备份文件。</p>';
+      return;
+    }
+    var html = '<table style="width:100%;font-size:.8rem"><tr><th>文件名</th><th>大小</th><th>时间</th><th>操作</th></tr>';
+    bk.forEach(function(b){
+      var enc = encodeURIComponent(b.name);
+      html += '<tr><td style="font-family:monospace;font-size:.75rem">' + esc(b.name) + '</td>' +
+        '<td>' + (b.size_str || b.size) + '</td>' +
+        '<td>' + b.modified + '</td>' +
+        '<td><a href="/api/v1/admin/system/backup/download?file=' + enc + '" class="btn-sm" download>下载</a></td></tr>';
+    });
+    html += '</table>';
+    container.innerHTML = html;
+  }
 
   // ========== Project Archive ==========
 

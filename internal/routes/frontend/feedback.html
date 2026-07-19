@@ -89,6 +89,23 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 .dup-still a:hover{text-decoration:underline}
 [data-theme="dark"] .dup-card-title,[data-theme="dark"] .dup-card-link,[data-theme="dark"] .dup-still a{color:#f1d56e}
 [data-theme="dark"] .dup-item{background:rgba(255,255,255,.06)}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal{background:#fff;border-radius:8px;padding:24px;width:90%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.modal h3{margin:0 0 8px 0;font-size:1.05rem}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end}
+.modal .btn{padding:8px 18px;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;font-size:.85rem}
+.modal .btn-primary{background:#e53e3e;color:#fff;border-color:#e53e3e}
+.modal .btn-primary:hover{background:#c53030}
+.modal .field{margin-bottom:12px}
+.modal .field label{display:block;font-size:.8rem;font-weight:600;margin-bottom:4px;color:#333}
+.modal .field input{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:.85rem;box-sizing:border-box}
+.modal .field input:focus{outline:none;border-color:#e53e3e;box-shadow:0 0 0 2px rgba(229,62,62,.15)}
+[data-theme="dark"] .modal{background:#2d2d2d}
+[data-theme="dark"] .modal h3{color:#eee}
+[data-theme="dark"] .modal .field label{color:#ccc}
+[data-theme="dark"] .modal input{background:#3d3d3d;border-color:#555;color:#eee}
+[data-theme="dark"] .modal .btn{background:#3d3d3d;border-color:#555;color:#ddd}
 </style>
 <style id="theme-vars">
 /* ===== Theme tokens (M14) ===== */
@@ -264,20 +281,12 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
       <!-- Notification opt-in -->
       <div class="field">
         <label class="checkbox-label" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">
-          <input type="checkbox" id="notify_consent" onchange="toggleContactFields()" style="margin-top:2px;width:auto">
+          <input type="checkbox" id="notify_consent" style="margin-top:2px;width:auto">
           <span>📬 接收反馈处理通知<br><small style="color:#888;font-weight:normal">勾选后可填写称呼和邮箱，当反馈状态更新或有回复时您将收到邮件通知，并获取反馈跟踪链接。</small></span>
         </label>
       </div>
-      <div id="contactFields" style="display:none">
-        <div class="field">
-          <label for="contact_name">您的称呼</label>
-          <input type="text" id="contact_name" name="contact_name" placeholder="如何称呼您？">
-        </div>
-        <div class="field">
-          <label for="contact_email">邮箱 <span class="req">*</span></label>
-          <input type="email" id="contact_email" name="contact_email" placeholder="用于接收通知和跟踪链接" required>
-        </div>
-      </div>
+      <input type="hidden" id="contact_name" name="contact_name">
+      <input type="hidden" id="contact_email" name="contact_email">
 
       <!-- Dynamic custom fields injected here -->
       <div id="customFieldsContainer"></div>
@@ -310,6 +319,26 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
       </div>
       <div class="status" id="statusMsg"></div>
     </form>
+
+    <!-- Contact info modal -->
+    <div class="modal-overlay" id="contactModal">
+      <div class="modal" style="max-width:420px">
+        <h3>📬 接收通知</h3>
+        <p style="font-size:.85rem;color:#666;margin-bottom:16px">填写联系方式后，反馈状态更新或有回复时您将收到邮件通知。</p>
+        <div class="field">
+          <label for="modal_contact_name">您的称呼</label>
+          <input type="text" id="modal_contact_name" placeholder="如何称呼您？">
+        </div>
+        <div class="field">
+          <label for="modal_contact_email">邮箱 <span class="req">*</span></label>
+          <input type="email" id="modal_contact_email" placeholder="用于接收通知和跟踪链接">
+        </div>
+        <div class="modal-actions" style="margin-top:16px">
+          <button class="btn" onclick="closeContactModal()">取消</button>
+          <button class="btn btn-primary" onclick="confirmContactModal()">确认</button>
+        </div>
+      </div>
+    </div>
 
     <div class="privacy-notice">
       <strong>隐私说明：</strong>您提交的信息（标题、描述、截图及联系方式）仅用于问题处理，管理员可查看全部内容。联系信息为选填项，不填则视为匿名反馈。
@@ -657,13 +686,42 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     });
   };
 
-  // ========== Contact fields toggle ==========
-  window.toggleContactFields = function() {
-    var checked = document.getElementById('notify_consent').checked;
-    var container = document.getElementById('contactFields');
-    container.style.display = checked ? '' : 'none';
-    document.getElementById('contact_name').required = checked;
-    document.getElementById('contact_email').required = checked;
+  // ========== Contact modal ==========
+  document.getElementById('notify_consent').addEventListener('change', function() {
+    if (this.checked) {
+      // Pre-fill from hidden fields if previously saved
+      document.getElementById('modal_contact_name').value = document.getElementById('contact_name').value;
+      document.getElementById('modal_contact_email').value = document.getElementById('contact_email').value;
+      document.getElementById('contactModal').classList.add('active');
+      document.getElementById('modal_contact_name').focus();
+    } else {
+      document.getElementById('contact_name').value = '';
+      document.getElementById('contact_email').value = '';
+    }
+  });
+
+  window.closeContactModal = function() {
+    document.getElementById('contactModal').classList.remove('active');
+    document.getElementById('notify_consent').checked = false;
+  };
+
+  window.confirmContactModal = function() {
+    var name = document.getElementById('modal_contact_name').value.trim();
+    var email = document.getElementById('modal_contact_email').value.trim();
+    // Validate
+    if (!name && !email) {
+      document.getElementById('contactModal').classList.remove('active');
+      document.getElementById('notify_consent').checked = false;
+      return;
+    }
+    if (!name) { alert('请输入您的称呼'); return; }
+    if (!email) { alert('请输入邮箱地址'); return; }
+    // Basic email validation
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('请输入有效的邮箱地址'); return; }
+    // Save
+    document.getElementById('contact_name').value = name;
+    document.getElementById('contact_email').value = email;
+    document.getElementById('contactModal').classList.remove('active');
   };
 
   renderFormBySchema();
