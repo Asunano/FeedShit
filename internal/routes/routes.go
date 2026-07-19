@@ -149,6 +149,12 @@ func Register(r *gin.Engine, application *app.App) {
 	submit.Use(middleware.RateLimitMiddleware(application.RL))
 	submit.POST("/submit", application.SubmitFeedback)
 	submit.POST("/:id/vote", application.PublicVoteFeedback)
+	submit.GET("/check-duplicate", application.PublicCheckDuplicate)
+
+	// Public FAQ self-service search (rate-limited, no login required)
+	faqPub := r.Group("/api/v1")
+	faqPub.Use(middleware.RateLimitMiddleware(application.RL))
+	faqPub.GET("/faq", application.PublicSearchFAQ)
 
 	// API Token feedback submission (external systems like CI, monitoring)
 	apiSubmit := r.Group("/api/v1/external")
@@ -267,6 +273,15 @@ func Register(r *gin.Engine, application *app.App) {
 		adminAPI.DELETE("/categories/:id", middleware.RequireRole("admin"), application.AdminDeleteCategory)
 		adminAPI.PATCH("/feedbacks/:id/category", middleware.RequireRole("editor"), application.AdminUpdateFeedbackCategory)
 		adminAPI.POST("/feedbacks/bulk-category", middleware.RequireRole("editor"), application.AdminBulkUpdateCategory)
+
+		// FAQ self-service knowledge base (editor+)
+		adminAPI.GET("/projects/:slug/faqs", middleware.RequireRole("editor"), application.AdminListFAQs)
+		adminAPI.POST("/projects/:slug/faqs", middleware.RequireRole("editor"), application.AdminCreateFAQ)
+		adminAPI.PUT("/projects/:slug/faqs/:id", middleware.RequireRole("editor"), application.AdminUpdateFAQ)
+		adminAPI.DELETE("/projects/:slug/faqs/:id", middleware.RequireRole("admin"), application.AdminDeleteFAQ)
+
+		// Duplicate detection (editor+): candidate similar feedback for a given feedback
+		adminAPI.GET("/feedbacks/:id/similar", middleware.RequireRole("editor"), application.AdminSimilarFeedbacks)
 
 		// Project archive (admin only)
 		adminAPI.POST("/projects/:id/archive", middleware.RequireRole("admin"), application.AdminArchiveProject)

@@ -67,11 +67,151 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 /* Duplicate warning */
 .dup-warning{margin-top:8px;padding:8px 10px;background:#fff3cd;color:#856404;border:1px solid #ffeeba;border-radius:4px;font-size:.8rem;display:none}
 .dup-warning.visible{display:block}
+.faq-hint-title{font-weight:600;margin-bottom:4px}
+.faq-item{margin:4px 0}
+.faq-q{color:#664d03;text-decoration:none;cursor:pointer;font-weight:500}
+.faq-q:hover{text-decoration:underline}
+.faq-a{margin:4px 0 6px;padding:6px 8px;background:rgba(0,0,0,.03);border-radius:4px;white-space:pre-wrap;word-break:break-word}
+.faq-still{margin-top:6px;text-align:right}
+.faq-still a{color:#664d03;font-weight:600;text-decoration:none}
+.faq-still a:hover{text-decoration:underline}
+[data-theme="dark"] .faq-q,[data-theme="dark"] .faq-still a{color:#f1d56e}
+[data-theme="dark"] .faq-a{background:rgba(255,255,255,.06)}
+/* Duplicate candidate cards (M5) */
+.dup-title{font-weight:600;margin-bottom:4px}
+.dup-item{margin:6px 0;padding:6px 8px;background:rgba(0,0,0,.03);border-radius:4px}
+.dup-card-title{font-weight:500;color:#664d03;word-break:break-word}
+.dup-card-summary{margin:2px 0 4px;color:#856404;word-break:break-word;max-height:3.2em;overflow:hidden}
+.dup-card-link{color:#664d03;font-weight:600;text-decoration:none}
+.dup-card-link:hover{text-decoration:underline}
+.dup-still{margin-top:6px;text-align:right}
+.dup-still a{color:#664d03;font-weight:600;text-decoration:none}
+.dup-still a:hover{text-decoration:underline}
+[data-theme="dark"] .dup-card-title,[data-theme="dark"] .dup-card-link,[data-theme="dark"] .dup-still a{color:#f1d56e}
+[data-theme="dark"] .dup-item{background:rgba(255,255,255,.06)}
 </style>
+<style id="theme-vars">
+/* ===== Theme tokens (M14) ===== */
+:root{
+  --bg:#f5f5f5;
+  --fg:#333;
+  --panel:#fff;
+  --border:#e2e2e2;
+  --muted:#888;
+  --field-label:#555;
+  --field-fg:#333;
+  --primary:#333;
+  --primary-fg:#fff;
+  --danger:#c00;
+  --subtle:#fafafa;
+  --hint:#999;
+  --link:#2563eb;
+}
+[data-theme="dark"]{
+  --bg:#1a1a1a;
+  --fg:#e2e2e2;
+  --panel:#242424;
+  --border:#383838;
+  --muted:#9a9a9a;
+  --field-label:#bbb;
+  --field-fg:#e2e2e2;
+  --primary:#2d2d2d;
+  --primary-fg:#fff;
+  --danger:#ff6b6b;
+  --subtle:#2c2c2c;
+  --hint:#8a8a8a;
+  --link:#6ea8fe;
+}
+[data-theme="dark"] body{background:var(--bg);color:var(--fg)}
+[data-theme="dark"] .card{background:var(--panel);border-color:var(--border)}
+[data-theme="dark"] .field label{color:var(--field-label)}
+[data-theme="dark"] .field input[type=text],
+[data-theme="dark"] .field textarea,
+[data-theme="dark"] .field select{background:var(--panel);border-color:var(--border);color:var(--field-fg)}
+[data-theme="dark"] .field .field-hint{color:var(--hint)}
+[data-theme="dark"] .file-area .label{color:var(--field-label)}
+[data-theme="dark"] .file-input-wrap{border-color:var(--border)}
+[data-theme="dark"] .file-input-wrap .hint{color:var(--hint)}
+[data-theme="dark"] .preview-item{background:var(--subtle);border-color:var(--border)}
+[data-theme="dark"] .project-badge{background:var(--subtle);color:var(--muted)}
+[data-theme="dark"] .btn{background:var(--primary);color:var(--primary-fg)}
+[data-theme="dark"] .btn:hover{background:#444}
+[data-theme="dark"] .privacy-notice{background:var(--subtle);border-color:var(--border);color:var(--hint)}
+[data-theme="dark"] .privacy-notice strong{color:var(--muted)}
+[data-theme="dark"] .subtitle{color:var(--muted)}
+[data-theme="dark"] .success-card .fb-id{color:var(--fg)}
+[data-theme="dark"] .success-card .fb-note{color:var(--muted)}
+[data-theme="dark"] .success-card .btn-new{background:var(--subtle);color:var(--field-label);border-color:var(--border)}
+[data-theme="dark"] .success-card .btn-new:hover{background:#333}
+[data-theme="dark"] .file-list{color:var(--muted)}
+[data-theme="dark"] .field-error{color:var(--danger)}
+[data-theme="dark"] .status.success{background:#1c3a28;color:#7ac99a;border-color:#2c5a40}
+[data-theme="dark"] .status.error{background:#3a1f1f;color:#ff9b9b;border-color:#5a2a2a}
+[data-theme="dark"] .status.loading{background:#3a3418;color:#f1d56e;border-color:#5a5028}
+[data-theme="dark"] .dup-warning{background:#3a3418;color:#f1d56e;border-color:#5a5028}
+[data-theme="dark"] #trackLinkBox{background:var(--subtle) !important;border-color:var(--border) !important;color:var(--fg) !important}
+
+/* page head + theme toggle */
+.page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.theme-toggle{padding:5px 12px;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:4px;cursor:pointer;font-size:.9rem;min-height:36px}
+.theme-toggle:hover{background:#333}
+
+/* ===== Responsive (M14) ===== */
+@media (max-width:768px){
+  .container{margin:16px auto;padding:0 12px}
+  .card{padding:16px}
+  .field input[type=text],.field textarea,.field select{min-height:40px}
+  .btn{min-height:44px}
+  .file-input-wrap{padding:16px}
+}
+</style>
+<script>
+// ===== 主题（暗黑模式）（M14） =====
+(function(){
+  "use strict";
+  var THEME_KEY = 'feedshit-theme';
+  function prefersDark(){
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  function applyTheme(t){
+    document.documentElement.setAttribute('data-theme', t);
+    var btn = document.getElementById('themeToggle');
+    if (btn) btn.textContent = (t === 'dark') ? '☀' : '🌙';
+  }
+  function initTheme(){
+    var saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
+    applyTheme(saved || (prefersDark() ? 'dark' : 'light'));
+  }
+  window.toggleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', cur);
+    try { localStorage.setItem(THEME_KEY, cur); } catch (e) {}
+    applyTheme(cur);
+  };
+  initTheme();
+  if (window.matchMedia){
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onChange = function(e){
+      var saved = null;
+      try { saved = localStorage.getItem(THEME_KEY); } catch (err) {}
+      if (!saved) applyTheme(e.matches ? 'dark' : 'light');
+    };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    applyTheme(document.documentElement.getAttribute('data-theme'));
+  });
+})();
+</script>
 </head>
 <body>
 <div class="container">
-  <h1 id="pageTitle">反馈提交</h1>
+  <div class="page-head">
+    <h1 id="pageTitle">反馈提交</h1>
+    <button id="themeToggle" class="theme-toggle" onclick="toggleTheme()" title="切换暗黑 / 明亮模式">🌙</button>
+  </div>
   <p class="subtitle" id="pageSubtitle">项目：<span class="project-badge" id="projectDisplay">-</span></p>
   <div class="card">
     <form id="feedbackForm" enctype="multipart/form-data">
@@ -122,6 +262,8 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
       </div>
 
       <div class="dup-warning" id="dupWarning">检测到您可能正在重复提交相同内容的反馈。</div>
+
+      <div class="dup-warning" id="faqHint"></div>
 
       <button type="submit" class="btn" id="submitBtn">提交反馈</button>
       <div class="pow-indicator" id="powIndicator">
@@ -433,11 +575,121 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     if (d.pow_difficulty) powDifficulty = d.pow_difficulty;
   }).catch(function(){});
 
+  // ========== FAQ self-service hint ==========
+  var faqHint = document.getElementById('faqHint');
+  var faqTimer = null;
+  var lastFaqQuery = '';
+  var dupTimer = null;
+  var lastDupQuery = '';
+
+  function renderFaqHint(faqs) {
+    if (!faqs || faqs.length === 0) {
+      faqHint.className = 'dup-warning';
+      faqHint.innerHTML = '';
+      return;
+    }
+    var html = '<div class="faq-hint-title">可能已有相关解答（点击问题展开答案）：</div>';
+    faqs.forEach(function(f) {
+      var aid = 'faq-a-' + f.id;
+      html += '<div class="faq-item">'
+        + '<a class="faq-q" onclick="window.__toggleFaq(\'' + aid + '\')">' + escHtml(f.question) + '</a>'
+        + '<div class="faq-a" id="' + aid + '" style="display:none">' + escHtml(f.answer) + '</div>'
+        + '</div>';
+    });
+    html += '<div class="faq-still"><a onclick="window.__scrollToSubmit()">仍未解决？仍要提交新反馈 →</a></div>';
+    faqHint.className = 'dup-warning visible';
+    faqHint.innerHTML = html;
+  }
+
+  window.__toggleFaq = function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+  };
+
+  window.__scrollToSubmit = function() {
+    faqHint.className = 'dup-warning';
+    faqHint.innerHTML = '';
+    dupWarning.className = 'dup-warning';
+    dupWarning.innerHTML = '';
+    var sb = document.getElementById('submitBtn');
+    if (sb) sb.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  function searchFAQ() {
+    if (!PROJECT || !PROJECT.slug) return;
+    var q = (document.getElementById('title').value + ' ' + document.getElementById('description').value).trim();
+    if (q.length < 3) {
+      faqHint.className = 'dup-warning';
+      faqHint.innerHTML = '';
+      lastFaqQuery = '';
+      return;
+    }
+    if (q === lastFaqQuery) return; // dedupe identical queries
+    lastFaqQuery = q;
+    fetch('/api/v1/faq?q=' + encodeURIComponent(q) + '&project=' + encodeURIComponent(PROJECT.slug))
+      .then(function(r) { return r.json(); })
+      .then(function(d) { renderFaqHint(d && d.faqs ? d.faqs : []); })
+      .catch(function() { faqHint.className = 'dup-warning'; });
+  }
+
+  function debounceFaqSearch() {
+    if (faqTimer) clearTimeout(faqTimer);
+    faqTimer = setTimeout(searchFAQ, 300);
+  }
+
+  // ========== Duplicate feedback detection (M5) ==========
+  function renderDupWarning(cands) {
+    if (!cands || cands.length === 0) {
+      dupWarning.className = 'dup-warning';
+      dupWarning.innerHTML = '';
+      return;
+    }
+    var html = '<div class="dup-title">检测到您可能正在重复提交相同内容的反馈：</div>';
+    cands.forEach(function(c) {
+      html += '<div class="dup-item">'
+        + '<div class="dup-card-title">' + escHtml(c.title) + '</div>'
+        + (c.summary ? '<div class="dup-card-summary">' + escHtml(c.summary) + '</div>' : '')
+        + '<a class="dup-card-link" href="/track?token=' + encodeURIComponent(c.token) + '">查看原反馈 →</a>'
+        + '</div>';
+    });
+    html += '<div class="dup-still"><a onclick="window.__scrollToSubmit()">仍要提交新反馈 →</a></div>';
+    dupWarning.className = 'dup-warning visible';
+    dupWarning.innerHTML = html;
+  }
+
+  function searchDuplicate() {
+    if (!PROJECT || !PROJECT.slug) return;
+    var q = (document.getElementById('title').value + ' ' + document.getElementById('description').value).trim();
+    if (q.length < 3) {
+      dupWarning.className = 'dup-warning';
+      dupWarning.innerHTML = '';
+      lastDupQuery = '';
+      return;
+    }
+    if (q === lastDupQuery) return; // dedupe identical queries
+    lastDupQuery = q;
+    fetch('/api/v1/feedback/check-duplicate?q=' + encodeURIComponent(q) + '&project=' + encodeURIComponent(PROJECT.slug))
+      .then(function(r) { return r.json(); })
+      .then(function(d) { renderDupWarning(d && d.candidates ? d.candidates : []); })
+      .catch(function() { dupWarning.className = 'dup-warning'; });
+  }
+
+  function debounceDupSearch() {
+    if (dupTimer) clearTimeout(dupTimer);
+    dupTimer = setTimeout(searchDuplicate, 300);
+  }
+
   // Clear field errors on input
   document.getElementById('title').addEventListener('input', function(){
     titleError.className = 'field-error';
     titleError.textContent = '';
     dupWarning.className = 'dup-warning';
+    debounceFaqSearch();
+    debounceDupSearch();
+  });
+  document.getElementById('description').addEventListener('input', function(){
+    debounceFaqSearch();
+    debounceDupSearch();
   });
 
   form.addEventListener('submit', async function(e) {
@@ -447,6 +699,9 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     titleError.className = 'field-error';
     titleError.textContent = '';
     dupWarning.className = 'dup-warning';
+    dupWarning.innerHTML = '';
+    faqHint.className = 'dup-warning';
+    faqHint.innerHTML = '';
 
     var title = document.getElementById('title').value.trim();
     var description = document.getElementById('description').value.trim();

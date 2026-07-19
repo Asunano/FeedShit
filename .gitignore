@@ -21,7 +21,7 @@ Thumbs.db
 *.swp
 *.swo
 
-# Agent / editor workspace data (not part of the source)
+# Local editor workspace data (not part of the source)
 .codebuddy/
 
 # Environment
@@ -40,7 +40,7 @@ FEATURE_ENHANCEMENT.md
 FEATURE_RECOMMENDATIONS.md
 FEATURE_VERIFICATION.md
 
-# AI tool workspace data (not part of the source)
+# Local tool workspace data (not part of the source)
 .workbuddy/
 deliverables/
 # QA verbose logs (local only)

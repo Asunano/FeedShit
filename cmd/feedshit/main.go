@@ -16,6 +16,7 @@ import (
 	"feedshit/internal/database"
 	"feedshit/internal/email"
 	"feedshit/internal/middleware"
+	"feedshit/internal/report"
 	"feedshit/internal/routes"
 	"feedshit/internal/security"
 )
@@ -89,6 +90,35 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			application.ProcessWebhookOutbox()
+		}
+	}()
+
+	// Weekly report ticker (M13): 每周一 08:00 发送周报邮件。
+	go func() {
+		for {
+			now := time.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day(), 8, 0, 0, 0, now.Location())
+			weekday := next.Weekday()
+			if weekday != time.Monday {
+				// 回退到最近的周一
+				offset := (7 - int(weekday) + 1) % 7
+				next = next.AddDate(0, 0, offset)
+			}
+			if next.Before(now) || next.Equal(now) {
+				next = next.AddDate(0, 0, 7)
+			}
+			sleepDuration := next.Sub(now)
+			log.Printf("[REPORT] 下次周报时间 %s（还有 %v）", next.Format(time.RFC3339), sleepDuration)
+			time.Sleep(sleepDuration)
+
+			if report.AcquireJobLock(db, "weekly_report", 1*time.Hour) {
+				if err := report.GenerateWeeklyReport(db, mailer); err != nil {
+					log.Printf("[REPORT] 周报生成失败: %v", err)
+				}
+				report.ReleaseJobLock(db, "weekly_report")
+			} else {
+				log.Println("[REPORT] 周报锁被其他实例持有，跳过本轮")
+			}
 		}
 	}()
 

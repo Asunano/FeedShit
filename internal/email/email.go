@@ -363,3 +363,47 @@ func (m *Mailer) SendCSATInvite(fb *database.Feedback, trackURL string) {
 		log.Printf("[MAIL] CSAT invite sent for feedback #%d to %s", fb.ID, fb.ContactEmail)
 	}
 }
+
+// Send 发送通用 HTML 邮件。
+// to 为逗号分隔的收件人地址。
+func (m *Mailer) Send(to, subject, htmlBody string) {
+	cfg := getEmailConfig(m.db)
+	host := cfg["smtp_host"]
+	port := cfg["smtp_port"]
+	user := cfg["smtp_user"]
+	pass := cfg["smtp_pass"]
+	from := cfg["smtp_from"]
+
+	if host == "" || to == "" {
+		log.Printf("[MAIL] SMTP not configured, skipping send to %s", to)
+		return
+	}
+
+	if port == "" {
+		port = "587"
+	}
+	if from == "" {
+		from = user
+	}
+
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		portNum = 587
+	}
+
+	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
+		from, to, subject, htmlBody)
+
+	addr := fmt.Sprintf("%s:%d", host, portNum)
+	recipients := strings.Split(to, ",")
+	for i := range recipients {
+		recipients[i] = strings.TrimSpace(recipients[i])
+	}
+
+	auth := smtp.PlainAuth("", user, pass, host)
+	if err := smtp.SendMail(addr, auth, from, recipients, []byte(msg)); err != nil {
+		log.Printf("[MAIL] Failed to send to %s: %v", to, err)
+	} else {
+		log.Printf("[MAIL] Sent to %s, subject=%s", to, subject)
+	}
+}

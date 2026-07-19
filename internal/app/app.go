@@ -2914,9 +2914,28 @@ func (a *App) AdminMarkAsDuplicate(c *gin.Context) {
 		return
 	}
 
-	// Check write permission
-	if _, deny := a.checkFeedbackWritePerm(c, id); deny != "" {
+	// Check write permission (also loads the feedback)
+	fb, deny := a.checkFeedbackWritePerm(c, id)
+	if deny != "" {
 		c.JSON(http.StatusForbidden, gin.H{"error": deny})
+		return
+	}
+	if fb == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "反馈不存在"})
+		return
+	}
+	// Cross-project guard: target must belong to the same project.
+	target, tErr := a.DB.GetFeedback(req.DuplicateOf)
+	if tErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+	if target == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "目标反馈不存在"})
+		return
+	}
+	if fb.ProjectID != target.ProjectID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不能跨项目合并"})
 		return
 	}
 

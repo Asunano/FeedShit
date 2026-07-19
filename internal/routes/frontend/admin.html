@@ -244,6 +244,309 @@ tr:last-child td{border-bottom:none}
 /* Priority selector in detail */
 .priority-selector{display:inline-block;padding:2px 6px;border:1px solid #d0d0d0;border-radius:3px;font-size:.75rem;cursor:pointer;background:#fff}
 </style>
+<style id="theme-vars">
+/* ===== Theme tokens (M14) ===== */
+:root{
+  --bg:#f5f5f5;
+  --fg:#333;
+  --panel:#fff;
+  --border:#e2e2e2;
+  --muted:#888;
+  --primary:#333;
+  --primary-fg:#fff;
+  --danger:#c00;
+  --subtle:#fafafa;
+  --hover:#f0f0f0;
+  --tag-bg:#eee;
+  --tag-fg:#666;
+  --link:#2563eb;
+  --status-pending-bg:#fff3cd; --status-pending-fg:#856404;
+  --status-processing-bg:#cce5ff; --status-processing-fg:#004085;
+  --status-resolved-bg:#d4edda; --status-resolved-fg:#155724;
+  --status-closed-bg:#e2e3e5; --status-closed-fg:#383d41;
+  --priority-urgent-bg:#fde8e8; --priority-urgent-fg:#c00;
+  --priority-high-bg:#fff3cd; --priority-high-fg:#856404;
+  --priority-medium-bg:#cce5ff; --priority-medium-fg:#004085;
+  --priority-low-bg:#e2e3e5; --priority-low-fg:#383d41;
+}
+[data-theme="dark"]{
+  --bg:#1a1a1a;
+  --fg:#e2e2e2;
+  --panel:#242424;
+  --border:#383838;
+  --muted:#9a9a9a;
+  --primary:#2d2d2d;
+  --primary-fg:#fff;
+  --danger:#ff6b6b;
+  --subtle:#2c2c2c;
+  --hover:#333;
+  --tag-bg:#333;
+  --tag-fg:#bbb;
+  --link:#6ea8fe;
+  --status-pending-bg:#4a4318; --status-pending-fg:#f1d56e;
+  --status-processing-bg:#1f3a56; --status-processing-fg:#7fb6eb;
+  --status-resolved-bg:#1c3a28; --status-resolved-fg:#7ac99a;
+  --status-closed-bg:#3a3a3a; --status-closed-fg:#bbb;
+  --priority-urgent-bg:#4a2222; --priority-urgent-fg:#ff8a8a;
+  --priority-high-bg:#4a4318; --priority-high-fg:#f1d56e;
+  --priority-medium-bg:#1f3a56; --priority-medium-fg:#7fb6eb;
+  --priority-low-bg:#3a3a3a; --priority-low-fg:#bbb;
+}
+
+/* ===== Dark mode surface repaint (overrides hard-coded light colors) ===== */
+[data-theme="dark"] body{background:var(--bg);color:var(--fg)}
+[data-theme="dark"] a{color:var(--link)}
+[data-theme="dark"] .header{background:var(--panel);border-bottom-color:var(--border)}
+[data-theme="dark"] .nav button{color:var(--muted)}
+[data-theme="dark"] .nav button:hover{background:var(--hover)}
+[data-theme="dark"] .nav button.active{background:#3a3a3a;color:#fff}
+[data-theme="dark"] .header-right button{color:var(--muted);border-color:var(--border)}
+[data-theme="dark"] .header-right button:hover{background:var(--hover)}
+[data-theme="dark"] .stat-card,
+[data-theme="dark"] .table-wrap,
+[data-theme="dark"] .settings-card,
+[data-theme="dark"] .detail-card,
+[data-theme="dark"] .chart-container,
+[data-theme="dark"] .modal,
+[data-theme="dark"] .project-info-card,
+[data-theme="dark"] .fb-field,
+[data-theme="dark"] .field-editor,
+[data-theme="dark"] .note-item,
+[data-theme="dark"] .bulk-bar{background:var(--panel);border-color:var(--border)}
+[data-theme="dark"] .stat-card .num{color:var(--fg)}
+[data-theme="dark"] .stat-card .lbl{color:var(--muted)}
+[data-theme="dark"] th{background:var(--subtle);color:var(--muted);border-bottom-color:var(--border)}
+[data-theme="dark"] td{border-bottom-color:var(--border);color:var(--fg)}
+[data-theme="dark"] tr:hover{background:var(--hover)}
+[data-theme="dark"] .tag{background:var(--tag-bg);color:var(--tag-fg)}
+[data-theme="dark"] .detail-meta{color:var(--muted)}
+[data-theme="dark"] .detail-desc{color:#cfcfcf}
+[data-theme="dark"] .detail-back{color:var(--muted)}
+[data-theme="dark"] .detail-back:hover{color:var(--fg)}
+[data-theme="dark"] .custom-data-item .cd-label{color:var(--muted)}
+[data-theme="dark"] .custom-data-item .cd-value{color:var(--fg)}
+[data-theme="dark"] .custom-data-section h3,
+[data-theme="dark"] .notes-section h3{color:var(--muted)}
+[data-theme="dark"] .note-content{color:#cfcfcf}
+[data-theme="dark"] .file-header .fname{color:var(--muted)}
+[data-theme="dark"] .project-info-card .label{color:var(--muted)}
+[data-theme="dark"] .project-info-card .value{color:var(--fg)}
+[data-theme="dark"] .donut-legend-label{color:#bbb}
+[data-theme="dark"] .donut-legend-count{color:var(--muted)}
+[data-theme="dark"] .settings-field label{color:var(--muted)}
+[data-theme="dark"] .settings-field .hint{color:var(--muted)}
+[data-theme="dark"] .form-builder h3{color:var(--fg)}
+[data-theme="dark"] .fb-field-title{color:var(--fg)}
+[data-theme="dark"] .fb-field-meta{color:var(--muted)}
+[data-theme="dark"] .empty,.chart-empty{color:var(--muted)}
+[data-theme="dark"] .assignee-row label,
+[data-theme="dark"] .status-selector label{color:var(--muted)}
+[data-theme="dark"] .fb-field-actions button{border-color:var(--border);color:var(--muted)}
+[data-theme="dark"] .fb-field-actions button:hover{background:var(--hover)}
+[data-theme="dark"] .fb-field-actions button.del:hover{background:#3a1f1f;color:var(--danger)}
+[data-theme="dark"] .fb-add-btn{border-color:var(--border);color:var(--muted)}
+[data-theme="dark"] .fb-add-btn:hover{border-color:var(--muted);color:var(--fg)}
+
+/* Status & priority badges */
+[data-theme="dark"] .status-badge.status-pending{background:var(--status-pending-bg);color:var(--status-pending-fg)}
+[data-theme="dark"] .status-badge.status-processing{background:var(--status-processing-bg);color:var(--status-processing-fg)}
+[data-theme="dark"] .status-badge.status-resolved{background:var(--status-resolved-bg);color:var(--status-resolved-fg)}
+[data-theme="dark"] .status-badge.status-closed{background:var(--status-closed-bg);color:var(--status-closed-fg)}
+[data-theme="dark"] .priority-badge.priority-urgent{background:var(--priority-urgent-bg);color:var(--priority-urgent-fg)}
+[data-theme="dark"] .priority-badge.priority-high{background:var(--priority-high-bg);color:var(--priority-high-fg)}
+[data-theme="dark"] .priority-badge.priority-medium{background:var(--priority-medium-bg);color:var(--priority-medium-fg)}
+[data-theme="dark"] .priority-badge.priority-low{background:var(--priority-low-bg);color:var(--priority-low-fg)}
+[data-theme="dark"] .dup-badge{color:var(--status-pending-fg)}
+[data-theme="dark"] .note-badge.pub{background:var(--status-processing-bg);color:var(--status-processing-fg)}
+[data-theme="dark"] .note-badge.priv{background:var(--tag-bg);color:var(--tag-fg)}
+
+/* Inputs & controls */
+[data-theme="dark"] .filter-bar select,
+[data-theme="dark"] .filter-bar input[type=text],
+[data-theme="dark"] .settings-field input,
+[data-theme="dark"] .settings-field select,
+[data-theme="dark"] .settings-field textarea,
+[data-theme="dark"] .field-editor input,
+[data-theme="dark"] .field-editor select,
+[data-theme="dark"] .field-editor textarea,
+[data-theme="dark"] .note-form textarea,
+[data-theme="dark"] .assignee-row input,
+[data-theme="dark"] .priority-selector,
+[data-theme="dark"] .status-selector select{background:var(--panel);border-color:var(--border);color:var(--fg)}
+[data-theme="dark"] .btn-sm{background:var(--panel);border-color:var(--border);color:var(--fg)}
+[data-theme="dark"] .btn-sm:hover{background:var(--hover)}
+[data-theme="dark"] .btn-danger{color:var(--danger);border-color:#5a2a2a}
+[data-theme="dark"] .btn-danger:hover{background:#3a1f1f}
+[data-theme="dark"] .toggle-slider{background:#555}
+[data-theme="dark"] .toggle-switch input:checked+.toggle-slider{background:#5b9bff}
+[data-theme="dark"] .bar-col .bar{background:#5b9bff}
+[data-theme="dark"] .bar-col .bar-label{color:#888}
+[data-theme="dark"] .bar-col .bar-count{color:#aaa}
+[data-theme="dark"] .modal-overlay{background:rgba(0,0,0,.6)}
+
+/* Action buttons (dark) */
+[data-theme="dark"] .btn-save,
+[data-theme="dark"] .status-selector button,
+[data-theme="dark"] .assignee-row button,
+[data-theme="dark"] .note-form-actions button{background:#5b9bff;color:#06243f}
+[data-theme="dark"] .btn-save:hover,
+[data-theme="dark"] .status-selector button:hover,
+[data-theme="dark"] .assignee-row button:hover,
+[data-theme="dark"] .note-form-actions button:hover{background:#6ea8fe}
+[data-theme="dark"] .bulk-bar button{background:#4a4a4a !important;color:#fff !important;border:1px solid var(--border) !important}
+[data-theme="dark"] .bulk-bar button[onclick^="bulkDelete"]{background:#8a3030 !important;color:#ffd6d6 !important}
+
+/* ===== Keyboard shortcut hint (M14) ===== */
+.kbd-hint{position:fixed;right:16px;bottom:16px;z-index:250;font-size:.75rem;max-width:210px;text-align:left}
+.kbd-hint-toggle{padding:5px 12px;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:4px;cursor:pointer;font-size:.75rem}
+.kbd-hint-toggle:hover{background:var(--hover)}
+.kbd-hint-body{margin-top:6px;padding:10px 12px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--fg);line-height:1.9;box-shadow:0 4px 14px rgba(0,0,0,.25)}
+.kbd-hint-body div{white-space:nowrap}
+.kbd-hint-body kbd{display:inline-block;min-width:16px;text-align:center;padding:1px 5px;border:1px solid var(--border);border-radius:3px;background:var(--subtle);font-family:monospace;font-size:.7rem;color:var(--fg);margin-right:4px}
+.kb-selected{outline:2px solid #2563eb;outline-offset:-2px}
+[data-theme="dark"] .kb-selected{outline-color:#5b9bff}
+
+/* ===== Responsive (M14) ===== */
+@media (max-width:768px){
+  .header{padding:8px 12px;height:auto;flex-wrap:wrap}
+  .header h1{margin-right:12px}
+  .nav{order:3;width:100%;overflow-x:auto;padding-bottom:4px}
+  .main{margin:12px auto;padding:0 10px}
+  .stats{flex-direction:column;gap:8px}
+  .stat-card{padding:12px}
+  .filter-bar{gap:8px}
+  .filter-bar select,.filter-bar input[type=text]{flex:1 1 auto;min-height:40px}
+  .filter-bar input[type=text]{width:100%}
+  .filter-bar .btn-sm{min-height:40px}
+  .table-wrap{overflow-x:auto}
+  table{min-width:680px}
+  th,td{padding:10px 10px}
+  .settings-layout{flex-direction:column}
+  .settings-nav{width:100%;display:flex;gap:4px;overflow-x:auto}
+  .settings-nav button{width:auto;white-space:nowrap}
+  .settings-field input,.settings-field select,.settings-field textarea,.note-form textarea{min-height:40px}
+  .modal{width:94vw;padding:16px}
+  .modal .row{grid-template-columns:1fr}
+  .donut-container{flex-direction:column;align-items:flex-start;gap:12px}
+  .project-info-grid{grid-template-columns:1fr}
+  .btn-sm,.btn-danger,.filter-bar .btn-sm,.detail-back{min-height:40px}
+  .detail-back{display:inline-flex;align-items:center}
+  .kbd-hint{right:10px;bottom:10px}
+}
+</style>
+<script>
+// ===== 主题（暗黑模式）+ 键盘快捷键（M14） =====
+(function(){
+  "use strict";
+  var THEME_KEY = 'feedshit-theme';
+
+  function prefersDark(){
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  function applyTheme(t){
+    document.documentElement.setAttribute('data-theme', t);
+    var btn = document.getElementById('themeToggle');
+    if (btn) btn.textContent = (t === 'dark') ? '☀' : '🌙';
+  }
+  function initTheme(){
+    var saved = null;
+    try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
+    applyTheme(saved || (prefersDark() ? 'dark' : 'light'));
+  }
+  window.toggleTheme = function(){
+    var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', cur);
+    try { localStorage.setItem(THEME_KEY, cur); } catch (e) {}
+    applyTheme(cur);
+  };
+  window.toggleKbdHint = function(){
+    var b = document.getElementById('kbdHintBody');
+    if (b) b.style.display = (b.style.display === 'none' ? 'block' : 'none');
+  };
+
+  initTheme();
+
+  // 未手动设定时跟随系统配色
+  if (window.matchMedia){
+    var mq = window.matchMedia('(prefers-color-scheme: dark)');
+    var onChange = function(e){
+      var saved = null;
+      try { saved = localStorage.getItem(THEME_KEY); } catch (err) {}
+      if (!saved) applyTheme(e.matches ? 'dark' : 'light');
+    };
+    if (mq.addEventListener) mq.addEventListener('change', onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
+
+  // 列表键盘快捷键（仅管理端仪表盘列表生效）
+  var selectedRowId = null;
+  function getRows(){
+    return Array.prototype.slice.call(document.querySelectorAll('#feedbackTable tr[data-id]'));
+  }
+  function highlightRow(id){
+    var rows = getRows();
+    for (var i = 0; i < rows.length; i++){
+      if (rows[i].getAttribute('data-id') === String(id)) rows[i].classList.add('kb-selected');
+      else rows[i].classList.remove('kb-selected');
+    }
+    selectedRowId = id;
+  }
+  function moveSelection(dir){
+    var rows = getRows();
+    if (!rows.length) return;
+    var idx = -1;
+    if (selectedRowId !== null){
+      for (var i = 0; i < rows.length; i++){
+        if (rows[i].getAttribute('data-id') === String(selectedRowId)){ idx = i; break; }
+      }
+    }
+    var next = (idx < 0) ? 0 : idx + dir;
+    if (next < 0) next = 0;
+    if (next >= rows.length) next = rows.length - 1;
+    var newId = rows[next].getAttribute('data-id');
+    highlightRow(newId);
+    rows[next].scrollIntoView({ block: 'nearest' });
+  }
+  function isTyping(el){
+    if (!el) return false;
+    var tag = el.tagName ? el.tagName.toLowerCase() : '';
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || el.isContentEditable;
+  }
+  document.addEventListener('keydown', function(e){
+    if (isTyping(document.activeElement)) return;
+    if (e.key === 'Escape'){
+      var overlay = document.querySelector('.modal-overlay.active');
+      if (overlay){ overlay.classList.remove('active'); e.preventDefault(); }
+      return;
+    }
+    var dash = document.getElementById('tab-dashboard');
+    if (!dash || dash.style.display === 'none') return;
+    if (e.key === '/'){
+      var search = document.getElementById('keywordSearch');
+      if (search){ search.focus(); e.preventDefault(); }
+      return;
+    }
+    if (e.key === 'j'){ moveSelection(1); e.preventDefault(); return; }
+    if (e.key === 'k'){ moveSelection(-1); e.preventDefault(); return; }
+    if (e.key === 'e'){
+      if (selectedRowId !== null && typeof window.showDetail === 'function'){
+        window.showDetail(Number(selectedRowId));
+        e.preventDefault();
+      }
+      return;
+    }
+  });
+
+  // 列表重新渲染后清除高亮态
+  document.addEventListener('DOMContentLoaded', function(){
+    applyTheme(document.documentElement.getAttribute('data-theme'));
+    var tbody = document.getElementById('feedbackTable');
+    if (tbody && window.MutationObserver){
+      new MutationObserver(function(){ selectedRowId = null; }).observe(tbody, { childList: true });
+    }
+  });
+})();
+</script>
 </head>
 <body>
 
@@ -255,8 +558,10 @@ tr:last-child td{border-bottom:none}
     <button data-tab="team" onclick="switchTab('team')" id="navTeam" style="display:none">团队</button>
     <button data-tab="audit" onclick="switchTab('audit')">审计</button>
     <button data-tab="settings" onclick="switchTab('settings')">设置</button>
+    <button data-tab="kb" onclick="switchTab('kb')" id="navKb" style="display:none">知识库</button>
   </div>
   <div class="header-right">
+    <button id="themeToggle" onclick="toggleTheme()" title="切换暗黑 / 明亮模式">🌙</button>
     <span id="currentUserLabel" style="font-size:.8rem;color:#888"></span>
     <button onclick="logout()">退出登录</button>
   </div>
@@ -338,6 +643,15 @@ tr:last-child td{border-bottom:none}
       <div class="chart-container" id="trendChart">
         <h2>反馈趋势（近 30 天）</h2>
         <div id="chartInner"><p class="chart-empty">加载中...</p></div>
+      </div>
+      <div class="kbd-hint" id="kbdHint">
+        <button class="kbd-hint-toggle" onclick="toggleKbdHint()" title="键盘快捷键">快捷键 ⌨</button>
+        <div class="kbd-hint-body" id="kbdHintBody" style="display:none">
+          <div><kbd>j</kbd>/<kbd>k</kbd> 上 / 下移动选中</div>
+          <div><kbd>e</kbd> 打开详情</div>
+          <div><kbd>/</kbd> 聚焦搜索</div>
+          <div><kbd>Esc</kbd> 关闭弹层</div>
+        </div>
       </div>
     </div>
 
@@ -614,6 +928,56 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<!-- ===== Knowledge Base (FAQ) Tab ===== -->
+<div id="tab-kb" style="display:none">
+  <div class="filter-bar">
+    <select id="kbProject" onchange="loadFaqs()">
+      <option value="">选择项目</option>
+    </select>
+    <button class="btn-sm" onclick="openFaqModal(0)">+ 新增 FAQ</button>
+  </div>
+  <div id="kbEmpty" style="display:none;padding:30px;text-align:center;color:#888;font-size:.9rem"></div>
+  <div class="table-wrap" id="kbTableWrap" style="display:none">
+    <table>
+      <thead><tr><th>问题</th><th>答案</th><th>排序</th><th>状态</th><th>操作</th></tr></thead>
+      <tbody id="kbBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- FAQ Edit Modal -->
+<div class="modal-overlay" id="faqModal">
+  <div class="modal">
+    <h3 id="faqModalTitle">新增 FAQ</h3>
+    <input type="hidden" id="faqEditId">
+    <div class="settings-field"><label>问题 *</label><textarea id="faqQuestion" rows="2" placeholder="用户常问的问题"></textarea></div>
+    <div class="settings-field"><label>答案</label><textarea id="faqAnswer" rows="5" placeholder="解答内容（纯文本，将按原样展示）"></textarea></div>
+    <div class="settings-field"><label>排序</label><input type="number" id="faqSort" value="0"></div>
+    <div class="settings-field"><div class="toggle"><input type="checkbox" id="faqActive" checked><span>启用（启用后将在提交页检索中展示）</span></div></div>
+    <div class="modal-actions">
+      <button class="btn-sm" onclick="closeFaqModal()">取消</button>
+      <button class="btn-save" id="faqSaveBtn" onclick="saveFaq()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- M5 Duplicate-candidates Modal (mark as duplicate merge assist) -->
+<div class="modal-overlay" id="dupSimilarModal">
+  <div class="modal">
+    <h3>标记为重复</h3>
+    <p id="dupSimilarMsg" style="color:var(--muted);font-size:.82rem;margin:-8px 0 12px"></p>
+    <div id="dupSimilarList" style="max-height:46vh;overflow-y:auto"></div>
+    <div class="settings-field" style="margin-top:12px">
+      <label>或手动输入主反馈 ID</label>
+      <input type="number" id="dupSimilarManual" placeholder="例如 128" style="width:100%">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm" onclick="closeDupSimilar()">取消</button>
+      <button class="btn-save" onclick="confirmMarkDuplicate()">确认标记</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -660,7 +1024,7 @@ tr:last-child td{border-bottom:none}
     document.querySelectorAll('.nav button').forEach(function(b){
       b.classList.toggle('active', b.dataset.tab === tab);
     });
-    ['dashboard','projects','team','audit','settings'].forEach(function(t){
+    ['dashboard','projects','team','audit','settings','kb'].forEach(function(t){
       var el = document.getElementById('tab-'+t);
       if (el) el.style.display = t === tab ? '' : 'none';
     });
@@ -669,6 +1033,7 @@ tr:last-child td{border-bottom:none}
     if (tab === 'dashboard') { showList(); loadStats(); loadFeedbacks(); loadChart(); }
     if (tab === 'audit') loadAuditLogs();
     if (tab === 'team') loadAdmins();
+    if (tab === 'kb') { renderKbProjects(); loadFaqs(); }
   };
 
   // --- API helpers ---
@@ -686,6 +1051,130 @@ tr:last-child td{border-bottom:none}
     var resp = await api(url, opts);
     if (!resp) return null;
     return resp.json();
+  }
+
+  // ========== Knowledge Base (FAQ) ==========
+  var kbProjectSlug = '';
+  var kbCache = [];
+
+  function renderKbProjects() {
+    var sel = document.getElementById('kbProject');
+    if (!sel) return;
+    var html = '<option value="">选择项目</option>';
+    (allProjects || []).forEach(function(p) {
+      html += '<option value="' + esc(p.slug) + '">' + esc(p.name) + '</option>';
+    });
+    sel.innerHTML = html;
+  }
+
+  window.loadFaqs = async function() {
+    var sel = document.getElementById('kbProject');
+    kbProjectSlug = sel ? sel.value : '';
+    var body = document.getElementById('kbBody');
+    var wrap = document.getElementById('kbTableWrap');
+    var empty = document.getElementById('kbEmpty');
+    if (!kbProjectSlug) {
+      kbCache = [];
+      if (body) body.innerHTML = '';
+      if (wrap) wrap.style.display = 'none';
+      if (empty) { empty.style.display = ''; empty.textContent = '请先在上方选择一个项目。'; }
+      return;
+    }
+    var d = await apiJSON('/api/v1/admin/projects/' + encodeURIComponent(kbProjectSlug) + '/faqs');
+    if (!d) return;
+    var faqs = d.faqs || [];
+    kbCache = faqs;
+    if (faqs.length === 0) {
+      if (body) body.innerHTML = '';
+      if (wrap) wrap.style.display = 'none';
+      if (empty) { empty.style.display = ''; empty.textContent = '该项目暂无 FAQ，点击「新增 FAQ」创建第一条。'; }
+      return;
+    }
+    if (empty) empty.style.display = 'none';
+    if (wrap) wrap.style.display = '';
+    if (!body) return;
+    var html = '';
+    faqs.forEach(function(f) {
+      var ans = f.answer || '';
+      var preview = ans.length > 60 ? ans.substring(0, 60) + '…' : ans;
+      html += '<tr>'
+        + '<td>' + esc(f.question) + '</td>'
+        + '<td style="color:#666;max-width:360px;white-space:pre-wrap;word-break:break-word">' + esc(preview) + '</td>'
+        + '<td>' + (f.sort_order || 0) + '</td>'
+        + '<td>' + (f.is_active ? '<span style="color:#1a7a1a">启用</span>' : '<span style="color:#999">停用</span>') + '</td>'
+        + '<td>'
+        + '<button class="btn-sm" onclick="openFaqModal(' + f.id + ')">编辑</button> '
+        + '<button class="btn-sm btn-danger" onclick="deleteFaq(' + f.id + ')">删除</button>'
+        + '</td>'
+        + '</tr>';
+    });
+    body.innerHTML = html;
+  }
+
+  window.openFaqModal = function(id) {
+    var editId = id || 0;
+    document.getElementById('faqModalTitle').textContent = editId ? '编辑 FAQ' : '新增 FAQ';
+    document.getElementById('faqEditId').value = editId;
+    if (editId) {
+      var f = null;
+      for (var i = 0; i < kbCache.length; i++) { if (kbCache[i].id === editId) { f = kbCache[i]; break; } }
+      document.getElementById('faqQuestion').value = f ? (f.question || '') : '';
+      document.getElementById('faqAnswer').value = f ? (f.answer || '') : '';
+      document.getElementById('faqSort').value = f ? (f.sort_order || 0) : 0;
+      document.getElementById('faqActive').checked = f ? !!f.is_active : true;
+    } else {
+      document.getElementById('faqQuestion').value = '';
+      document.getElementById('faqAnswer').value = '';
+      document.getElementById('faqSort').value = 0;
+      document.getElementById('faqActive').checked = true;
+    }
+    document.getElementById('faqModal').style.display = 'flex';
+  }
+
+  window.closeFaqModal = function() {
+    document.getElementById('faqModal').style.display = 'none';
+  }
+
+  window.saveFaq = async function() {
+    var question = document.getElementById('faqQuestion').value.trim();
+    if (!question) { showToast('问题不能为空', 'error'); return; }
+    var answer = document.getElementById('faqAnswer').value;
+    var sortOrder = parseInt(document.getElementById('faqSort').value, 10) || 0;
+    var isActive = document.getElementById('faqActive').checked;
+    var editId = parseInt(document.getElementById('faqEditId').value, 10) || 0;
+    var payload = { question: question, answer: answer, sort_order: sortOrder, is_active: isActive };
+    var url = '/api/v1/admin/projects/' + encodeURIComponent(kbProjectSlug) + '/faqs';
+    var opts = {
+      method: editId ? 'PUT' : 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, getCsrfHeaders()),
+      body: JSON.stringify(payload)
+    };
+    if (editId) url += '/' + editId;
+    var resp = await api(url, opts);
+    if (!resp) return;
+    if (resp.status === 409) { showToast('该问题已存在', 'error'); return; }
+    if (resp.status === 404) { showToast('FAQ 不存在', 'error'); return; }
+    if (!resp.ok) {
+      var err = await resp.json().catch(function() { return {}; });
+      showToast(err.error || (editId ? '更新失败' : '创建失败'), 'error');
+      return;
+    }
+    showToast(editId ? '已更新' : '已创建', 'success');
+    closeFaqModal();
+    await loadFaqs();
+  }
+
+  window.deleteFaq = async function(id) {
+    if (!confirm('确定删除该 FAQ？此操作不可恢复。')) return;
+    var resp = await api('/api/v1/admin/projects/' + encodeURIComponent(kbProjectSlug) + '/faqs/' + id, {
+      method: 'DELETE',
+      headers: getCsrfHeaders()
+    });
+    if (!resp) return;
+    if (resp.status === 404) { showToast('FAQ 不存在', 'error'); return; }
+    if (!resp.ok) { showToast('删除失败', 'error'); return; }
+    showToast('已删除', 'success');
+    await loadFaqs();
   }
 
   // --- Load stats ---
@@ -788,7 +1277,7 @@ tr:last-child td{border-bottom:none}
       var dt = f.created_at ? f.created_at.replace('T',' ').substring(0,16) : '-';
       var checked = selectedIds.has(f.id) ? ' checked' : '';
       var dupBadge = f.is_duplicate ? '<span class="dup-badge" title="重复 #'+f.duplicate_of+'">重复</span>' : '';
-      return '<tr>' +
+      return '<tr data-id="'+f.id+'">' +
         '<td class="cb-col"><input type="checkbox" data-id="'+f.id+'"'+checked+' onchange="toggleSelect('+f.id+',this.checked)"></td>' +
         '<td><a href="#" onclick="showDetail('+f.id+');return false;" style="color:#333">#'+f.id+'</a></td>' +
         '<td><span class="tag">'+esc(f.project_id)+'</span></td>' +
@@ -1164,6 +1653,7 @@ tr:last-child td{border-bottom:none}
     if (!resp) return;
     var d = await resp.json();
     allProjects = d.projects || [];
+    renderKbProjects();
     var tbody = document.getElementById('projectTable');
     if (allProjects.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无项目</td></tr>';
@@ -1621,6 +2111,9 @@ tr:last-child td{border-bottom:none}
     // Show team tab only for admin role
     var teamBtn = document.getElementById('navTeam');
     if (teamBtn) teamBtn.style.display = currentUserRole === 'admin' ? '' : 'none';
+    // Show knowledge base tab for editor and above (FAQ management requires editor role)
+    var kbBtn = document.getElementById('navKb');
+    if (kbBtn) kbBtn.style.display = (currentUserRole && currentUserRole !== 'viewer') ? '' : 'none';
     // Show admin-only settings tabs
     var isAdmin = currentUserRole === 'admin';
     ['navSettingsTokens','navSettingsEmailTpl','navSettingsDataOps','navSettingsWebhooks'].forEach(function(id){
@@ -1818,21 +2311,108 @@ tr:last-child td{border-bottom:none}
     loadFeedbacks();
   };
 
+  // ========== M5 Duplicate merge assist ==========
+  // State for the candidate-selection modal.
+  window.dupSimilarData = null;
+
+  // Open the merge-assist modal: fetch same-project candidates for `id`,
+  // let the admin pick the canonical feedback, then POST to the existing route.
   window.markDuplicate = async function(id) {
-    var targetId = prompt('请输入原始反馈的 ID：');
-    if (!targetId) return;
-    targetId = parseInt(targetId);
-    if (!targetId || targetId === id) { showToast('无效的目标 ID', 'error'); return; }
+    var modal = document.getElementById('dupSimilarModal');
+    var listEl = document.getElementById('dupSimilarList');
+    var msgEl = document.getElementById('dupSimilarMsg');
+    var manualEl = document.getElementById('dupSimilarManual');
+    if (!modal || !listEl || !msgEl) {
+      // Markup missing — fall back to the legacy manual prompt path.
+      fallbackMarkDuplicate(id);
+      return;
+    }
+    window.dupSimilarData = { id: id };
+    if (manualEl) manualEl.value = '';
+    listEl.innerHTML = '<div style="color:var(--muted);font-size:.85rem">正在加载候选相似反馈…</div>';
+    msgEl.textContent = '正在加载与 #' + id + ' 内容相同的反馈，请选择主反馈。';
+    modal.classList.add('active');
+
+    var d;
+    try {
+      d = await apiJSON('/api/v1/admin/feedbacks/' + id + '/similar');
+    } catch (e) {
+      listEl.innerHTML = '';
+      msgEl.textContent = '加载候选列表失败，可手动输入主反馈 ID。';
+      return;
+    }
+    if (!d) return;
+    if (d.error) { msgEl.textContent = d.error; listEl.innerHTML = ''; return; }
+
+    var cands = Array.isArray(d.candidates) ? d.candidates : [];
+    if (!cands.length) {
+      listEl.innerHTML = '<div style="color:var(--muted);font-size:.85rem">未找到内容相同的相似反馈，可手动输入主反馈 ID。</div>';
+      return;
+    }
+    listEl.innerHTML = cands.map(function(c, i) {
+      var summary = c.summary
+        ? '<div style="color:var(--muted);font-size:.82rem;margin:4px 0 0 26px">' + esc(c.summary) + '</div>'
+        : '';
+      return '<label style="display:block;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;cursor:pointer;background:var(--panel)">' +
+        '<input type="radio" name="dupTarget" value="' + c.id + '"' + (i === 0 ? ' checked' : '') + '>' +
+        '<span style="margin-left:8px"><strong>#' + c.id + '</strong> ' + esc(c.title) + '</span>' +
+        summary +
+        '</label>';
+    }).join('');
+  };
+
+  // Confirm the selection made in the modal and call the existing mark-duplicate route.
+  window.confirmMarkDuplicate = async function() {
+    var data = window.dupSimilarData;
+    if (!data) return;
+    var id = data.id;
+
+    var manualEl = document.getElementById('dupSimilarManual');
+    var manualVal = manualEl && manualEl.value ? parseInt(manualEl.value.trim(), 10) : 0;
+    var targetId = 0;
+    if (manualVal && manualVal > 0) {
+      targetId = manualVal;
+    } else {
+      var radio = document.querySelector('input[name="dupTarget"]:checked');
+      targetId = radio ? parseInt(radio.value, 10) : 0;
+    }
+    if (!targetId || targetId === id) { showToast('请选择或输入有效的主反馈 ID', 'error'); return; }
+
+    closeDupSimilar();
     var d = await apiJSON('/api/v1/admin/feedbacks/' + id + '/duplicate', {
       method: 'POST',
       body: JSON.stringify({duplicate_of: targetId})
     });
     if (!d) return;
     if (d.error) { showToast(d.error, 'error'); return; }
-    showToast(d.message, 'success');
+    showToast(d.message || '已标记为重复', 'success');
     showDetail(id);
     loadFeedbacks();
   };
+
+  // Close the merge-assist modal without making changes.
+  window.closeDupSimilar = function() {
+    var modal = document.getElementById('dupSimilarModal');
+    if (modal) modal.classList.remove('active');
+  };
+
+  // Legacy fallback used only if the M5 modal markup is absent.
+  function fallbackMarkDuplicate(id) {
+    var targetId = prompt('请输入主反馈的 ID：');
+    if (!targetId) return;
+    targetId = parseInt(targetId);
+    if (!targetId || targetId === id) { showToast('无效的目标 ID', 'error'); return; }
+    apiJSON('/api/v1/admin/feedbacks/' + id + '/duplicate', {
+      method: 'POST',
+      body: JSON.stringify({duplicate_of: targetId})
+    }).then(function(d) {
+      if (!d) return;
+      if (d.error) { showToast(d.error, 'error'); return; }
+      showToast(d.message || '已标记为重复', 'success');
+      showDetail(id);
+      loadFeedbacks();
+    });
+  }
 
   window.unmarkDuplicate = async function(id) {
     var d = await apiJSON('/api/v1/admin/feedbacks/' + id + '/duplicate', {method: 'DELETE'});
@@ -1870,12 +2450,12 @@ tr:last-child td{border-bottom:none}
       if (pid) {
         currentTab = 'projects';
         document.querySelectorAll('.nav button').forEach(function(b){ b.classList.toggle('active', b.dataset.tab === 'projects'); });
-        ['dashboard','projects','team','audit','settings'].forEach(function(t){ var el = document.getElementById('tab-'+t); if(el) el.style.display = t === 'projects' ? '' : 'none'; });
+        ['dashboard','projects','team','audit','settings','kb'].forEach(function(t){ var el = document.getElementById('tab-'+t); if(el) el.style.display = t === 'projects' ? '' : 'none'; });
         loadProjects().then(function(){ viewProjectDetail(pid); });
       }
       return;
     }
-    var validTabs = ['dashboard','projects','team','audit','settings'];
+    var validTabs = ['dashboard','projects','team','audit','settings','kb'];
     if (validTabs.indexOf(hash) >= 0) { switchTab(hash); }
     else { currentTab = 'dashboard'; window.location.hash = 'dashboard'; }
   }

@@ -33,6 +33,7 @@ type Feedback struct {
 	Priority      string    `json:"priority"`
 	IsDuplicate   bool      `json:"is_duplicate"`
 	DuplicateOf   int64     `json:"duplicate_of"`
+	ContentHash   string    `json:"content_hash"` // 内容指纹（归一化 SHA-256），仅内部比对，不对外暴露语义
 	Category        string    `json:"category"`
 	PublicOnRoadmap bool      `json:"public_on_roadmap"`
 	RoadmapStatus   string    `json:"roadmap_status"`
@@ -256,6 +257,13 @@ func (d *Database) migrate() error {
 	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN duplicate_of INTEGER NOT NULL DEFAULT 0`); err != nil {
 		return err
 	}
+	// M5: content fingerprint for duplicate detection (exact normalized hash)
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`CREATE INDEX IF NOT EXISTS idx_feedbacks_hash ON feedbacks(project_id, content_hash)`); err != nil {
+		return err
+	}
 	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); err != nil {
 		return err
 	}
@@ -374,6 +382,26 @@ func (d *Database) migrate() error {
 		return err
 	}
 
+	// FAQs: self-service knowledge base per project (M9)
+	if err := d.execMigrate(`
+		CREATE TABLE IF NOT EXISTS faqs (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_slug TEXT    NOT NULL,
+			question     TEXT    NOT NULL,
+			answer       TEXT    NOT NULL DEFAULT '',
+			embedding    TEXT    NOT NULL DEFAULT '',
+			is_active    INTEGER NOT NULL DEFAULT 1,
+			sort_order   INTEGER NOT NULL DEFAULT 0,
+			created_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			updated_at   INTEGER NOT NULL DEFAULT 0,
+			UNIQUE(project_slug, question)
+		);
+		CREATE INDEX IF NOT EXISTS idx_faqs_project ON faqs(project_slug);
+		CREATE INDEX IF NOT EXISTS idx_faqs_active ON faqs(project_slug, is_active);
+	`); err != nil {
+		return err
+	}
+
 	// ===== Phase A + B schema extensions (idempotent) =====
 
 	// M3 Roadmap: public flag + board status on feedbacks
@@ -451,6 +479,22 @@ func (d *Database) migrate() error {
 		return err
 	}
 
+	// M5: backfill content_hash for existing rows (idempotent: only empty rows).
+	if err := d.BackfillContentHashes(); err != nil {
+		return err
+	}
+
+	// M13: job_locks 表——分布式作业锁（用于周报等定时任务去重）
+	if err := d.execMigrate(`
+		CREATE TABLE IF NOT EXISTS job_locks (
+			key         TEXT PRIMARY KEY,
+			token       TEXT NOT NULL,
+			locked_until INTEGER NOT NULL
+		);
+	`); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -490,9 +534,9 @@ func (d *Database) InsertFeedback(f *Feedback) (int64, error) {
 		status = "pending"
 	}
 	res, err := d.db.Exec(
-		`INSERT INTO feedbacks (project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, category, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))`,
-		f.ProjectID, f.Title, f.Description, f.CustomData, f.FilePaths, f.ClientIP, status, f.Tags, f.Assignee, f.ContactName, f.ContactEmail, f.TrackingToken, f.Priority, f.Category,
+		`INSERT INTO feedbacks (project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, category, content_hash, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))`,
+		f.ProjectID, f.Title, f.Description, f.CustomData, f.FilePaths, f.ClientIP, status, f.Tags, f.Assignee, f.ContactName, f.ContactEmail, f.TrackingToken, f.Priority, f.Category, ComputeContentHash(f.Title, f.Description),
 	)
 	if err != nil {
 		return 0, err
@@ -566,7 +610,7 @@ func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess
 	var rows *sql.Rows
 	var err error
 
-	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at`
+	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash`
 
 	where := ""
 	args := []interface{}{}
@@ -606,7 +650,7 @@ func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess
 		var createdAt int64
 		var isDuplicate int
 		var isPublic int
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &isPublic, &f.RoadmapStatus); err != nil {
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash, &isPublic, &f.RoadmapStatus); err != nil {
 			return nil, 0, err
 		}
 		f.IsDuplicate = isDuplicate == 1
@@ -691,7 +735,7 @@ func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAcce
 		args = append(args, like, like, like, like, like, like)
 	}
 
-	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at`
+	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash`
 
 	var total int
 	err := d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks `+where, args...).Scan(&total)
@@ -715,7 +759,7 @@ func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAcce
 		var createdAt int64
 		var isDuplicate int
 		var isPublic int
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &isPublic, &f.RoadmapStatus); err != nil {
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash, &isPublic, &f.RoadmapStatus); err != nil {
 			return nil, 0, err
 		}
 		f.IsDuplicate = isDuplicate == 1
@@ -761,9 +805,9 @@ func (d *Database) GetFeedback(id int64) (*Feedback, error) {
 	var isDuplicate int
 	var isPublic int
 	err := d.db.QueryRow(
-		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, public_on_roadmap, roadmap_status
+		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash, public_on_roadmap, roadmap_status
 		 FROM feedbacks WHERE id = ?`, id,
-	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &isPublic, &f.RoadmapStatus)
+	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash, &isPublic, &f.RoadmapStatus)
 	if err != nil {
 		return nil, err
 	}
@@ -900,6 +944,7 @@ func (d *Database) InitDefaultConfig(cfg *config.Config) {
 		{Key: "smtp_from", Value: cfg.SMTPFrom, Description: "发件人地址"},
 		{Key: "smtp_to", Value: cfg.SMTPTo, Description: "收件人地址（多个用逗号分隔）"},
 		{Key: "notify_enable", Value: fmt.Sprintf("%t", cfg.NotifyEnable), Description: "是否启用邮件通知"},
+		{Key: "report_recipients", Value: "", Description: "周报收件人（逗号分隔邮箱地址）"},
 	}
 	for _, item := range defaults {
 		var count int
@@ -1151,7 +1196,7 @@ func (d *Database) ExportFeedbacks(projectID string) ([]Feedback, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at`
+	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash`
 
 	var rows *sql.Rows
 	var err error
@@ -1172,7 +1217,7 @@ func (d *Database) ExportFeedbacks(projectID string) ([]Feedback, error) {
 		var f Feedback
 		var createdAt int64
 		var isDuplicate int
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash); err != nil {
 			return nil, err
 		}
 		f.IsDuplicate = isDuplicate == 1
@@ -1270,6 +1315,22 @@ func (d *Database) SetMaxOpenConns(n int) {
 // Close closes the database connection.
 func (d *Database) Close() error {
 	return d.db.Close()
+}
+
+// ExecRaw 执行原始 SQL（INSERT/UPDATE/DELETE），供 report 包内部使用。
+// 调用方需自行确保语义正确；本方法仅提供互斥锁保护。
+func (d *Database) ExecRaw(sql string, args ...interface{}) (sql.Result, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.db.Exec(sql, args...)
+}
+
+// QueryRaw 执行原始 SQL 查询（SELECT），供 report 包内部使用。
+// 返回 *sql.Rows，调用方必须 Close。
+func (d *Database) QueryRaw(sql string, args ...interface{}) (*sql.Rows, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	return d.db.Query(sql, args...)
 }
 
 // ========== Feedback Notes ==========
@@ -1476,7 +1537,154 @@ func (d *Database) GetStatusDistribution() ([]map[string]interface{}, error) {
 	return result, nil
 }
 
-// ========== Backup ==========
+// ========== M13 周报统计查询 ==========
+
+// GetWeeklyStats 返回指定时间范围内的反馈总数和涉及项目数。
+func (d *Database) GetWeeklyStats(startUnix, endUnix int64) (total int, projects int, err error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	err = d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks WHERE created_at >= ? AND created_at <= ?`, startUnix, endUnix).Scan(&total)
+	if err != nil {
+		return
+	}
+	err = d.db.QueryRow(`SELECT COUNT(DISTINCT project_id) FROM feedbacks WHERE created_at >= ? AND created_at <= ?`, startUnix, endUnix).Scan(&projects)
+	return
+}
+
+// GetWeeklyCategoryCounts 返回指定时间范围内各分类的反馈数。
+func (d *Database) GetWeeklyCategoryCounts(startUnix, endUnix int64) (map[string]int, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(`
+		SELECT category, COUNT(*) as cnt
+		FROM feedbacks
+		WHERE created_at >= ? AND created_at <= ?
+		GROUP BY category ORDER BY cnt DESC
+	`, startUnix, endUnix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]int)
+	for rows.Next() {
+		var cat string
+		var count int
+		if err := rows.Scan(&cat, &count); err != nil {
+			return nil, err
+		}
+		result[cat] = count
+	}
+	return result, nil
+}
+
+// GetWeeklyStatusDistribution 返回指定时间范围内各状态的反馈数。
+func (d *Database) GetWeeklyStatusDistribution(startUnix, endUnix int64) (map[string]int, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(`
+		SELECT status, COUNT(*) as cnt
+		FROM feedbacks
+		WHERE created_at >= ? AND created_at <= ?
+		GROUP BY status ORDER BY cnt DESC
+	`, startUnix, endUnix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]int)
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		result[status] = count
+	}
+	return result, nil
+}
+
+// GetDailyTrendInRange 返回指定时间范围内每日反馈数。
+func (d *Database) GetDailyTrendInRange(startUnix, endUnix int64) ([]map[string]interface{}, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(`
+		SELECT date(created_at, 'unixepoch') as day, COUNT(*) as cnt
+		FROM feedbacks
+		WHERE created_at >= ? AND created_at <= ?
+		GROUP BY day ORDER BY day ASC
+	`, startUnix, endUnix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		var day string
+		var count int
+		if err := rows.Scan(&day, &count); err != nil {
+			return nil, err
+		}
+		result = append(result, map[string]interface{}{
+			"date":  day,
+			"count": count,
+		})
+	}
+	return result, nil
+}
+
+// GetWeeklyProjectStats 返回指定时间范围内各项目的反馈统计。
+func (d *Database) GetWeeklyProjectStats(startUnix, endUnix int64) ([]map[string]interface{}, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(`
+		SELECT f.project_id, COUNT(*) as cnt,
+			   COALESCE(MAX(f.created_at), 0) as latest,
+			   COALESCE(p.name, '') as project_name
+		FROM feedbacks f
+		LEFT JOIN projects p ON p.slug = f.project_id
+		WHERE f.created_at >= ? AND f.created_at <= ?
+		GROUP BY f.project_id
+		ORDER BY cnt DESC
+	`, startUnix, endUnix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		var projectID string
+		var projectName sql.NullString
+		var count int
+		var latestAt int64
+		if err := rows.Scan(&projectID, &count, &latestAt, &projectName); err != nil {
+			return nil, err
+		}
+		name := ""
+		if projectName.Valid {
+			name = projectName.String
+		}
+		latest := ""
+		if latestAt > 0 {
+			latest = time.Unix(latestAt, 0).Format("2006-01-02 15:04:05")
+		}
+		result = append(result, map[string]interface{}{
+			"project_id":   projectID,
+			"project_name": name,
+			"count":        count,
+			"latest_at":    latest,
+		})
+	}
+	return result, nil
+}
 
 // BackupDatabase creates a backup copy of the SQLite database file.
 func (d *Database) BackupDatabase(backupDir string) (string, error) {
@@ -1516,9 +1724,9 @@ func (d *Database) GetFeedbackByTrackingToken(token string) (*Feedback, error) {
 	var createdAt int64
 	var isDuplicate int
 	err := d.db.QueryRow(
-		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at
+		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash
 		 FROM feedbacks WHERE tracking_token = ?`, token,
-	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt)
+	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -1695,6 +1903,75 @@ func (d *Database) UnmarkDuplicate(id int64) error {
 
 	_, err := d.db.Exec(`UPDATE feedbacks SET is_duplicate = 0, duplicate_of = 0, updated_at = strftime('%s', 'now') WHERE id = ?`, id)
 	return err
+}
+
+// BackfillContentHashes 存量回填：仅对 content_hash 为空的行按 title+description 计算写入。
+// 在 migrate() 末尾调用一次；幂等——只处理空值行，重复运行为空操作。持 Database.mu 锁。
+func (d *Database) BackfillContentHashes() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	rows, err := d.db.Query(`SELECT id, title, description FROM feedbacks WHERE content_hash = '' OR content_hash IS NULL`)
+	if err != nil {
+		return err
+	}
+	type row struct {
+		id    int64
+		title string
+		desc  string
+	}
+	var pending []row
+	for rows.Next() {
+		var r row
+		if err := rows.Scan(&r.id, &r.title, &r.desc); err != nil {
+			rows.Close()
+			return err
+		}
+		pending = append(pending, r)
+	}
+	rows.Close()
+
+	for _, r := range pending {
+		hash := ComputeContentHash(r.title, r.desc)
+		if _, err := d.db.Exec(`UPDATE feedbacks SET content_hash = ? WHERE id = ?`, hash, r.id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// FindExactDuplicates 精确指纹匹配：同 project、开放态、未合并、排除自身，按时间倒序，LIMIT。
+// 仅比对 pending/processing 且与目标不同的开放反馈；project_id 为硬约束。
+func (d *Database) FindExactDuplicates(projectID, hash string, excludeID int64, limit int) ([]Feedback, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(`
+		SELECT id, project_id, title, description, status, tracking_token, content_hash, is_duplicate, duplicate_of
+		FROM feedbacks
+		WHERE project_id = ?
+		  AND content_hash = ?
+		  AND id != ?
+		  AND is_duplicate = 0
+		  AND status IN ('pending', 'processing')
+		ORDER BY created_at DESC
+		LIMIT ?`, projectID, hash, excludeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []Feedback
+	for rows.Next() {
+		var f Feedback
+		var isDuplicate int
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.Status, &f.TrackingToken, &f.ContentHash, &isDuplicate, &f.DuplicateOf); err != nil {
+			return nil, err
+		}
+		f.IsDuplicate = isDuplicate == 1
+		list = append(list, f)
+	}
+	return list, nil
 }
 
 // GetAssignees returns distinct non-empty assignee values.
