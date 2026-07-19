@@ -1741,7 +1741,11 @@ tr:last-child td{border-bottom:none}
       description: document.getElementById('pfDesc').value.trim(),
       is_active: document.getElementById('pfActive').checked,
       is_archived: document.getElementById('pfArchived').checked,
-      form_schema: project ? (project.form_schema || '[]') : '[]'
+      form_schema: project ? (function(){
+        var ps = project.form_schema;
+        if (typeof ps === 'string') { try { var p = JSON.parse(ps); if (Array.isArray(p)) ps = p; } catch(e){} }
+        return Array.isArray(ps) ? JSON.stringify(ps) : '[]';
+      })() : '[]'
     };
     if (!body.name || !body.slug) { showToast('名称和标识不能为空', 'error'); return; }
     var url = id ? '/api/v1/admin/projects/' + id : '/api/v1/admin/projects';
@@ -1812,7 +1816,11 @@ tr:last-child td{border-bottom:none}
     var d = await resp.json();
     var project = (d.projects || []).find(function(p){ return p.id === id; });
     if (!project) { showToast('项目不存在', 'error'); showProjectList(); return; }
-    try { currentFormSchema = JSON.parse(project.form_schema || '[]'); } catch(e) { currentFormSchema = []; }
+    try {
+      var _ps = JSON.parse(project.form_schema || '[]');
+      if (typeof _ps === 'string') { _ps = JSON.parse(_ps); } // 处理历史脏数据
+      currentFormSchema = Array.isArray(_ps) ? _ps : [];
+    } catch(e) { currentFormSchema = []; }
     document.getElementById('projectListView').style.display = 'none';
     var dv = document.getElementById('projectDetailView');
     dv.style.display = '';

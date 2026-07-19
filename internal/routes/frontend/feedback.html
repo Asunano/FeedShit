@@ -313,6 +313,9 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 
   // ========== Render custom fields from form_schema ==========
   var formSchema = PROJECT.form_schema || [];
+  if (typeof formSchema === 'string') {
+    try { var _p = JSON.parse(formSchema); formSchema = Array.isArray(_p) ? _p : []; } catch(e) { formSchema = []; }
+  }
   var customContainer = document.getElementById('customFieldsContainer');
 
   function renderCustomFields() {
