@@ -34,3 +34,9 @@ test/feedshit.exe
 
 # Build
 /dist/
+
+# Internal / generated dev docs (not for public repo)
+CODE_REVIEW.md
+FEATURE_ENHANCEMENT.md
+FEATURE_RECOMMENDATIONS.md
+FEATURE_VERIFICATION.md
