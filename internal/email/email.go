@@ -348,8 +348,8 @@ func (m *Mailer) SendCSATInvite(fb *database.Feedback, trackURL string) {
 	}
 
 	vars := map[string]string{
-		"id":       fmt.Sprintf("%d", fb.ID),
-		"title":    fb.Title,
+		"id":        fmt.Sprintf("%d", fb.ID),
+		"title":     fb.Title,
 		"track_url": trackURL,
 	}
 	subject := BuildCSATSubject(m.db, vars)

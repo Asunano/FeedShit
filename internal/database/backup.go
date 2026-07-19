@@ -1,0 +1,68 @@
+package database
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+// BackupDatabase creates a backup copy of the SQLite database file.
+func (d *Database) BackupDatabase(backupDir string) (string, error) {
+	// Use SQLite's VACUUM INTO for a consistent backup
+	if err := os.MkdirAll(backupDir, 0755); err != nil {
+		return "", fmt.Errorf("create backup dir: %w", err)
+	}
+
+	backupName := fmt.Sprintf("feedbacks_%s.db", time.Now().Format("20060102_150405"))
+	backupPath := filepath.Join(backupDir, backupName)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// VACUUM INTO requires a string literal, not a bound parameter
+	safePath := strings.ReplaceAll(backupPath, "'", "''")
+	_, err := d.db.Exec(fmt.Sprintf("VACUUM INTO '%s'", safePath))
+	if err != nil {
+		return "", fmt.Errorf("vacuum into backup: %w", err)
+	}
+
+	return backupPath, nil
+}
+
+// ArchiveOldFeedbacks closes old pending feedbacks.
+func (d *Database) ArchiveOldFeedbacks(daysOld int) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	cutoff := time.Now().AddDate(0, 0, -daysOld).Unix()
+	res, err := d.db.Exec(`UPDATE feedbacks SET status = 'closed', updated_at = strftime('%s', 'now') WHERE status IN ('pending', 'processing') AND created_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// PruneOldBackups removes backup files older than the specified number of days.
+func (d *Database) PruneOldBackups(backupDir string, daysOld int) (int, error) {
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		return 0, err
+	}
+	cutoff := time.Now().AddDate(0, 0, -daysOld)
+	pruned := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().Before(cutoff) {
+			os.Remove(filepath.Join(backupDir, entry.Name()))
+			pruned++
+		}
+	}
+	return pruned, nil
+}

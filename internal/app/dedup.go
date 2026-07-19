@@ -6,8 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"feedshit/internal/database"
+
+	"github.com/gin-gonic/gin"
 )
 
 // dupCandidate is the minimal projection returned by duplicate-detection endpoints.

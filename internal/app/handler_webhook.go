@@ -1,0 +1,250 @@
+package app
+
+import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"strconv"
+	"time"
+
+	"github.com/gin-gonic/gin"
+
+	"feedshit/internal/database"
+	"feedshit/internal/middleware"
+)
+
+// ========== Webhook Notification ==========
+
+// SendWebhookNotification sends a new-feedback webhook notification.
+func (a *App) SendWebhookNotification(fb *database.Feedback) {
+	a.sendWebhookEvent("new_feedback", map[string]interface{}{
+		"id":          fb.ID,
+		"project_id":  fb.ProjectID,
+		"title":       fb.Title,
+		"description": fb.Description,
+		"custom_data": fb.CustomData,
+		"client_ip":   fb.ClientIP,
+		"created_at":  fb.CreatedAt.Format(time.RFC3339),
+	}, fb)
+}
+
+// sendWebhookEvent sends a webhook notification for any event type.
+func (a *App) sendWebhookEvent(event string, data map[string]interface{}, fb *database.Feedback) {
+	// Build the platform-specific payload the same way as before.
+	webhookURL := a.DB.GetConfig("webhook_url")
+	if webhookURL == "" {
+		webhookURL = a.Cfg.WebhookURL
+	}
+
+	var payload []byte
+	var err error
+	var platform string
+
+	if fb != nil {
+		platform = a.DB.GetConfig("webhook_type")
+		if platform == "" && webhookURL != "" {
+			platform = detectWebhookPlatform(webhookURL)
+		}
+		switch platform {
+		case "feishu":
+			payload, err = buildFeishuCard(event, data, fb)
+		case "dingtalk":
+			payload, err = buildDingTalkCard(event, data, fb)
+		case "slack":
+			payload, err = buildSlackCard(event, data, fb)
+		case "wecom":
+			payload, err = buildWeComCard(event, data, fb)
+		default:
+			wrapper := map[string]interface{}{
+				"event":     event,
+				"data":      data,
+				"timestamp": time.Now().Format(time.RFC3339),
+			}
+			payload, err = json.Marshal(wrapper)
+		}
+	} else {
+		wrapper := map[string]interface{}{
+			"event":     event,
+			"data":      data,
+			"timestamp": time.Now().Format(time.RFC3339),
+		}
+		payload, err = json.Marshal(wrapper)
+	}
+	if err != nil {
+		log.Printf("[WEBHOOK] Failed to build %s payload for %s: %v", platform, event, err)
+		return
+	}
+
+	slug := ""
+	if fb != nil {
+		slug = fb.ProjectID
+	}
+
+	// Enqueue for subscription-based delivery (with retry + signature at send time).
+	// The legacy single webhook_url channel has been removed (app.go:1668); all
+	// outbound webhooks now go through HMAC-signed subscription deliveries.
+	if eerr := a.DB.EnqueueWebhook(event, string(payload), slug); eerr != nil {
+		log.Printf("[WEBHOOK] Enqueue failed for %s: %v", event, eerr)
+	}
+}
+
+// ProcessWebhookOutbox delivers due webhook outbox rows with HMAC signing and exponential backoff.
+func (a *App) ProcessWebhookOutbox() {
+	batch, err := a.DB.GetDueOutbox(time.Now().Unix(), 50)
+	if err != nil {
+		log.Printf("[WEBHOOK] outbox query failed: %v", err)
+		return
+	}
+	for _, o := range batch {
+		a.deliverWebhook(o)
+	}
+}
+
+func (a *App) deliverWebhook(o database.WebhookOutbox) {
+	req, err := http.NewRequest(http.MethodPost, o.URL, bytes.NewReader([]byte(o.Payload)))
+	if err != nil {
+		a.DB.MarkOutboxFailure(o.ID, err.Error(), o.Attempts+1, time.Now().Unix()+webhookBackoff(o.Attempts), 8)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if o.Secret != "" {
+		mac := hmac.New(sha256.New, []byte(o.Secret))
+		mac.Write([]byte(o.Payload))
+		req.Header.Set("X-FeedShit-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		a.DB.MarkOutboxFailure(o.ID, err.Error(), o.Attempts+1, time.Now().Unix()+webhookBackoff(o.Attempts), 8)
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		a.DB.MarkOutboxSuccess(o.ID)
+		log.Printf("[WEBHOOK] delivered outbox #%d to %s", o.ID, o.URL)
+	} else {
+		a.DB.MarkOutboxFailure(o.ID, fmt.Sprintf("status %d: %s", resp.StatusCode, string(body)), o.Attempts+1, time.Now().Unix()+webhookBackoff(o.Attempts), 8)
+	}
+}
+
+// webhookBackoff returns the retry delay (seconds) for a given attempt count, capped at 1h.
+func webhookBackoff(attempts int) int64 {
+	d := 30 * (1 << uint(attempts))
+	if d > 3600 {
+		d = 3600
+	}
+	return int64(d)
+}
+
+// ========== M6 Webhook Subscriptions (admin CRUD) ==========
+
+func maskSecret(s string) string {
+	if len(s) <= 4 {
+		return "****"
+	}
+	return s[:2] + "****" + s[len(s)-2:]
+}
+
+func (a *App) AdminListWebhookSubscriptions(c *gin.Context) {
+	subs, err := a.DB.ListWebhookSubscriptions()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+	if subs == nil {
+		subs = []database.WebhookSubscription{}
+	}
+	for i := range subs {
+		subs[i].Secret = maskSecret(subs[i].Secret)
+	}
+	c.JSON(http.StatusOK, gin.H{"subscriptions": subs})
+}
+
+func (a *App) AdminCreateWebhookSubscription(c *gin.Context) {
+	var req struct {
+		ProjectSlug string `json:"project_slug"`
+		URL         string `json:"url"`
+		Secret      string `json:"secret"`
+		Events      string `json:"events"`
+		IsActive    bool   `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	if req.URL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "URL 不能为空"})
+		return
+	}
+	if req.Events == "" {
+		req.Events = "*"
+	}
+	id, err := a.DB.CreateWebhookSubscription(req.ProjectSlug, req.URL, req.Secret, req.Events, req.IsActive)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
+		return
+	}
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("create_webhook_sub", fmt.Sprintf("创建 Webhook 订阅 #%d", id), fmt.Sprintf("%v", user), clientIP)
+	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "已创建"})
+}
+
+func (a *App) AdminUpdateWebhookSubscription(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	var req struct {
+		URL      string `json:"url"`
+		Secret   string `json:"secret"`
+		Events   string `json:"events"`
+		IsActive *bool  `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	// Preserve existing secret when not provided
+	if req.Secret == "" {
+		subs, _ := a.DB.ListWebhookSubscriptions()
+		for _, s := range subs {
+			if s.ID == id {
+				req.Secret = s.Secret
+				break
+			}
+		}
+	}
+	if err := a.DB.UpdateWebhookSubscription(id, req.URL, req.Secret, req.Events, req.IsActive); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("update_webhook_sub", fmt.Sprintf("更新 Webhook 订阅 #%d", id), fmt.Sprintf("%v", user), clientIP)
+	c.JSON(http.StatusOK, gin.H{"message": "已更新"})
+}
+
+func (a *App) AdminDeleteWebhookSubscription(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	if err := a.DB.DeleteWebhookSubscription(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
+		return
+	}
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("delete_webhook_sub", fmt.Sprintf("删除 Webhook 订阅 #%d", id), fmt.Sprintf("%v", user), clientIP)
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}

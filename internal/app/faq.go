@@ -9,9 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gin-gonic/gin"
 	"feedshit/internal/database"
 	"feedshit/internal/middleware"
+
+	"github.com/gin-gonic/gin"
 )
 
 // faqMaxResults reads the public search result cap from FAQ_MAX_RESULTS.

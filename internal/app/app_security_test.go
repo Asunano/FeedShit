@@ -32,7 +32,7 @@ func TestWebhookBackoff(t *testing.T) {
 		{1, 60},
 		{2, 120},
 		{6, 1920},
-		{7, 3600}, // capped
+		{7, 3600},  // capped
 		{20, 3600}, // capped
 	}
 	for _, c := range cases {

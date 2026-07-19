@@ -1,0 +1,93 @@
+package middleware
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"sync"
+	"time"
+)
+
+// ========== Session-based Auth ==========
+
+type SessionManager struct {
+	mu       sync.RWMutex
+	sessions map[string]sessionEntry
+}
+
+type sessionEntry struct {
+	username  string
+	role      string
+	expiry    time.Time
+	csrfToken string
+}
+
+func NewSessionManager() *SessionManager {
+	sm := &SessionManager{sessions: make(map[string]sessionEntry)}
+	go sm.cleanupLoop()
+	return sm
+}
+
+func (sm *SessionManager) Create(username, role string) string {
+	token := generateToken(32)
+	csrf := generateToken(32)
+	sm.mu.Lock()
+	sm.sessions[token] = sessionEntry{
+		username:  username,
+		role:      role,
+		expiry:    time.Now().Add(24 * time.Hour),
+		csrfToken: csrf,
+	}
+	sm.mu.Unlock()
+	return token
+}
+
+func (sm *SessionManager) Validate(token string) (username, role string, ok bool) {
+	sm.mu.RLock()
+	entry, exists := sm.sessions[token]
+	sm.mu.RUnlock()
+	if !exists || time.Now().After(entry.expiry) {
+		if exists {
+			sm.mu.Lock()
+			delete(sm.sessions, token)
+			sm.mu.Unlock()
+		}
+		return "", "", false
+	}
+	return entry.username, entry.role, true
+}
+
+func (sm *SessionManager) Revoke(token string) {
+	sm.mu.Lock()
+	delete(sm.sessions, token)
+	sm.mu.Unlock()
+}
+
+// GetCSRFToken returns the CSRF token for a given session.
+func (sm *SessionManager) GetCSRFToken(token string) string {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+	if entry, ok := sm.sessions[token]; ok {
+		return entry.csrfToken
+	}
+	return ""
+}
+
+func (sm *SessionManager) cleanupLoop() {
+	ticker := time.NewTicker(10 * time.Minute)
+	for range ticker.C {
+		sm.mu.Lock()
+		now := time.Now()
+		for token, entry := range sm.sessions {
+			if now.After(entry.expiry) {
+				delete(sm.sessions, token)
+			}
+		}
+		sm.mu.Unlock()
+	}
+}
+
+func generateToken(length int) string {
+	b := make([]byte, length)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
