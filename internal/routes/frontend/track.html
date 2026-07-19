@@ -77,6 +77,10 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 [data-theme="dark"] .loading .spinner{border-color:#3a3a5a;border-top-color:#8888aa}
 [data-theme="dark"] .theme-toggle button{color:var(--muted);border-color:var(--input-border)}
 [data-theme="dark"] .theme-toggle button:hover{background:var(--hover)}
+[data-theme="dark"] .rating-label{color:var(--muted)}
+[data-theme="dark"] .rating-comment{background:var(--card-bg);color:var(--fg);border:1px solid var(--input-border)}
+.rating-label{font-size:.8rem;color:#666;margin-bottom:4px}
+.rating-comment{border:1px solid #d0d0d0;background:#fff;color:#333}
 </style>
 </head>
 <body>
@@ -114,9 +118,9 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
         <button class="vote-btn" id="voteBtn" onclick="voteFeedback()">👍 有用 (<span id="voteCount">0</span>)</button>
       </div>
       <div class="fb-rating" id="fbRating" style="margin-top:12px;display:none">
-        <div style="font-size:.8rem;color:#666;margin-bottom:4px">为本次服务评分：</div>
+        <div class="rating-label">为本次服务评分：</div>
         <div id="ratingStars" style="font-size:1.4rem;cursor:pointer"></div>
-        <textarea id="ratingComment" placeholder="说点什么（选填）..." style="width:100%;margin-top:6px;padding:6px;border:1px solid #d0d0d0;border-radius:6px;font-size:.85rem"></textarea>
+        <textarea id="ratingComment" class="rating-comment" placeholder="说点什么（选填）..." style="width:100%;margin-top:6px;padding:6px;border-radius:6px;font-size:.85rem"></textarea>
         <button class="btn btn-sm" id="ratingBtn" onclick="submitRating()" style="margin-top:6px">提交评分</button>
         <span id="ratingDone" style="color:#22c55e;font-size:.8rem;margin-left:8px"></span>
       </div>
