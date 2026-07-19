@@ -58,6 +58,15 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 		return
 	}
 
+	// F18: Validate custom_data against the project's form_schema
+	proj, projErr := a.DB.GetProjectBySlug(projectID)
+	if projErr == nil && proj != nil {
+		if err := validateFormSchema(proj.FormSchema, customData); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+	}
+
 	// PoW verification with nonce replay protection
 	timestamp := c.GetHeader("X-PoW-Timestamp")
 	nonce := c.GetHeader("X-PoW-Nonce")
@@ -426,6 +435,14 @@ func (a *App) AdminDeleteFeedback(c *gin.Context) {
 	if len(fileErrors) > 0 {
 		msg += "，但部分文件清理失败: " + strings.Join(fileErrors, "; ")
 	}
+
+	// Webhook: feedback deleted
+	go a.sendWebhookEvent("feedback_deleted", map[string]interface{}{
+		"id":         id,
+		"project_id": fb.ProjectID,
+		"title":      fb.Title,
+	}, fb)
+
 	c.JSON(http.StatusOK, gin.H{"message": msg})
 }
 
@@ -545,6 +562,9 @@ func (a *App) AdminBulkDeleteFeedbacks(c *gin.Context) {
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("bulk_delete", fmt.Sprintf("批量删除 %d 条反馈", affected), fmt.Sprintf("%v", user), clientIP)
 
+	// Webhook: bulk operation
+	a.sendBulkWebhook("bulk_delete", req.IDs, affected)
+
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已删除 %d 条反馈", affected), "affected": affected})
 }
 
@@ -588,10 +608,20 @@ func (a *App) AdminBulkUpdateStatus(c *gin.Context) {
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("bulk_status", fmt.Sprintf("批量更新 %d 条反馈状态为 %s", affected, req.Status), fmt.Sprintf("%v", user), clientIP)
 
+	// Webhook: bulk operation
+	a.sendBulkWebhook("bulk_update_status", req.IDs, affected)
+
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("已更新 %d 条反馈状态", affected), "affected": affected})
 }
 
-// ========== Bulk Operations (Extended) ==========
+// sendBulkWebhook fires a bulk_operation webhook event for batch operations.
+func (a *App) sendBulkWebhook(operation string, ids []int64, affected int64) {
+	go a.sendWebhookEvent("bulk_operation", map[string]interface{}{
+		"operation": operation,
+		"ids":       ids,
+		"affected":  affected,
+	}, nil)
+}
 
 // AdminBulkUpdateTags updates tags on multiple feedbacks.
 func (a *App) AdminBulkUpdateTags(c *gin.Context) {
@@ -965,4 +995,16 @@ func (a *App) AdminBulkUpdateCategory(c *gin.Context) {
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("bulk_update_category", fmt.Sprintf("批量更新 %d 条反馈分类", affected), fmt.Sprintf("%v", user), clientIP)
 	c.JSON(http.StatusOK, gin.H{"affected": affected})
+}
+
+// AdminGetTags returns tag suggestions for autocomplete (F20).
+// Route: GET /api/v1/admin/tags?q=prefix
+func (a *App) AdminGetTags(c *gin.Context) {
+	prefix := strings.TrimSpace(c.Query("q"))
+	tags, err := a.DB.GetTags(prefix)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tags": tags})
 }

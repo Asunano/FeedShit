@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,12 +32,19 @@ func (d *Database) BackupDatabase(backupDir string) (string, error) {
 	return backupPath, nil
 }
 
-// ArchiveOldFeedbacks closes old pending feedbacks.
-func (d *Database) ArchiveOldFeedbacks(daysOld int) (int64, error) {
+// ArchiveOldFeedbacks closes old pending feedbacks. If projectID is non-empty, only
+// feedbacks belonging to that project are affected.
+func (d *Database) ArchiveOldFeedbacks(daysOld int, projectID string) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	cutoff := time.Now().AddDate(0, 0, -daysOld).Unix()
-	res, err := d.db.Exec(`UPDATE feedbacks SET status = 'closed', updated_at = strftime('%s', 'now') WHERE status IN ('pending', 'processing') AND created_at < ?`, cutoff)
+	var res sql.Result
+	var err error
+	if projectID != "" {
+		res, err = d.db.Exec(`UPDATE feedbacks SET status = 'closed', updated_at = strftime('%s', 'now') WHERE status IN ('pending', 'processing') AND created_at < ? AND project_id = ?`, cutoff, projectID)
+	} else {
+		res, err = d.db.Exec(`UPDATE feedbacks SET status = 'closed', updated_at = strftime('%s', 'now') WHERE status IN ('pending', 'processing') AND created_at < ?`, cutoff)
+	}
 	if err != nil {
 		return 0, err
 	}

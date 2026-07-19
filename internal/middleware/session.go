@@ -83,6 +83,20 @@ func (sm *SessionManager) RevokeUserSessions(username string) {
 	}
 }
 
+// RotateCSRFToken generates a new CSRF token for the given session token
+// and returns it. Returns empty string if the session doesn't exist.
+func (sm *SessionManager) RotateCSRFToken(sessionToken string) string {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	entry, exists := sm.sessions[sessionToken]
+	if !exists {
+		return ""
+	}
+	entry.csrfToken = generateToken(32)
+	sm.sessions[sessionToken] = entry
+	return entry.csrfToken
+}
+
 // GetCSRFToken returns the CSRF token for a given session.
 func (sm *SessionManager) GetCSRFToken(token string) string {
 	sm.mu.RLock()

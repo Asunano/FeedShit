@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -470,4 +472,71 @@ func (a *App) checkProjectWritePerm(c *gin.Context, projectSlug string) bool {
 	effectiveRole := a.DB.GetEffectiveRole(admin.ID, projectSlug, "*")
 	roleLevel := map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
 	return roleLevel[effectiveRole] >= 2
+}
+
+// formSchemaField represents a single field definition in the form_schema JSON.
+type formSchemaField struct {
+	Key      string   `json:"key"`
+	Label    string   `json:"label"`
+	Type     string   `json:"type"`
+	Required bool     `json:"required"`
+	Options  []string `json:"options,omitempty"`
+}
+
+// validateFormSchema validates custom_data JSON against the project's form_schema.
+// Returns nil if the schema is empty/valid, or an error describing the first violation.
+func validateFormSchema(schemaJSON, customDataJSON string) error {
+	if schemaJSON == "" || schemaJSON == "[]" {
+		return nil // no schema = no validation
+	}
+	if customDataJSON == "" {
+		customDataJSON = "{}"
+	}
+	var schema []formSchemaField
+	if err := json.Unmarshal([]byte(schemaJSON), &schema); err != nil {
+		return nil // invalid schema on project side, skip validation
+	}
+	if len(schema) == 0 {
+		return nil
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(customDataJSON), &data); err != nil {
+		return fmt.Errorf("自定义字段格式错误")
+	}
+
+	for _, field := range schema {
+		val, exists := data[field.Key]
+		if field.Required {
+			if !exists || val == nil || val == "" {
+				return fmt.Errorf("字段 %q 为必填", field.Label)
+			}
+		}
+		if exists && val != nil && val != "" {
+			strVal := fmt.Sprintf("%v", val)
+			// Type validation
+			switch field.Type {
+			case "number":
+				if _, err := strconv.ParseFloat(strVal, 64); err != nil {
+					return fmt.Errorf("字段 %q 必须为数字", field.Label)
+				}
+			case "select", "radio":
+				valid := false
+				for _, opt := range field.Options {
+					if strVal == opt {
+						valid = true
+						break
+					}
+				}
+				if !valid {
+					return fmt.Errorf("字段 %q 的值无效", field.Label)
+				}
+			case "email":
+				if !strings.Contains(strVal, "@") || !strings.Contains(strVal, ".") {
+					return fmt.Errorf("字段 %q 必须为有效的邮箱地址", field.Label)
+				}
+			}
+		}
+	}
+	return nil
 }

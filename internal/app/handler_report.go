@@ -635,14 +635,15 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 // AdminArchiveOldFeedbacks archives old pending/processing feedbacks.
 func (a *App) AdminArchiveOldFeedbacks(c *gin.Context) {
 	var req struct {
-		DaysOld int `json:"days_old"`
+		DaysOld   int    `json:"days_old"`
+		ProjectID string `json:"project_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.DaysOld <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请指定有效天数"})
 		return
 	}
 
-	affected, err := a.DB.ArchiveOldFeedbacks(req.DaysOld)
+	affected, err := a.DB.ArchiveOldFeedbacks(req.DaysOld, req.ProjectID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "归档失败"})
 		return

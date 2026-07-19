@@ -42,7 +42,21 @@ func CSRFMiddleware(sm *SessionManager) gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+
+		// F17: Rotate CSRF token after successful validation
 		c.Next()
+
+		// Only rotate on successful responses (2xx)
+		if c.Writer.Status() >= 200 && c.Writer.Status() < 300 {
+			newToken := sm.RotateCSRFToken(sessionToken)
+			if newToken != "" {
+				secure := false
+				if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+					secure = true
+				}
+				SetCSRFCookie(c, newToken, secure)
+			}
+		}
 	}
 }
 

@@ -321,6 +321,38 @@ func (d *Database) GetFeedback(id int64) (*Feedback, error) {
 	return &f, nil
 }
 
+// GetTags returns distinct tag values matching the given prefix, limited to 20.
+// Used for tag autocomplete in the admin UI.
+func (d *Database) GetTags(prefix string) ([]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(`SELECT DISTINCT tags FROM feedbacks WHERE tags != '' AND tags LIKE ? ORDER BY tags LIMIT 20`, prefix+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []string
+	seen := map[string]bool{}
+	for rows.Next() {
+		var val string
+		if err := rows.Scan(&val); err != nil {
+			continue
+		}
+		// tags is comma-separated; split and deduplicate
+		for _, t := range strings.Split(val, ",") {
+			t = strings.TrimSpace(t)
+			if t != "" && strings.HasPrefix(strings.ToLower(t), strings.ToLower(prefix)) && !seen[t] {
+				seen[t] = true
+				list = append(list, t)
+			}
+		}
+	}
+	if list == nil {
+		list = []string{}
+	}
+	return list, nil
+}
+
 // MergeFeedback moves notes and votes from sourceID to targetID when
 // source is marked as a duplicate of target. This consolidated the data
 // under the target feedback so merging feels seamless.

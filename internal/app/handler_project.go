@@ -294,6 +294,12 @@ func (a *App) AdminArchiveProject(c *gin.Context) {
 	}
 	a.DB.InsertAuditLog("archive_project", fmt.Sprintf("%s项目 #%d", action, id), fmt.Sprintf("%v", user), clientIP)
 
+	// Webhook: project archived/unarchived
+	go a.sendWebhookEvent("project_archived", map[string]interface{}{
+		"id":       id,
+		"archived": req.Archived,
+	}, nil)
+
 	c.JSON(http.StatusOK, gin.H{"message": "项目已" + action})
 }
 

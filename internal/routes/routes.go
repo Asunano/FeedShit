@@ -333,6 +333,8 @@ func Register(r *gin.Engine, application *app.App) {
 
 		// Data archive & cleanup (admin only)
 		adminAPI.POST("/archive", middleware.RequireRole("admin"), application.AdminArchiveOldFeedbacks)
+		// Tag autocomplete
+		adminAPI.GET("/tags", application.AdminGetTags)
 		adminAPI.POST("/prune-backups", middleware.RequireRole("admin"), application.AdminPruneOldBackups)
 
 		// Email template (admin only)
