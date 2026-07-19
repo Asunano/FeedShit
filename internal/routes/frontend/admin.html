@@ -2133,9 +2133,11 @@ tr:last-child td{border-bottom:none}
     if (!resp) return;
     var d = await resp.json();
     var admins = d.admins || [];
+    // Hide super admin (self) from the list — they can manage from their own account
+    admins = admins.filter(function(a){ return a.username !== currentUsername; });
     var tbody = document.getElementById('adminTable');
     if (admins.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无团队成员</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无其他团队成员</td></tr>';
       return;
     }
     var roleLabels = {admin:'管理员',manager:'经理',editor:'编辑',viewer:'只读'};

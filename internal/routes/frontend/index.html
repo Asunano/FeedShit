@@ -99,8 +99,14 @@ a:hover{text-decoration:underline}
     </ol>
   </div>
 
+  <div class="usage" id="projectList" style="display:none">
+    <h3>反馈项目</h3>
+    <div id="projectItems"></div>
+  </div>
+
   <div class="cta">
     <a href="/admin" class="cta-primary">管理后台</a>
+    <a href="/track" class="cta-secondary">反馈跟踪</a>
   </div>
 
   <div class="footer">
@@ -124,6 +130,18 @@ a:hover{text-decoration:underline}
       }
     }
   }).catch(function(){});
+  // Load active projects list
+  fetch('/api/v1/projects').then(function(r){ return r.json(); }).then(function(d){
+    var projects = d.projects || [];
+    var el = document.getElementById('projectList');
+    var items = document.getElementById('projectItems');
+    if (!el || projects.length === 0) return;
+    el.style.display = '';
+    items.innerHTML = '<ul style="padding-left:20px">' + projects.map(function(p){
+      return '<li style="margin-bottom:8px"><a href="/fb/'+encodeURIComponent(p.slug)+'">'+escHtml(p.name)+'</a><span style="color:#888;font-size:.8rem;margin-left:8px">'+escHtml(p.description||'')+'</span></li>';
+    }).join('') + '</ul>';
+  }).catch(function(){});
+  function escHtml(s){ var d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
 })();
 </script>
 

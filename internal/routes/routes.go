@@ -121,7 +121,7 @@ func Register(r *gin.Engine, application *app.App) {
 			"name":        project.Name,
 			"slug":        project.Slug,
 			"description": project.Description,
-			"form_schema": json.RawMessage(project.FormSchema),
+			"form_schema": json.RawMessage(formSchemaOrDefault(project.FormSchema)),
 			"categories":  activeCats,
 		})
 		html := strings.Replace(string(feedbackHTML), "/*__PROJECT_DATA__*/null", string(info), 1)
@@ -343,4 +343,12 @@ func mustReadFS(fsys fs.FS, name string) []byte {
 		panic("Failed to read embedded file " + name + ": " + err.Error())
 	}
 	return data
+}
+
+// formSchemaOrDefault returns a valid JSON array, defaulting to "[]" if s is empty.
+func formSchemaOrDefault(s string) string {
+	if s == "" || s == "null" {
+		return "[]"
+	}
+	return s
 }
