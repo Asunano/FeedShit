@@ -324,6 +324,11 @@ func (a *App) AdminListCategories(c *gin.Context) {
 	if categories == nil {
 		categories = []database.Category{}
 	}
+	// RBAC: verify user has access to this project
+	if !a.checkProjectWritePerm(c, proj.Slug) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权查看该项目的分类"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"categories": categories})
 }
 
@@ -336,6 +341,11 @@ func (a *App) AdminCreateCategory(c *gin.Context) {
 	proj, projErr := a.DB.GetProject(id)
 	if projErr != nil || proj == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
+		return
+	}
+	// RBAC: verify user has write permission on this project
+	if !a.checkProjectWritePerm(c, proj.Slug) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权管理该项目的分类"})
 		return
 	}
 	slug := proj.Slug
