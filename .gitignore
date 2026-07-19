@@ -28,9 +28,8 @@ Thumbs.db
 .env
 *.env
 
-# Test artifacts
-test/data/
-test/feedshit.exe
+# Test directory (local testing only, not for the public repo)
+test/
 
 # Build
 /dist/
