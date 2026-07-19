@@ -67,6 +67,20 @@ func Register(r *gin.Engine, application *app.App) {
 
 	r.Use(setupGuard)
 
+	// ========== Security headers ==========
+
+	// Content-Security-Policy: restricts script/style sources to mitigate XSS.
+	r.Use(func(c *gin.Context) {
+		c.Header("Content-Security-Policy",
+			"default-src 'self'; "+
+				"script-src 'self' 'unsafe-inline' 'unsafe-eval'; "+
+				"style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data:; "+
+				"font-src 'self'; "+
+				"connect-src 'self'; "+
+				"frame-ancestors 'none'")
+	})
+
 	// ========== Public page routes ==========
 
 	// Deep health check — verifies DB connectivity
