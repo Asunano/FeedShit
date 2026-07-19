@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -107,9 +108,13 @@ func (a *App) ProcessWebhookOutbox() {
 }
 
 func (a *App) deliverWebhook(o database.WebhookOutbox) {
+	const maxAttempts = 8
+	nextAttempt := o.Attempts + 1
+
 	req, err := http.NewRequest(http.MethodPost, o.URL, bytes.NewReader([]byte(o.Payload)))
 	if err != nil {
-		a.DB.MarkOutboxFailure(o.ID, err.Error(), o.Attempts+1, time.Now().Unix()+webhookBackoff(o.Attempts), 8)
+		a.DB.MarkOutboxFailure(o.ID, err.Error(), nextAttempt, time.Now().Unix()+webhookBackoff(o.Attempts), maxAttempts)
+		a.alertWebhookFailure(o.ID, o.URL, err.Error(), nextAttempt, maxAttempts)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -121,7 +126,8 @@ func (a *App) deliverWebhook(o database.WebhookOutbox) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		a.DB.MarkOutboxFailure(o.ID, err.Error(), o.Attempts+1, time.Now().Unix()+webhookBackoff(o.Attempts), 8)
+		a.DB.MarkOutboxFailure(o.ID, err.Error(), nextAttempt, time.Now().Unix()+webhookBackoff(o.Attempts), maxAttempts)
+		a.alertWebhookFailure(o.ID, o.URL, err.Error(), nextAttempt, maxAttempts)
 		return
 	}
 	defer resp.Body.Close()
@@ -130,8 +136,37 @@ func (a *App) deliverWebhook(o database.WebhookOutbox) {
 		a.DB.MarkOutboxSuccess(o.ID)
 		log.Printf("[WEBHOOK] delivered outbox #%d to %s", o.ID, o.URL)
 	} else {
-		a.DB.MarkOutboxFailure(o.ID, fmt.Sprintf("status %d: %s", resp.StatusCode, string(body)), o.Attempts+1, time.Now().Unix()+webhookBackoff(o.Attempts), 8)
+		errMsg := fmt.Sprintf("status %d: %s", resp.StatusCode, string(body))
+		a.DB.MarkOutboxFailure(o.ID, errMsg, nextAttempt, time.Now().Unix()+webhookBackoff(o.Attempts), maxAttempts)
+		a.alertWebhookFailure(o.ID, o.URL, errMsg, nextAttempt, maxAttempts)
 	}
+}
+
+// alertWebhookFailure sends an alert email when a webhook outbox reaches max attempts.
+func (a *App) alertWebhookFailure(id int64, url, lastErr string, attempts, maxAttempts int) {
+	if attempts < maxAttempts {
+		return // only alert on final failure
+	}
+	log.Printf("[WEBHOOK] ALERT: outbox #%d to %s failed after %d attempts: %s", id, url, attempts, lastErr)
+	// Send alert email to the configured admin notice address
+	to := a.DB.GetConfig("smtp_to")
+	if to == "" {
+		return
+	}
+	subject := fmt.Sprintf("[FeedShit] Webhook 投递失败: #%d", id)
+	body := fmt.Sprintf(
+		`<html><body><h2>Webhook 投递失败</h2>
+<p>Webhook outbox <strong>#%d</strong> 在 %d 次重试后仍然失败。</p>
+<table><tr><td>URL</td><td>%s</td></tr>
+<tr><td>最后错误</td><td>%s</td></tr></table>
+<p>请在后台检查 Webhook 配置是否正确。</p></body></html>`,
+		id, maxAttempts, url, htmlEscaper(lastErr))
+	go a.Mailer.Send(to, subject, body)
+}
+
+// htmlEscaper escapes special HTML characters (shorthand for the html package).
+func htmlEscaper(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(s, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
 }
 
 // webhookBackoff returns the retry delay (seconds) for a given attempt count, capped at 1h.

@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"feedshit/internal/database"
 )
@@ -472,7 +473,27 @@ func (m *Mailer) Send(to, subject, htmlBody string) {
 
 // smtpSend 发送 SMTP 邮件，自动处理端口 465 (SSL/TLS) 与 STARTTLS。
 // addr: "host:port", auth: SMTP 认证, from: 发件人, to: 收件人列表, msg: 完整的 MIME 消息。
+// 发送失败后自动重试 2 次（间隔 5s、30s）。
 func smtpSend(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(attempt*25+5) * time.Second // 5s, 30s
+			time.Sleep(delay)
+			log.Printf("[MAIL] retry %d/2 after %v", attempt, delay)
+		}
+		if err := smtpSendOnce(addr, auth, from, to, msg); err != nil {
+			lastErr = err
+			log.Printf("[MAIL] attempt %d failed: %v", attempt+1, err)
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("all 3 attempts failed, last: %w", lastErr)
+}
+
+// smtpSendOnce performs a single SMTP send attempt (no retry).
+func smtpSendOnce(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("parse addr: %w", err)
