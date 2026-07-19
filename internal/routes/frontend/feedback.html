@@ -535,10 +535,12 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     }
   };
 
-  // Internal helpers
-  function _r(f) { return f.required ? ' required' : ''; }
-  function _a(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  // Internal helpers (also exposed as escHtml/escAttr for backward compat)
   function _e(s) { return _a(s); }
+  function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function escAttr(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function _a(s) { return escAttr(s); }
+  function _r(f) { return f.required ? ' required' : ''; }
   function _at(n, v) { return (v !== undefined && v !== null && v !== '') ? ' ' + n + '="' + _a(String(v)) + '"' : ''; }
 
   // ========== Render entire form from schema ==========
