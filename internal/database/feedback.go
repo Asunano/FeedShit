@@ -587,6 +587,42 @@ func (d *Database) ExportFeedbacks(projectID string) ([]Feedback, error) {
 				list[i].Votes = vmap[list[i].ID]
 			}
 		}
+
+		// Batch-load notes content
+		nrows, nerr := d.db.Query(`SELECT feedback_id, content FROM feedback_notes WHERE feedback_id IN (`+strings.Join(ph, ",")+`) ORDER BY feedback_id, created_at`, args...)
+		if nerr == nil {
+			defer nrows.Close()
+			nmap := make(map[int64][]string, len(list))
+			for nrows.Next() {
+				var fid int64
+				var content string
+				if nrows.Scan(&fid, &content) == nil {
+					nmap[fid] = append(nmap[fid], content)
+				}
+			}
+			for i := range list {
+				if notes, ok := nmap[list[i].ID]; ok && len(notes) > 0 {
+					list[i].NotesContent = strings.Join(notes, "\n---\n")
+				}
+			}
+		}
+
+		// Batch-load CSAT ratings
+		rrows, rerr := d.db.Query(`SELECT feedback_id, score FROM feedback_ratings WHERE feedback_id IN (`+strings.Join(ph, ",")+`)`, args...)
+		if rerr == nil {
+			defer rrows.Close()
+			rmap := make(map[int64]int, len(list))
+			for rrows.Next() {
+				var fid int64
+				var score int
+				if rrows.Scan(&fid, &score) == nil {
+					rmap[fid] = score
+				}
+			}
+			for i := range list {
+				list[i].RatingScore = rmap[list[i].ID]
+			}
+		}
 	}
 
 	return list, nil

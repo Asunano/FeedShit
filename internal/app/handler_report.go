@@ -191,11 +191,15 @@ func (a *App) exportCSV(c *gin.Context, projectID string, feedbacks []database.F
 	w := csv.NewWriter(c.Writer)
 	// Write BOM for Excel compatibility
 	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
-	w.Write([]string{"ID", "项目", "标题", "描述", "自定义字段", "附件", "状态", "标签", "指派", "联系人", "联系邮箱", "来源IP", "提交时间"})
+	w.Write([]string{"ID", "项目", "标题", "描述", "自定义字段", "附件", "状态", "标签", "指派", "联系人", "联系邮箱", "来源IP", "提交时间", "投票", "路线图状态", "是否公开", "备注", "评分"})
 	for _, fb := range feedbacks {
 		clientIP := fb.ClientIP
 		if !isAdmin && clientIP != "" {
 			clientIP = "已隐藏"
+		}
+		roadmapStatus := ""
+		if fb.PublicOnRoadmap {
+			roadmapStatus = fb.RoadmapStatus
 		}
 		w.Write([]string{
 			strconv.FormatInt(fb.ID, 10),
@@ -211,6 +215,11 @@ func (a *App) exportCSV(c *gin.Context, projectID string, feedbacks []database.F
 			fb.ContactEmail,
 			clientIP,
 			fb.CreatedAt.Format("2006-01-02 15:04:05"),
+			strconv.Itoa(fb.Votes),
+			roadmapStatus,
+			strconv.FormatBool(fb.PublicOnRoadmap),
+			fb.NotesContent,
+			strconv.Itoa(fb.RatingScore),
 		})
 	}
 	w.Flush()

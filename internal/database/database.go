@@ -59,6 +59,9 @@ type Feedback struct {
 	PublicOnRoadmap bool      `json:"public_on_roadmap"`
 	RoadmapStatus   string    `json:"roadmap_status"`
 	Votes           int       `json:"votes"`
+	// Export-only: populated by ExportFeedbacks for CSV/JSON/XLSX output.
+	NotesContent string `json:"notes_content,omitempty"`
+	RatingScore  int    `json:"rating_score,omitempty"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       int64     `json:"updated_at"`
 }
