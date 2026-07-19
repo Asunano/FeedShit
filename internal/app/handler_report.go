@@ -203,26 +203,40 @@ func (a *App) exportCSV(c *gin.Context, projectID string, feedbacks []database.F
 		}
 		w.Write([]string{
 			strconv.FormatInt(fb.ID, 10),
-			fb.ProjectID,
-			fb.Title,
-			fb.Description,
-			fb.CustomData,
-			fb.FilePaths,
-			fb.Status,
-			fb.Tags,
-			fb.Assignee,
-			fb.ContactName,
-			fb.ContactEmail,
-			clientIP,
+			escapeCSVCell(fb.ProjectID),
+			escapeCSVCell(fb.Title),
+			escapeCSVCell(fb.Description),
+			escapeCSVCell(fb.CustomData),
+			escapeCSVCell(fb.FilePaths),
+			escapeCSVCell(fb.Status),
+			escapeCSVCell(fb.Tags),
+			escapeCSVCell(fb.Assignee),
+			escapeCSVCell(fb.ContactName),
+			escapeCSVCell(fb.ContactEmail),
+			clientIP, // "已隐藏" 不是用户输入，不需要转义
 			fb.CreatedAt.Format("2006-01-02 15:04:05"),
 			strconv.Itoa(fb.Votes),
-			roadmapStatus,
+			escapeCSVCell(roadmapStatus),
 			strconv.FormatBool(fb.PublicOnRoadmap),
-			fb.NotesContent,
+			escapeCSVCell(fb.NotesContent),
 			strconv.Itoa(fb.RatingScore),
 		})
 	}
 	w.Flush()
+}
+
+// escapeCSVCell prevents CSV formula injection by prefixing values that start
+// with =, +, -, or @ with a tab character. This stops Excel/Sheets from
+// interpreting them as formulas (DDE / CVE-2014-3522 mitigation).
+func escapeCSVCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@':
+		return "\t" + s
+	}
+	return s
 }
 
 func (a *App) exportJSON(c *gin.Context, projectID string, feedbacks []database.Feedback, isAdmin bool) {
