@@ -1,6 +1,11 @@
 services:
   feedshit:
-    build: .
+    build:
+      context: .
+      args:
+        VERSION: ${TAG:-1.0}
+    # Immutable, traceable image tag (not bare `latest`).
+    image: feedshit:${TAG:-1.0}
     container_name: feedshit
     restart: unless-stopped
     ports:
@@ -25,3 +30,15 @@ services:
       - RATE_LIMIT_PER_HOUR=3
       # Max upload size in MB
       - MAX_UPLOAD_MB=20
+      # Webhook (DEPRECATED — the global webhook_url no longer triggers outbound
+      # notifications; configure Webhook subscriptions in the admin panel instead)
+      - WEBHOOK_URL=
+      # Trusted proxies (comma-separated, * for all) used to read real client IP
+      - TRUSTED_PROXIES=
+      # Master encryption key (REQUIRED). 32 raw bytes or 64 hex chars.
+      # Generate: head -c 32 /dev/urandom | xxd -p -c 32
+      - FEEDSHIT_MASTER_KEY=
+      # Default per-token rate limit (requests/hour) for new API tokens
+      - API_TOKEN_DEFAULT_RATE_LIMIT=60
+      # Backup retention in days (old daily backups are pruned automatically)
+      - BACKUP_RETENTION_DAYS=30

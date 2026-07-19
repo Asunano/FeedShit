@@ -1,0 +1,81 @@
+%% ===== 图 4.1 启动密钥加载与凭据读取/解密 =====
+sequenceDiagram
+    participant M as main()
+    participant S as security
+    participant DB as Database
+    participant Mailer as Mailer
+    M->>S: Init() 读 FEEDSHIT_MASTER_KEY
+    alt 缺失/非法
+        S-->>M: error
+        M->>M: log.Fatalf → 进程退出(非0)
+    else 成功
+        S-->>M: masterKey 就绪
+        M->>DB: NewDatabase / InitDefaultConfig
+        DB->>S: EncryptWithMaster(smtp_pass)
+        S-->>DB: "aes-gcm:..."
+        M->>DB: ReEncryptSecrets() 迁移历史明文
+    end
+    Note over Mailer,DB: 运行期发送邮件
+    Mailer->>DB: GetAllConfig()
+    DB->>S: DecryptWithMaster(smtp_pass)
+    S-->>DB: 明文
+    DB-->>Mailer: map{smtp_pass:明文}
+
+%% ===== 图 4.2 legacy webhook 下线后通知发起 =====
+sequenceDiagram
+    participant Ev as 业务事件
+    participant A as App.sendWebhookEvent
+    participant DB as Database
+    Ev->>A: sendWebhookEvent(event, data, fb)
+    A->>DB: EnqueueWebhook(event, payload, slug)
+    DB->>DB: ListWebhookSubscriptions()(返回明文secret)
+    DB->>DB: 明文 secret 写入 webhook_outbox
+    Note right of A: 已删除 EnqueueRawWebhook 全局通道(原 app.go:1668-1673)
+    A-->>Ev: 仅订阅式出站(带 HMAC)
+
+%% ===== 图 4.3 外部 API token 限速判定 =====
+sequenceDiagram
+    participant C as Client
+    participant MW as APITokenAuthMiddleware
+    participant DB as Database
+    participant Cfg as Config
+    C->>MW: POST /api/v1/external/feedback (Bearer fs_...)
+    MW->>DB: GetAPITokenByToken(token)
+    DB-->>MW: token(rate_limit)
+    alt rate_limit>0
+        MW->>MW: 计数 + 超限? → 429
+    else rate_limit==0 且为新建
+        Note over Cfg: AdminCreateAPIToken 已套用 APITokenDefaultRateLimit(默认60)
+        MW->>MW: 按默认上限计数
+    end
+    MW-->>C: 放行 / 429
+
+%% ===== 图 4.4 迁移错误处理（fail-fast） =====
+sequenceDiagram
+    participant M as main()
+    participant ND as NewDatabase
+    participant I as initDB
+    participant MG as migrate
+    M->>ND: NewDatabase(path)
+    ND->>I: initDB()
+    I->>MG: migrate()
+    MG->>MG: execMigrate(schema/ALTER) 忽略 duplicate column
+    alt 出现不可忽略错误
+        MG-->>I: error
+        I-->>ND: error
+        ND-->>M: error
+        M->>M: log.Fatalf → 退出(非0)
+    else 成功
+        MG-->>I: nil
+    end
+
+%% ===== 图 4.5 备份自动清理调度 =====
+sequenceDiagram
+    participant Sched as 每日调度器(main.go)
+    participant DB as Database
+    participant FS as 文件系统
+    Sched->>DB: BackupDatabase(backupDir)
+    DB-->>Sched: 备份路径
+    Sched->>DB: PruneOldBackups(backupDir, cfg.BackupRetentionDays)
+    DB->>FS: 删除 mtime < now - retentionDays 的文件
+    DB-->>Sched: 已清理数量

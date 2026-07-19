@@ -27,6 +27,12 @@ type Config struct {
 	MaxUploadSize    int64
 	TrustedProxies   []string
 	WebhookURL       string
+
+	// APITokenDefaultRateLimit is the per-hour rate limit applied to newly
+	// created API tokens when the caller does not specify one (default 60).
+	APITokenDefaultRateLimit int
+	// BackupRetentionDays is how many days of daily backups to keep (default 30).
+	BackupRetentionDays int
 }
 
 func LoadConfig() *Config {
@@ -47,6 +53,8 @@ func LoadConfig() *Config {
 		RateLimitPerHour: getEnvInt("RATE_LIMIT_PER_HOUR", 10),
 		MaxUploadSize:    int64(getEnvInt("MAX_UPLOAD_MB", 20)) * 1024 * 1024,
 		WebhookURL:       getEnv("WEBHOOK_URL", ""),
+		APITokenDefaultRateLimit: getEnvInt("API_TOKEN_DEFAULT_RATE_LIMIT", 60),
+		BackupRetentionDays:      getEnvInt("BACKUP_RETENTION_DAYS", 30),
 	}
 	// Parse trusted proxies from comma-separated env var
 	if tp := getEnv("TRUSTED_PROXIES", ""); tp != "" {

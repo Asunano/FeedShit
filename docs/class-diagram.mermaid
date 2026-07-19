@@ -1,0 +1,49 @@
+classDiagram
+    class Security {
+        +string Prefix = "aes-gcm:"
+        -[]byte masterKey
+        +Init() error
+        +Encrypt(plaintext []byte, key []byte) (string, error)
+        +Decrypt(token string, key []byte) ([]byte, error)
+        +EncryptWithMaster(plaintext string) (string, error)
+        +DecryptWithMaster(token string) (string, error)
+        +IsEncrypted(s string) bool
+    }
+    class Config {
+        +int APITokenDefaultRateLimit
+        +int BackupRetentionDays
+        +LoadConfig() *Config
+    }
+    class Database {
+        -map~string~bool sensitiveConfigKeys
+        +GetConfig(key string) string
+        +SetConfig(key, value, desc string) error
+        +GetAllConfig() ([]DBConfig, error)
+        +InitDefaultConfig(cfg *Config)
+        +ReEncryptSecrets() error
+        +CreateWebhookSubscription(slug,url,secret,events string, active bool) (int64, error)
+        +UpdateWebhookSubscription(id int64, url, secret, events string, active *bool) error
+        +ListWebhookSubscriptions() ([]WebhookSubscription, error)
+        +EnqueueWebhook(event, payload, slug string) error
+        -execMigrate(stmt string) error
+        -isIgnorableMigrationErr(err error) bool
+        +migrate() error
+        +PruneOldBackups(dir string, daysOld int) (int, error)
+        +CreateAPIToken(token,name,pid string, rateLimit,quota int) (int64, error)
+    }
+    class App {
+        +sendWebhookEvent(event string, data map, fb *Feedback)
+        +APITokenAuthMiddleware() gin.HandlerFunc
+        +AdminCreateAPIToken(c *gin.Context)
+        +AdminGetSystemConfig(c *gin.Context)
+        +AdminUpdateSystemConfig(c *gin.Context)
+        +AdminListWebhookSubscriptions(c *gin.Context)
+    }
+    class Main {
+        +main()
+    }
+    Database ..> Security : 加/解密边界
+    App --> Database
+    Main --> Security : Init() fail-fast
+    Main --> Database : NewDatabase / ReEncryptSecrets
+    Config <.. Main : LoadConfig

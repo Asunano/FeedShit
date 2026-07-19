@@ -17,10 +17,18 @@ import (
 	"feedshit/internal/email"
 	"feedshit/internal/middleware"
 	"feedshit/internal/routes"
+	"feedshit/internal/security"
 )
 
 func main() {
 	cfg := config.LoadConfig()
+
+	// Fail-fast: the master key is required for at-rest encryption of secrets
+	// (SMTP password, webhook secrets). Without it we cannot safely decrypt
+	// stored secrets, so the process must not continue.
+	if err := security.Init(); err != nil {
+		log.Fatalf("Failed to initialize security (FEEDSHIT_MASTER_KEY): %v", err)
+	}
 
 	// Ensure data directory exists
 	if err := os.MkdirAll(cfg.UploadDir, 0755); err != nil {
@@ -37,6 +45,13 @@ func main() {
 	// Seed default config
 	db.InitDefaultConfig(cfg)
 
+	// Upgrade any legacy plaintext secrets (smtp_pass, webhook secrets) to
+	// encryption at rest. Idempotent: already-encrypted values are left alone.
+	// Fail-fast — an inconsistent secret store must not be left behind.
+	if err := db.ReEncryptSecrets(); err != nil {
+		log.Fatalf("Failed to re-encrypt secrets: %v", err)
+	}
+
 	// Initialize components
 	sm := middleware.NewSessionManager()
 	rl := middleware.NewRateLimiter(cfg.RateLimitPerHour)
@@ -50,6 +65,7 @@ func main() {
 		log.Printf("Startup backup failed: %v", err)
 	} else {
 		log.Printf("  Startup backup: %s", bp)
+		pruneBackups(db, backupDir, cfg.BackupRetentionDays)
 	}
 
 	// Daily backup scheduler
@@ -62,7 +78,17 @@ func main() {
 				log.Printf("Daily backup failed: %v", err)
 			} else {
 				log.Printf("  Daily backup: %s", bp)
+				pruneBackups(db, backupDir, cfg.BackupRetentionDays)
 			}
+		}
+	}()
+
+	// Webhook outbox retry ticker (M6): delivers due webhook notifications with backoff.
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			application.ProcessWebhookOutbox()
 		}
 	}()
 
@@ -115,4 +141,21 @@ func main() {
 		log.Fatalf("Server failed: %v", err)
 	}
 	log.Println("Server stopped gracefully")
+}
+
+// pruneBackups prunes old backup files according to the retention policy.
+// A retention of <= 0 means "no automatic cleanup" and is a no-op, matching the
+// documented semantics of BACKUP_RETENTION_DAYS=0.
+func pruneBackups(db *database.Database, backupDir string, daysOld int) {
+	if daysOld <= 0 {
+		return
+	}
+	pruned, err := db.PruneOldBackups(backupDir, daysOld)
+	if err != nil {
+		log.Printf("Backup pruning failed: %v", err)
+		return
+	}
+	if pruned > 0 {
+		log.Printf("  Pruned %d old backup(s) (retention %d days)", pruned, daysOld)
+	}
 }

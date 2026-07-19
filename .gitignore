@@ -39,3 +39,9 @@ CODE_REVIEW.md
 FEATURE_ENHANCEMENT.md
 FEATURE_RECOMMENDATIONS.md
 FEATURE_VERIFICATION.md
+
+# AI tool workspace data (not part of the source)
+.workbuddy/
+
+# QA verbose logs (local only)
+qa_*.log

@@ -1,6 +1,9 @@
 # ---- Stage 1: Build ----
 FROM golang:1.26-alpine AS builder
 
+# VERSION is injected at build time (e.g. `docker build --build-arg VERSION=1.2.3`).
+ARG VERSION=dev
+
 RUN apk add --no-cache git
 
 WORKDIR /build
@@ -18,6 +21,11 @@ RUN go build -ldflags="-s -w" -o feedshit ./cmd/feedshit/
 
 # ---- Stage 2: Runtime ----
 FROM alpine:3.20
+
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="FeedShit" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.description="Lightweight multi-project feedback collection system"
 
 RUN apk add --no-cache ca-certificates tzdata \
     && addgroup -S appgroup \
@@ -37,4 +45,8 @@ EXPOSE 8080
 ENV DATA_DIR=/app/data
 ENV PORT=8080
 
+# Tag the image with an immutable version (commit SHA / release tag).
+# Build + tag example:
+#   docker build --build-arg VERSION=1.2.3 -t feedshit:1.2.3 .
+# Never ship a bare `latest` to production — it is not traceable.
 ENTRYPOINT ["./feedshit"]

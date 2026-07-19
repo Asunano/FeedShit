@@ -12,6 +12,7 @@ import (
 
 	_ "modernc.org/sqlite"
 	"feedshit/internal/config"
+	"feedshit/internal/security"
 )
 
 // Feedback represents a single feedback submission.
@@ -32,9 +33,12 @@ type Feedback struct {
 	Priority      string    `json:"priority"`
 	IsDuplicate   bool      `json:"is_duplicate"`
 	DuplicateOf   int64     `json:"duplicate_of"`
-	Category      string    `json:"category"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     int64     `json:"updated_at"`
+	Category        string    `json:"category"`
+	PublicOnRoadmap bool      `json:"public_on_roadmap"`
+	RoadmapStatus   string    `json:"roadmap_status"`
+	Votes           int       `json:"votes"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       int64     `json:"updated_at"`
 }
 
 // Admin represents a team member with login credentials.
@@ -113,6 +117,13 @@ type Database struct {
 	mu sync.RWMutex
 }
 
+// sensitiveConfigKeys lists config keys whose values must be encrypted at rest.
+// Reads transparently decrypt them; writes encrypt them. Non-sensitive keys
+// pass through unchanged.
+var sensitiveConfigKeys = map[string]bool{
+	"smtp_pass": true,
+}
+
 // NewDatabase opens (or creates) the SQLite database and initializes schema.
 func NewDatabase(dbPath string) (*Database, error) {
 	dir := filepath.Dir(dbPath)
@@ -144,6 +155,10 @@ func NewTestDatabase() (*Database, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Pin to a single connection so the in-memory database is shared across all
+	// queries (a new pooled connection would otherwise see a fresh empty DB).
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	d := &Database{db: db}
 	if err := d.initDB(); err != nil {
 		db.Close()
@@ -217,25 +232,53 @@ func (d *Database) migrate() error {
 	if _, err := d.db.Exec(schema); err != nil {
 		return err
 	}
-	// Add columns for existing databases (ignore "duplicate column" errors)
-	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN assignee TEXT NOT NULL DEFAULT ''`)
-	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN contact_name TEXT NOT NULL DEFAULT ''`)
-	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''`)
-	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN tracking_token TEXT NOT NULL DEFAULT ''`)
-	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN priority TEXT NOT NULL DEFAULT ''`)
-	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN is_duplicate INTEGER NOT NULL DEFAULT 0`)
-	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN duplicate_of INTEGER NOT NULL DEFAULT 0`)
-	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`)
-	d.db.Exec(`ALTER TABLE feedbacks ADD COLUMN category TEXT NOT NULL DEFAULT ''`)
-	d.db.Exec(`CREATE INDEX IF NOT EXISTS idx_feedbacks_category ON feedbacks(project_id, category)`)
+	// Add columns for existing databases. execMigrate ignores "duplicate column"
+	// errors so re-running migrate on an existing DB is idempotent (fail-fast for
+	// any other error).
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN assignee TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN contact_name TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN contact_email TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN tracking_token TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN priority TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN is_duplicate INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN duplicate_of INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN category TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`CREATE INDEX IF NOT EXISTS idx_feedbacks_category ON feedbacks(project_id, category)`); err != nil {
+		return err
+	}
 
 	// Indexes for frequently queried columns
-	d.db.Exec(`CREATE INDEX IF NOT EXISTS idx_feedbacks_token ON feedbacks(tracking_token)`)
-	d.db.Exec(`CREATE INDEX IF NOT EXISTS idx_feedbacks_assignee ON feedbacks(assignee)`)
-	d.db.Exec(`CREATE INDEX IF NOT EXISTS idx_feedbacks_priority ON feedbacks(priority)`)
+	if err := d.execMigrate(`CREATE INDEX IF NOT EXISTS idx_feedbacks_token ON feedbacks(tracking_token)`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`CREATE INDEX IF NOT EXISTS idx_feedbacks_assignee ON feedbacks(assignee)`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`CREATE INDEX IF NOT EXISTS idx_feedbacks_priority ON feedbacks(priority)`); err != nil {
+		return err
+	}
 
 	// Feedback notes table (admin replies / internal notes)
-	d.db.Exec(`
+	if err := d.execMigrate(`
 		CREATE TABLE IF NOT EXISTS feedback_notes (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
 			feedback_id INTEGER NOT NULL,
@@ -245,10 +288,12 @@ func (d *Database) migrate() error {
 			created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 		);
 		CREATE INDEX IF NOT EXISTS idx_notes_feedback ON feedback_notes(feedback_id);
-	`)
+	`); err != nil {
+		return err
+	}
 
 	// Admins table for multi-admin team support
-	d.db.Exec(`
+	if err := d.execMigrate(`
 		CREATE TABLE IF NOT EXISTS admins (
 			id            INTEGER PRIMARY KEY AUTOINCREMENT,
 			username      TEXT    NOT NULL UNIQUE,
@@ -257,10 +302,12 @@ func (d *Database) migrate() error {
 			is_active     INTEGER NOT NULL DEFAULT 1,
 			created_at    INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 		);
-	`)
+	`); err != nil {
+		return err
+	}
 
 	// API tokens for external system integration
-	d.db.Exec(`
+	if err := d.execMigrate(`
 		CREATE TABLE IF NOT EXISTS api_tokens (
 			id            INTEGER PRIMARY KEY AUTOINCREMENT,
 			token         TEXT    NOT NULL UNIQUE,
@@ -270,13 +317,17 @@ func (d *Database) migrate() error {
 			last_used_at  TEXT    NOT NULL DEFAULT '',
 			created_at    INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 		);
-	`)
+	`); err != nil {
+		return err
+	}
 
 	// Add is_archived column to projects (idempotent migration)
-	d.db.Exec(`ALTER TABLE projects ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0`)
+	if err := d.execMigrate(`ALTER TABLE projects ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
 
 	// Fine-grained member grants: (admin × project × category → role)
-	d.db.Exec(`
+	if err := d.execMigrate(`
 		CREATE TABLE IF NOT EXISTS member_grants (
 			id            INTEGER PRIMARY KEY AUTOINCREMENT,
 			admin_id      INTEGER NOT NULL,
@@ -286,22 +337,28 @@ func (d *Database) migrate() error {
 			UNIQUE(admin_id, project_slug, category_key)
 		);
 		CREATE INDEX IF NOT EXISTS idx_grants_admin ON member_grants(admin_id);
-	`)
+	`); err != nil {
+		return err
+	}
 
 	// Clean up legacy project_members table if it exists (data already migrated to member_grants)
-	d.db.Exec(`DROP TABLE IF EXISTS project_members`)
+	if err := d.execMigrate(`DROP TABLE IF EXISTS project_members`); err != nil {
+		return err
+	}
 
 	// Slug history: redirect old slugs after rename
-	d.db.Exec(`
+	if err := d.execMigrate(`
 		CREATE TABLE IF NOT EXISTS slug_history (
 			id          INTEGER PRIMARY KEY AUTOINCREMENT,
 			old_slug    TEXT    NOT NULL UNIQUE,
 			project_slug TEXT   NOT NULL
 		);
-	`)
+	`); err != nil {
+		return err
+	}
 
 	// Categories: feedback classification per project
-	d.db.Exec(`
+	if err := d.execMigrate(`
 		CREATE TABLE IF NOT EXISTS categories (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			project_slug TEXT    NOT NULL,
@@ -313,9 +370,114 @@ func (d *Database) migrate() error {
 			UNIQUE(project_slug, key)
 		);
 		CREATE INDEX IF NOT EXISTS idx_categories_project ON categories(project_slug);
-	`)
+	`); err != nil {
+		return err
+	}
+
+	// ===== Phase A + B schema extensions (idempotent) =====
+
+	// M3 Roadmap: public flag + board status on feedbacks
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN public_on_roadmap INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE feedbacks ADD COLUMN roadmap_status TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+
+	// M7 API Token quota/rate columns
+	if err := d.execMigrate(`ALTER TABLE api_tokens ADD COLUMN rate_limit INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE api_tokens ADD COLUMN quota_per_day INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	// M7 API Token daily usage counter for quota enforcement
+	if err := d.execMigrate(`ALTER TABLE api_tokens ADD COLUMN daily_count INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	if err := d.execMigrate(`ALTER TABLE api_tokens ADD COLUMN daily_date TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
+	}
+
+	// M2 CSAT ratings
+	if err := d.execMigrate(`
+		CREATE TABLE IF NOT EXISTS feedback_ratings (
+			feedback_id INTEGER PRIMARY KEY,
+			score       INTEGER NOT NULL,
+			comment     TEXT    NOT NULL DEFAULT '',
+			created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		);
+	`); err != nil {
+		return err
+	}
+
+	// M4 Feedback votes (dedupe by feedback_id + voter_key)
+	if err := d.execMigrate(`
+		CREATE TABLE IF NOT EXISTS feedback_votes (
+			feedback_id INTEGER NOT NULL,
+			voter_key   TEXT    NOT NULL,
+			created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			PRIMARY KEY(feedback_id, voter_key)
+		);
+		CREATE INDEX IF NOT EXISTS idx_votes_feedback ON feedback_votes(feedback_id);
+	`); err != nil {
+		return err
+	}
+
+	// M6 Webhook subscriptions + outbox (retry queue)
+	if err := d.execMigrate(`
+		CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			project_slug TEXT   NOT NULL DEFAULT '',
+			url         TEXT    NOT NULL,
+			secret      TEXT    NOT NULL DEFAULT '',
+			events      TEXT    NOT NULL DEFAULT '*',
+			is_active   INTEGER NOT NULL DEFAULT 1,
+			created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		);
+		CREATE TABLE IF NOT EXISTS webhook_outbox (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			subscription_id INTEGER NOT NULL,
+			url           TEXT    NOT NULL,
+			payload       TEXT    NOT NULL,
+			secret        TEXT    NOT NULL DEFAULT '',
+			attempts      INTEGER NOT NULL DEFAULT 0,
+			next_at       INTEGER NOT NULL DEFAULT 0,
+			last_error    TEXT    NOT NULL DEFAULT '',
+			created_at    INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		);
+		CREATE INDEX IF NOT EXISTS idx_outbox_next ON webhook_outbox(next_at);
+	`); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+// execMigrate runs a single migration statement and returns nil for ignorable
+// errors (e.g. "duplicate column" when re-running on an existing DB),
+// propagating any other error to the caller so startup can fail fast.
+func (d *Database) execMigrate(stmt string) error {
+	if _, err := d.db.Exec(stmt); err != nil {
+		if isIgnorableMigrationErr(err) {
+			return nil
+		}
+		return fmt.Errorf("migration failed: %s: %w", stmt, err)
+	}
+	return nil
+}
+
+// isIgnorableMigrationErr reports whether a migration error can be safely
+// ignored. Idempotent migrations (ALTER ADD COLUMN on an existing column,
+// CREATE ... IF NOT EXISTS that already exists) produce these errors on
+// databases created before the migration was introduced.
+func isIgnorableMigrationErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "duplicate column") ||
+		strings.Contains(msg, "already exists")
 }
 
 // InsertFeedback inserts a new feedback record and returns its ID.
@@ -430,7 +592,7 @@ func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess
 
 	queryArgs := append(args, limit, offset)
 	rows, err = d.db.Query(
-		`SELECT `+cols+` FROM feedbacks`+where+` ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		`SELECT `+cols+`, public_on_roadmap, roadmap_status FROM feedbacks`+where+` ORDER BY created_at DESC LIMIT ? OFFSET ?`,
 		queryArgs...,
 	)
 	if err != nil {
@@ -443,12 +605,39 @@ func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess
 		var f Feedback
 		var createdAt int64
 		var isDuplicate int
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt); err != nil {
+		var isPublic int
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &isPublic, &f.RoadmapStatus); err != nil {
 			return nil, 0, err
 		}
 		f.IsDuplicate = isDuplicate == 1
+		f.PublicOnRoadmap = isPublic == 1
 		f.CreatedAt = time.Unix(createdAt, 0)
 		list = append(list, f)
+	}
+	if len(list) > 0 {
+		ids := make([]int64, len(list))
+		ph := make([]string, len(list))
+		args := make([]interface{}, len(list))
+		for i, f := range list {
+			ids[i] = f.ID
+			ph[i] = "?"
+			args[i] = f.ID
+		}
+		vrows, verr := d.db.Query(`SELECT feedback_id, COUNT(*) FROM feedback_votes WHERE feedback_id IN (`+strings.Join(ph, ",")+`) GROUP BY feedback_id`, args...)
+		if verr == nil {
+			defer vrows.Close()
+			vmap := make(map[int64]int, len(list))
+			for vrows.Next() {
+				var vid int64
+				var n int
+				if vrows.Scan(&vid, &n) == nil {
+					vmap[vid] = n
+				}
+			}
+			for i := range list {
+				list[i].Votes = vmap[list[i].ID]
+			}
+		}
 	}
 	return list, total, nil
 }
@@ -512,7 +701,7 @@ func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAcce
 
 	queryArgs := append(args, limit, offset)
 	rows, err := d.db.Query(
-		`SELECT `+cols+` FROM feedbacks `+where+` ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		`SELECT `+cols+`, public_on_roadmap, roadmap_status FROM feedbacks `+where+` ORDER BY created_at DESC LIMIT ? OFFSET ?`,
 		queryArgs...,
 	)
 	if err != nil {
@@ -525,12 +714,39 @@ func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAcce
 		var f Feedback
 		var createdAt int64
 		var isDuplicate int
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt); err != nil {
+		var isPublic int
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &isPublic, &f.RoadmapStatus); err != nil {
 			return nil, 0, err
 		}
 		f.IsDuplicate = isDuplicate == 1
+		f.PublicOnRoadmap = isPublic == 1
 		f.CreatedAt = time.Unix(createdAt, 0)
 		list = append(list, f)
+	}
+	if len(list) > 0 {
+		ids := make([]int64, len(list))
+		ph := make([]string, len(list))
+		args := make([]interface{}, len(list))
+		for i, f := range list {
+			ids[i] = f.ID
+			ph[i] = "?"
+			args[i] = f.ID
+		}
+		vrows, verr := d.db.Query(`SELECT feedback_id, COUNT(*) FROM feedback_votes WHERE feedback_id IN (`+strings.Join(ph, ",")+`) GROUP BY feedback_id`, args...)
+		if verr == nil {
+			defer vrows.Close()
+			vmap := make(map[int64]int, len(list))
+			for vrows.Next() {
+				var vid int64
+				var n int
+				if vrows.Scan(&vid, &n) == nil {
+					vmap[vid] = n
+				}
+			}
+			for i := range list {
+				list[i].Votes = vmap[list[i].ID]
+			}
+		}
 	}
 	return list, total, nil
 }
@@ -543,14 +759,16 @@ func (d *Database) GetFeedback(id int64) (*Feedback, error) {
 	var f Feedback
 	var createdAt int64
 	var isDuplicate int
+	var isPublic int
 	err := d.db.QueryRow(
-		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at
+		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, public_on_roadmap, roadmap_status
 		 FROM feedbacks WHERE id = ?`, id,
-	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt)
+	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &isPublic, &f.RoadmapStatus)
 	if err != nil {
 		return nil, err
 	}
 	f.IsDuplicate = isDuplicate == 1
+	f.PublicOnRoadmap = isPublic == 1
 	f.CreatedAt = time.Unix(createdAt, 0)
 	return &f, nil
 }
@@ -604,29 +822,48 @@ func (d *Database) GetStats() (total int, projects int, today int, err error) {
 }
 
 // GetConfig retrieves a config value by key. Returns empty string if not found.
+// Sensitive values (sensitiveConfigKeys) are transparently decrypted.
 func (d *Database) GetConfig(key string) string {
 	var value string
 	err := d.db.QueryRow(`SELECT value FROM config WHERE key = ?`, key).Scan(&value)
 	if err != nil {
 		return ""
 	}
+	if sensitiveConfigKeys[key] && security.IsEncrypted(value) {
+		plain, derr := security.DecryptWithMaster(value)
+		if derr == nil {
+			return plain
+		}
+		log.Printf("WARN: failed to decrypt config key %q, returning stored value: %v", key, derr)
+	}
 	return value
 }
 
-// SetConfig upserts a config entry.
+// SetConfig upserts a config entry. Sensitive values (sensitiveConfigKeys) are
+// encrypted at rest before being written; non-sensitive values are stored as-is.
 func (d *Database) SetConfig(key, value, description string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	stored := value
+	if sensitiveConfigKeys[key] && stored != "" && !security.IsEncrypted(stored) {
+		enc, err := security.EncryptWithMaster(stored)
+		if err != nil {
+			return err
+		}
+		stored = enc
+	}
 	_, err := d.db.Exec(
 		`INSERT INTO config (key, value, description) VALUES (?, ?, ?)
 		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, description = excluded.description`,
-		key, value, description,
+		key, stored, description,
 	)
 	return err
 }
 
-// GetAllConfig returns all config entries.
+// GetAllConfig returns all config entries. Sensitive values (sensitiveConfigKeys)
+// are transparently decrypted so callers (e.g. mailer, admin config view) receive
+// cleartext.
 func (d *Database) GetAllConfig() ([]DBConfig, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -642,6 +879,11 @@ func (d *Database) GetAllConfig() ([]DBConfig, error) {
 		var c DBConfig
 		if err := rows.Scan(&c.Key, &c.Value, &c.Description); err != nil {
 			return nil, err
+		}
+		if sensitiveConfigKeys[c.Key] && security.IsEncrypted(c.Value) {
+			if plain, derr := security.DecryptWithMaster(c.Value); derr == nil {
+				c.Value = plain
+			}
 		}
 		configs = append(configs, c)
 	}
@@ -1078,6 +1320,29 @@ func (d *Database) ListFeedbackNotes(feedbackID int64) ([]FeedbackNote, error) {
 		notes = append(notes, n)
 	}
 	return notes, nil
+}
+
+// GetFeedbackNote returns a single note by ID, or nil if not found.
+func (d *Database) GetFeedbackNote(id int64) (*FeedbackNote, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	row := d.db.QueryRow(
+		`SELECT id, feedback_id, content, author, is_public, created_at FROM feedback_notes WHERE id = ?`,
+		id,
+	)
+	var n FeedbackNote
+	var createdAt int64
+	var isPublic int
+	if err := row.Scan(&n.ID, &n.FeedbackID, &n.Content, &n.Author, &isPublic, &createdAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	n.IsPublic = isPublic == 1
+	n.CreatedAt = time.Unix(createdAt, 0)
+	return &n, nil
 }
 
 // DeleteFeedbackNote removes a note by ID.
@@ -1642,10 +1907,11 @@ func (d *Database) DeleteCategory(id int64) error {
 		return err // not found or DB error
 	}
 
-	// Clear category on any feedbacks referencing this category
+	// Clear category on any feedbacks referencing this category (orphan handling)
 	d.db.Exec(`UPDATE feedbacks SET category = '' WHERE project_id = ? AND category = ?`, projectSlug, key)
 
-	_, err = d.db.Exec(`DELETE FROM categories WHERE id = ?`, id)
+	// Soft-delete: mark inactive instead of removing, so historical references stay valid
+	_, err = d.db.Exec(`UPDATE categories SET is_active = 0 WHERE id = ?`, id)
 	return err
 }
 
@@ -1720,19 +1986,21 @@ func (d *Database) BulkUpdateCategory(ids []int64, category string) (int64, erro
 
 // APIToken represents an API key for external system integration.
 type APIToken struct {
-	ID         int64     `json:"id"`
-	Token      string    `json:"token"`
-	Name       string    `json:"name"`
-	ProjectID  string    `json:"project_id"`
-	IsActive   bool      `json:"is_active"`
-	LastUsedAt string    `json:"last_used_at"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID          int64     `json:"id"`
+	Token       string    `json:"token"`
+	Name        string    `json:"name"`
+	ProjectID   string    `json:"project_id"`
+	IsActive    bool      `json:"is_active"`
+	RateLimit   int       `json:"rate_limit"`   // per-hour limit; 0 = unlimited
+	QuotaPerDay int       `json:"quota_per_day"` // daily limit; 0 = unlimited
+	LastUsedAt  string    `json:"last_used_at"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
-func (d *Database) CreateAPIToken(token, name, projectID string) (int64, error) {
+func (d *Database) CreateAPIToken(token, name, projectID string, rateLimit, quotaPerDay int) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	res, err := d.db.Exec(`INSERT INTO api_tokens (token, name, project_id) VALUES (?, ?, ?)`, token, name, projectID)
+	res, err := d.db.Exec(`INSERT INTO api_tokens (token, name, project_id, rate_limit, quota_per_day) VALUES (?, ?, ?, ?, ?)`, token, name, projectID, rateLimit, quotaPerDay)
 	if err != nil {
 		return 0, err
 	}
@@ -1742,7 +2010,7 @@ func (d *Database) CreateAPIToken(token, name, projectID string) (int64, error) 
 func (d *Database) ListAPITokens() ([]APIToken, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	rows, err := d.db.Query(`SELECT id, token, name, project_id, is_active, COALESCE(last_used_at, ''), created_at FROM api_tokens ORDER BY id`)
+	rows, err := d.db.Query(`SELECT id, token, name, project_id, is_active, rate_limit, quota_per_day, COALESCE(last_used_at, ''), created_at FROM api_tokens ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -1752,7 +2020,7 @@ func (d *Database) ListAPITokens() ([]APIToken, error) {
 		var t APIToken
 		var isActive int
 		var createdAt int64
-		if err := rows.Scan(&t.ID, &t.Token, &t.Name, &t.ProjectID, &isActive, &t.LastUsedAt, &createdAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Token, &t.Name, &t.ProjectID, &isActive, &t.RateLimit, &t.QuotaPerDay, &t.LastUsedAt, &createdAt); err != nil {
 			return nil, err
 		}
 		t.IsActive = isActive == 1
@@ -1768,8 +2036,8 @@ func (d *Database) GetAPITokenByToken(token string) (*APIToken, error) {
 	var t APIToken
 	var isActive int
 	var createdAt int64
-	err := d.db.QueryRow(`SELECT id, token, name, project_id, is_active, COALESCE(last_used_at, ''), created_at FROM api_tokens WHERE token = ?`, token).
-		Scan(&t.ID, &t.Token, &t.Name, &t.ProjectID, &isActive, &t.LastUsedAt, &createdAt)
+	err := d.db.QueryRow(`SELECT id, token, name, project_id, is_active, rate_limit, quota_per_day, COALESCE(last_used_at, ''), created_at FROM api_tokens WHERE token = ?`, token).
+		Scan(&t.ID, &t.Token, &t.Name, &t.ProjectID, &isActive, &t.RateLimit, &t.QuotaPerDay, &t.LastUsedAt, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -1784,7 +2052,7 @@ func (d *Database) GetAPITokenByToken(token string) (*APIToken, error) {
 	return &t, nil
 }
 
-func (d *Database) UpdateAPIToken(id int64, name, projectID string, isActive *bool) error {
+func (d *Database) UpdateAPIToken(id int64, name, projectID string, isActive *bool, rateLimit, quotaPerDay *int) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -1807,6 +2075,14 @@ func (d *Database) UpdateAPIToken(id int64, name, projectID string, isActive *bo
 		setClauses = append(setClauses, "is_active = ?")
 		args = append(args, active)
 	}
+	if rateLimit != nil {
+		setClauses = append(setClauses, "rate_limit = ?")
+		args = append(args, *rateLimit)
+	}
+	if quotaPerDay != nil {
+		setClauses = append(setClauses, "quota_per_day = ?")
+		args = append(args, *quotaPerDay)
+	}
 
 	if len(setClauses) == 0 {
 		return nil
@@ -1828,6 +2104,32 @@ func (d *Database) TouchAPIToken(token string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.db.Exec(`UPDATE api_tokens SET last_used_at = strftime('%s', 'now') WHERE token = ?`, token)
+}
+
+// RecordTokenUsage enforces the daily quota for an API token. It atomically
+// increments today's usage counter (resetting when the calendar date changes)
+// and returns false if the configured quota (quotaPerDay > 0) has been reached.
+func (d *Database) RecordTokenUsage(token string, quotaPerDay int) (bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	today := time.Now().Format("2006-01-02")
+	var used int
+	var date string
+	if err := d.db.QueryRow(`SELECT daily_count, daily_date FROM api_tokens WHERE token = ?`, token).Scan(&used, &date); err != nil {
+		return false, err
+	}
+	if date != today {
+		used = 0
+	}
+	if quotaPerDay > 0 && used >= quotaPerDay {
+		return false, nil
+	}
+	if date != today {
+		_, err := d.db.Exec(`UPDATE api_tokens SET daily_count = 1, daily_date = ? WHERE token = ?`, today, token)
+		return err == nil, err
+	}
+	_, err := d.db.Exec(`UPDATE api_tokens SET daily_count = daily_count + 1 WHERE token = ?`, token)
+	return err == nil, err
 }
 
 // ========== Bulk Operations (Extended) ==========
@@ -2112,4 +2414,512 @@ func (d *Database) ListProjectsByArchive(archived bool) ([]Project, error) {
 		projects = append(projects, p)
 	}
 	return projects, nil
+}
+
+// ========== M2 CSAT Ratings ==========
+
+// FeedbackRating holds a submitter's satisfaction score for a resolved feedback.
+type FeedbackRating struct {
+	FeedbackID int64     `json:"feedback_id"`
+	Score      int       `json:"score"`
+	Comment    string    `json:"comment"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// UpsertRating writes (or overwrites) a CSAT rating for a feedback.
+func (d *Database) UpsertRating(feedbackID int64, score int, comment string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(`
+		INSERT INTO feedback_ratings (feedback_id, score, comment) VALUES (?, ?, ?)
+		ON CONFLICT(feedback_id) DO UPDATE SET score = excluded.score, comment = excluded.comment`,
+		feedbackID, score, comment)
+	return err
+}
+
+// GetRating returns the CSAT rating for a feedback, or nil if none.
+func (d *Database) GetRating(feedbackID int64) (*FeedbackRating, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var r FeedbackRating
+	var createdAt int64
+	err := d.db.QueryRow(`SELECT feedback_id, score, comment, created_at FROM feedback_ratings WHERE feedback_id = ?`, feedbackID).
+		Scan(&r.FeedbackID, &r.Score, &r.Comment, &createdAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	r.CreatedAt = time.Unix(createdAt, 0)
+	return &r, nil
+}
+
+// GetCSATStats returns overall average and per-assignee average scores.
+func (d *Database) GetCSATStats() (avg float64, total int, byAssignee map[string]float64, err error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	byAssignee = map[string]float64{}
+
+	row := d.db.QueryRow(`SELECT COUNT(*), COALESCE(ROUND(AVG(score), 2), 0) FROM feedback_ratings`)
+	if e := row.Scan(&total, &avg); e != nil {
+		return 0, 0, byAssignee, e
+	}
+
+	rows, e := d.db.Query(`
+		SELECT COALESCE(f.assignee, ''), COALESCE(ROUND(AVG(r.score), 2), 0), COUNT(*)
+		FROM feedback_ratings r JOIN feedbacks f ON f.id = r.feedback_id
+		WHERE f.assignee != ''
+		GROUP BY f.assignee`)
+	if e != nil {
+		return avg, total, byAssignee, nil
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var who string
+		var a float64
+		var c int
+		if err := rows.Scan(&who, &a, &c); err != nil {
+			continue
+		}
+		byAssignee[who] = a
+	}
+	return avg, total, byAssignee, nil
+}
+
+// ========== M4 Feedback Votes ==========
+
+// InsertVote records a vote, deduplicated by (feedback_id, voter_key).
+// Returns (alreadyVoted bool, err). If already voted, no new row is inserted.
+func (d *Database) InsertVote(feedbackID int64, voterKey string) (bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	res, err := d.db.Exec(`INSERT OR IGNORE INTO feedback_votes (feedback_id, voter_key) VALUES (?, ?)`, feedbackID, voterKey)
+	if err != nil {
+		return false, err
+	}
+	affected, _ := res.RowsAffected()
+	return affected == 0, nil
+}
+
+// CountVotes returns the number of votes for a feedback.
+func (d *Database) CountVotes(feedbackID int64) (int, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var n int
+	err := d.db.QueryRow(`SELECT COUNT(*) FROM feedback_votes WHERE feedback_id = ?`, feedbackID).Scan(&n)
+	return n, err
+}
+
+// VoteCountMap returns a map of feedback_id -> vote count for the given ids.
+func (d *Database) VoteCountMap(ids []int64) (map[int64]int, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	out := make(map[int64]int, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	ph := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		ph[i] = "?"
+		args[i] = id
+	}
+	rows, err := d.db.Query(`SELECT feedback_id, COUNT(*) FROM feedback_votes WHERE feedback_id IN (`+strings.Join(ph, ",")+`) GROUP BY feedback_id`, args...)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			continue
+		}
+		out[id] = n
+	}
+	return out, nil
+}
+
+// ========== M3 Public Roadmap ==========
+
+// RoadmapItem is a public-safe view of a feedback shown on the roadmap board.
+type RoadmapItem struct {
+	ID            int64     `json:"id"`
+	Title         string    `json:"title"`
+	Category      string    `json:"category"`
+	ProjectSlug   string    `json:"project_slug"`
+	RoadmapStatus string    `json:"roadmap_status"`
+	Votes         int       `json:"votes"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// GetPublicRoadmap returns public, non-duplicate feedbacks for a project,
+// ordered by votes then recency. Sensitive fields (IP, contact, internal notes) excluded.
+func (d *Database) GetPublicRoadmap(projectSlug string, category string) ([]RoadmapItem, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	where := `WHERE public_on_roadmap = 1 AND is_duplicate = 0`
+	args := []interface{}{}
+	if projectSlug != "" {
+		where += ` AND project_id = ?`
+		args = append(args, projectSlug)
+	}
+	if category != "" {
+		where += ` AND category = ?`
+		args = append(args, category)
+	}
+	rows, err := d.db.Query(`
+		SELECT f.id, f.title, f.category, f.project_id, f.roadmap_status, COALESCE(v.cnt, 0), f.created_at
+		FROM feedbacks f
+		LEFT JOIN (SELECT feedback_id, COUNT(*) cnt FROM feedback_votes GROUP BY feedback_id) v ON v.feedback_id = f.id
+		`+where+`
+		ORDER BY v.cnt DESC, f.created_at DESC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RoadmapItem
+	for rows.Next() {
+		var it RoadmapItem
+		var createdAt int64
+		if err := rows.Scan(&it.ID, &it.Title, &it.Category, &it.ProjectSlug, &it.RoadmapStatus, &it.Votes, &createdAt); err != nil {
+			return nil, err
+		}
+		it.CreatedAt = time.Unix(createdAt, 0)
+		items = append(items, it)
+	}
+	return items, nil
+}
+
+// SetRoadmap toggles public visibility and/or board status of a feedback.
+func (d *Database) SetRoadmap(feedbackID int64, public bool, status string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	pub := 0
+	if public {
+		pub = 1
+	}
+	if status == "" {
+		_, err := d.db.Exec(`UPDATE feedbacks SET public_on_roadmap = ?, updated_at = strftime('%s','now') WHERE id = ?`, pub, feedbackID)
+		return err
+	}
+	_, err := d.db.Exec(`UPDATE feedbacks SET public_on_roadmap = ?, roadmap_status = ?, updated_at = strftime('%s','now') WHERE id = ?`, pub, status, feedbackID)
+	return err
+}
+
+// ========== M6 Webhook Subscriptions + Outbox ==========
+
+// WebhookSubscription defines a per-project/event webhook endpoint.
+type WebhookSubscription struct {
+	ID         int64     `json:"id"`
+	ProjectSlug string   `json:"project_slug"`
+	URL        string    `json:"url"`
+	Secret     string    `json:"secret"`
+	Events     string    `json:"events"` // comma-separated event names, or "*"
+	IsActive   bool      `json:"is_active"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// WebhookOutbox is a pending/retried webhook delivery.
+type WebhookOutbox struct {
+	ID            int64     `json:"id"`
+	SubscriptionID int64    `json:"subscription_id"`
+	URL           string    `json:"url"`
+	Payload       string    `json:"payload"`
+	Secret        string    `json:"secret"`
+	Attempts      int       `json:"attempts"`
+	NextAt        int64     `json:"next_at"`
+	LastError     string    `json:"last_error"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+func (d *Database) CreateWebhookSubscription(projectSlug, url, secret, events string, isActive bool) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	active := 0
+	if isActive {
+		active = 1
+	}
+	// Secrets are encrypted at rest; a non-empty secret is stored as a
+	// ciphertext token (aes-gcm:...). Empty secrets stay empty.
+	storedSecret := secret
+	if secret != "" {
+		enc, err := security.EncryptWithMaster(secret)
+		if err != nil {
+			return 0, err
+		}
+		storedSecret = enc
+	}
+	res, err := d.db.Exec(`INSERT INTO webhook_subscriptions (project_slug, url, secret, events, is_active) VALUES (?, ?, ?, ?, ?)`,
+		projectSlug, url, storedSecret, events, active)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *Database) ListWebhookSubscriptions() ([]WebhookSubscription, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(`SELECT id, project_slug, url, secret, events, is_active, created_at FROM webhook_subscriptions ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []WebhookSubscription
+	for rows.Next() {
+		var s WebhookSubscription
+		var isActive, createdAt int64
+		if err := rows.Scan(&s.ID, &s.ProjectSlug, &s.URL, &s.Secret, &s.Events, &isActive, &createdAt); err != nil {
+			return nil, err
+		}
+		// Return plaintext (decrypted) secret to callers. This keeps the
+		// masked-secret contract: the DB layer returns secrets in clear so the
+		// API handler can decide whether/how to mask them. A value that is not
+		// an encrypted token (e.g. a legacy plaintext secret) is left untouched.
+		if s.Secret != "" && security.IsEncrypted(s.Secret) {
+			if plain, derr := security.DecryptWithMaster(s.Secret); derr == nil {
+				s.Secret = plain
+			}
+		}
+		s.IsActive = isActive == 1
+		s.CreatedAt = time.Unix(createdAt, 0)
+		list = append(list, s)
+	}
+	return list, nil
+}
+
+func (d *Database) UpdateWebhookSubscription(id int64, url, secret, events string, isActive *bool) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	setClauses := []string{}
+	args := []interface{}{}
+	if url != "" {
+		setClauses = append(setClauses, "url = ?")
+		args = append(args, url)
+	}
+	if secret != "" {
+		// New secret supplied: encrypt before persisting.
+		enc, err := security.EncryptWithMaster(secret)
+		if err != nil {
+			return err
+		}
+		setClauses = append(setClauses, "secret = ?")
+		args = append(args, enc)
+	} else {
+		// Empty secret means "keep existing". Re-fetch the plaintext secret and
+		// re-encrypt it so the stored ciphertext stays consistent with the
+		// current master key.
+		if old, gerr := d.getWebhookSubscriptionPlainSecret(id); gerr == nil && old != "" {
+			if enc, eerr := security.EncryptWithMaster(old); eerr == nil {
+				setClauses = append(setClauses, "secret = ?")
+				args = append(args, enc)
+			}
+		}
+	}
+	if events != "" {
+		setClauses = append(setClauses, "events = ?")
+		args = append(args, events)
+	}
+	if isActive != nil {
+		v := 0
+		if *isActive {
+			v = 1
+		}
+		setClauses = append(setClauses, "is_active = ?")
+		args = append(args, v)
+	}
+	if len(setClauses) == 0 {
+		return nil
+	}
+	args = append(args, id)
+	_, err := d.db.Exec(`UPDATE webhook_subscriptions SET `+strings.Join(setClauses, ", ")+` WHERE id = ?`, args...)
+	return err
+}
+
+// getWebhookSubscriptionPlainSecret returns the plaintext secret for a
+// subscription. It assumes the caller already holds the write lock. The raw
+// stored value is decrypted with the master key; legacy plaintext values are
+// returned as-is.
+func (d *Database) getWebhookSubscriptionPlainSecret(id int64) (string, error) {
+	var raw string
+	err := d.db.QueryRow(`SELECT secret FROM webhook_subscriptions WHERE id = ?`, id).Scan(&raw)
+	if err != nil {
+		return "", err
+	}
+	if raw != "" && security.IsEncrypted(raw) {
+		if plain, derr := security.DecryptWithMaster(raw); derr == nil {
+			return plain, nil
+		}
+	}
+	return raw, nil
+}
+
+// ReEncryptSecrets scans sensitive config values and webhook subscription
+// secrets, and re-encrypts any value that is non-empty but not yet stored as a
+// ciphertext token. This upgrades legacy plaintext secrets to encryption at
+// rest after a master key is first configured, and keeps already-encrypted
+// values untouched (idempotent).
+func (d *Database) ReEncryptSecrets() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Sensitive config rows.
+	for key := range sensitiveConfigKeys {
+		var raw string
+		err := d.db.QueryRow(`SELECT value FROM config WHERE key = ?`, key).Scan(&raw)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				continue
+			}
+			return err
+		}
+		if raw == "" || security.IsEncrypted(raw) {
+			continue
+		}
+		enc, eerr := security.EncryptWithMaster(raw)
+		if eerr != nil {
+			return eerr
+		}
+		if _, uerr := d.db.Exec(`UPDATE config SET value = ? WHERE key = ?`, enc, key); uerr != nil {
+			return uerr
+		}
+	}
+
+	// Webhook subscription secrets.
+	rows, err := d.db.Query(`SELECT id, secret FROM webhook_subscriptions`)
+	if err != nil {
+		return err
+	}
+	pairs := make([]struct {
+		id     int64
+		secret string
+	}, 0)
+	for rows.Next() {
+		var p struct {
+			id     int64
+			secret string
+		}
+		if rerr := rows.Scan(&p.id, &p.secret); rerr != nil {
+			rows.Close()
+			return rerr
+		}
+		pairs = append(pairs, p)
+	}
+	rows.Close()
+	for _, p := range pairs {
+		if p.secret == "" || security.IsEncrypted(p.secret) {
+			continue
+		}
+		enc, eerr := security.EncryptWithMaster(p.secret)
+		if eerr != nil {
+			return eerr
+		}
+		if _, uerr := d.db.Exec(`UPDATE webhook_subscriptions SET secret = ? WHERE id = ?`, enc, p.id); uerr != nil {
+			return uerr
+		}
+	}
+	return nil
+}
+
+func (d *Database) DeleteWebhookSubscription(id int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.db.Exec(`DELETE FROM webhook_outbox WHERE subscription_id = ?`, id)
+	_, err := d.db.Exec(`DELETE FROM webhook_subscriptions WHERE id = ?`, id)
+	return err
+}
+
+// eventMatches reports whether a subscription's event filter covers the given event.
+func eventMatches(filter, event string) bool {
+	if filter == "" || filter == "*" {
+		return true
+	}
+	for _, e := range strings.Split(filter, ",") {
+		if strings.TrimSpace(e) == event {
+			return true
+		}
+	}
+	return false
+}
+
+// EnqueueWebhook inserts outbox rows for every active subscription that matches
+// the event and (optionally) project. Called instead of direct HTTP send.
+//
+// IMPORTANT: ListWebhookSubscriptions takes its own read lock, so it must be
+// called BEFORE acquiring d.mu. Taking the write lock first and then calling a
+// method that takes the read lock would deadlock Go's RWMutex (it is not
+// re-entrant). We therefore snapshot the (plaintext) subscriptions first, then
+// take the write lock only around the outbox inserts.
+func (d *Database) EnqueueWebhook(event, payload, projectSlug string) error {
+	// Snapshot subscriptions (plaintext secrets) under the method's own read lock.
+	subs, err := d.ListWebhookSubscriptions()
+	if err != nil {
+		return err
+	}
+
+	now := time.Now().Unix()
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, s := range subs {
+		if !s.IsActive {
+			continue
+		}
+		if !eventMatches(s.Events, event) {
+			continue
+		}
+		if s.ProjectSlug != "" && s.ProjectSlug != projectSlug {
+			continue
+		}
+		if _, err := d.db.Exec(
+			`INSERT INTO webhook_outbox (subscription_id, url, payload, secret, attempts, next_at) VALUES (?, ?, ?, ?, 0, ?)`,
+			s.ID, s.URL, payload, s.Secret, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// GetDueOutbox returns outbox rows whose next_at <= now, capped at limit.
+func (d *Database) GetDueOutbox(now int64, limit int) ([]WebhookOutbox, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(`SELECT id, subscription_id, url, payload, secret, attempts, next_at, last_error, created_at FROM webhook_outbox WHERE next_at <= ? ORDER BY next_at ASC LIMIT ?`, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []WebhookOutbox
+	for rows.Next() {
+		var o WebhookOutbox
+		var createdAt int64
+		if err := rows.Scan(&o.ID, &o.SubscriptionID, &o.URL, &o.Payload, &o.Secret, &o.Attempts, &o.NextAt, &o.LastError, &createdAt); err != nil {
+			return nil, err
+		}
+		o.CreatedAt = time.Unix(createdAt, 0)
+		list = append(list, o)
+	}
+	return list, nil
+}
+
+// MarkOutboxSuccess deletes a successfully delivered outbox row.
+func (d *Database) MarkOutboxSuccess(id int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(`DELETE FROM webhook_outbox WHERE id = ?`, id)
+	return err
+}
+
+// MarkOutboxFailure records an attempt and schedules the next retry with exponential backoff.
+// Stops retrying after maxAttempts.
+func (d *Database) MarkOutboxFailure(id int64, lastErr string, attempts int, nextAt int64, maxAttempts int) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if attempts >= maxAttempts {
+		_, err := d.db.Exec(`DELETE FROM webhook_outbox WHERE id = ?`, id)
+		return err
+	}
+	_, err := d.db.Exec(`UPDATE webhook_outbox SET attempts = ?, last_error = ?, next_at = ? WHERE id = ?`, attempts, lastErr, nextAt, id)
+	return err
 }

@@ -31,6 +31,7 @@ func Register(r *gin.Engine, application *app.App) {
 	setupHTML := mustReadFS(frontendSub, "setup.html")
 	adminHTML := mustReadFS(frontendSub, "admin.html")
 	trackHTML := mustReadFS(frontendSub, "track.html")
+	roadmapHTML := mustReadFS(frontendSub, "roadmap.html")
 
 	// ========== Pre-setup whitelist ==========
 	setupWhitelist := []string{
@@ -132,18 +133,26 @@ func Register(r *gin.Engine, application *app.App) {
 		c.Redirect(http.StatusFound, "/fb/default")
 	})
 
+	// Public roadmap board (no login required)
+	r.GET("/p/:slug/roadmap", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", roadmapHTML)
+	})
+
 	// ========== Public API routes ==========
 
 	r.GET("/api/v1/setup/status", application.SetupStatus)
 	r.POST("/api/v1/setup", application.DoSetup)
 	r.GET("/api/v1/projects", application.PublicListProjects)
+	r.GET("/api/v1/roadmap", application.PublicRoadmap)
 
 	submit := r.Group("/api/v1/feedback")
 	submit.Use(middleware.RateLimitMiddleware(application.RL))
 	submit.POST("/submit", application.SubmitFeedback)
+	submit.POST("/:id/vote", application.PublicVoteFeedback)
 
 	// API Token feedback submission (external systems like CI, monitoring)
 	apiSubmit := r.Group("/api/v1/external")
+	apiSubmit.Use(middleware.RateLimitMiddleware(application.RL))
 	apiSubmit.Use(application.APITokenAuthMiddleware())
 	apiSubmit.POST("/feedback", application.SubmitFeedbackWithToken)
 
@@ -155,6 +164,7 @@ func Register(r *gin.Engine, application *app.App) {
 	trackReply := r.Group("/api/v1/track")
 	trackReply.Use(middleware.RateLimitMiddleware(application.RL))
 	trackReply.POST("/reply", application.PublicSubmitReply)
+	trackReply.POST("/:token/rating", application.PublicSubmitRating)
 
 	// ========== Admin page routes (HTML) ==========
 
@@ -231,6 +241,7 @@ func Register(r *gin.Engine, application *app.App) {
 		adminAPI.DELETE("/feedbacks/:id/notes/:noteId", application.AdminDeleteFeedbackNote)
 		adminAPI.POST("/feedbacks/bulk-delete", application.AdminBulkDeleteFeedbacks)
 		adminAPI.POST("/feedbacks/bulk-status", application.AdminBulkUpdateStatus)
+		adminAPI.PUT("/feedbacks/:id/roadmap", application.AdminSetRoadmap)
 
 		// Projects (editor+)
 		adminAPI.GET("/projects", application.AdminListProjects)
@@ -274,6 +285,12 @@ func Register(r *gin.Engine, application *app.App) {
 		adminAPI.POST("/api-tokens", middleware.RequireRole("admin"), application.AdminCreateAPIToken)
 		adminAPI.PUT("/api-tokens/:id", middleware.RequireRole("admin"), application.AdminUpdateAPIToken)
 		adminAPI.DELETE("/api-tokens/:id", middleware.RequireRole("admin"), application.AdminDeleteAPIToken)
+
+		// Webhook subscriptions (admin only)
+		adminAPI.GET("/webhooks", middleware.RequireRole("admin"), application.AdminListWebhookSubscriptions)
+		adminAPI.POST("/webhooks", middleware.RequireRole("admin"), application.AdminCreateWebhookSubscription)
+		adminAPI.PUT("/webhooks/:id", middleware.RequireRole("admin"), application.AdminUpdateWebhookSubscription)
+		adminAPI.DELETE("/webhooks/:id", middleware.RequireRole("admin"), application.AdminDeleteWebhookSubscription)
 
 		// Bulk operations (editor+)
 		adminAPI.POST("/feedbacks/bulk-tags", middleware.RequireRole("editor"), application.AdminBulkUpdateTags)

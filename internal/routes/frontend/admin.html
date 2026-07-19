@@ -293,10 +293,15 @@ tr:last-child td{border-bottom:none}
         <select id="assigneeFilter" onchange="loadFeedbacks()">
           <option value="">全部指派</option>
         </select>
+        <select id="categoryFilter" onchange="loadFeedbacks()">
+          <option value="">全部分类</option>
+        </select>
         <input type="text" id="keywordSearch" placeholder="搜索标题/描述/标签/联系人/备注..." onkeyup="debounceSearch()">
         <span class="count" id="feedbackCount"></span>
         <span class="spacer"></span>
-        <button class="btn-sm" onclick="exportCSV()">导出 CSV</button>
+        <button class="btn-sm" onclick="exportFeedback('csv')">导出 CSV</button>
+        <button class="btn-sm" onclick="exportFeedback('json')">导出 JSON</button>
+        <button class="btn-sm" onclick="exportFeedback('xlsx')">导出 XLSX</button>
       </div>
       <div class="bulk-bar" id="bulkBar">
         <span id="bulkCount">0 条已选</span>
@@ -326,8 +331,8 @@ tr:last-child td{border-bottom:none}
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th class="cb-col"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll(this.checked)"></th><th>ID</th><th>项目</th><th>标题</th><th>优先级</th><th>状态</th><th>指派</th><th>IP</th><th>时间</th></tr></thead>
-          <tbody id="feedbackTable"><tr><td colspan="9" class="empty">加载中...</td></tr></tbody>
+          <thead><tr><th class="cb-col"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll(this.checked)"></th><th>ID</th><th>项目</th><th>标题</th><th>优先级</th><th>状态</th><th>投票</th><th>指派</th><th>IP</th><th>时间</th></tr></thead>
+          <tbody id="feedbackTable"><tr><td colspan="10" class="empty">加载中...</td></tr></tbody>
         </table>
       </div>
       <div class="chart-container" id="trendChart">
@@ -408,6 +413,7 @@ tr:last-child td{border-bottom:none}
         <button onclick="switchSettings('tokens',this)" id="navSettingsTokens" style="display:none">API Token</button>
         <button onclick="switchSettings('emailtpl',this)" id="navSettingsEmailTpl" style="display:none">邮件模板</button>
         <button onclick="switchSettings('dataops',this)" id="navSettingsDataOps" style="display:none">数据管理</button>
+        <button onclick="switchSettings('webhooks',this)" id="navSettingsWebhooks" style="display:none">Webhook</button>
       </div>
       <div class="settings-content">
         <div class="settings-card" id="settings-email">
@@ -487,6 +493,12 @@ tr:last-child td{border-bottom:none}
             </div>
           </div>
         </div>
+        <div class="settings-card" id="settings-webhooks" style="display:none">
+          <h2>Webhook 订阅</h2>
+          <p style="font-size:.8rem;color:#888;margin-bottom:12px">配置外部系统接收新反馈/状态变更事件。设置签名密钥后，请求头携带 <code>X-FeedShit-Signature: sha256=HMAC</code>。失败自动重试（最多 8 次，指数退避）。</p>
+          <div id="webhookList"></div>
+          <div style="margin-top:12px"><button class="btn-sm" onclick="openWebhookModal()">+ 新建订阅</button></div>
+        </div>
       </div>
     </div>
   </div>
@@ -554,6 +566,10 @@ tr:last-child td{border-bottom:none}
       <option value="viewer">只读（仅查看）</option>
     </select></div>
     <div class="settings-field" id="adminActiveField"><div class="toggle"><input type="checkbox" id="adminActive" checked><span>启用</span></div></div>
+    <div class="settings-field" id="adminGrantsSection" style="display:none">
+      <label>初始授权 <span style="font-weight:400;color:#888">（可选，限定该项目访问范围）</span></label>
+      <div id="createGrantsArea" style="max-height:240px;overflow-y:auto;border:1px solid #eee;border-radius:4px;padding:8px"></div>
+    </div>
     <div class="modal-actions">
       <button class="btn-sm" onclick="closeAdminModal()">取消</button>
       <button class="btn-save" onclick="saveAdmin()">保存</button>
@@ -568,6 +584,8 @@ tr:last-child td{border-bottom:none}
     <input type="hidden" id="tokenEditId">
     <div class="settings-field"><label>名称 *</label><input type="text" id="tokenName" placeholder="例：CI 流水线、监控告警"></div>
     <div class="settings-field"><label>绑定项目</label><input type="text" id="tokenProject" placeholder="留空表示所有项目"></div>
+    <div class="settings-field"><label>每小时限速</label><input type="number" id="tokenRateLimit" value="60" min="0"><div class="hint">每 Token 每小时最大请求数，0 表示不限制</div></div>
+    <div class="settings-field"><label>每日配额</label><input type="number" id="tokenQuotaPerDay" value="1000" min="0"><div class="hint">每 Token 每日最大请求数，0 表示不限制</div></div>
     <div id="tokenResult" style="display:none;margin-top:12px;padding:12px;background:#f0f9f0;border:1px solid #b2e0b2;border-radius:4px">
       <div style="font-size:.8rem;color:#1a7a1a;margin-bottom:4px">Token 已创建，请立即复制保存（只显示一次）：</div>
       <code id="tokenValue" style="font-size:.85rem;word-break:all;user-select:all"></code>
@@ -575,6 +593,23 @@ tr:last-child td{border-bottom:none}
     <div class="modal-actions">
       <button class="btn-sm" onclick="closeTokenModal()">关闭</button>
       <button class="btn-save" id="tokenSaveBtn" onclick="saveToken()">创建</button>
+    </div>
+  </div>
+</div>
+
+<!-- Webhook Modal -->
+<div class="modal-overlay" id="webhookModal">
+  <div class="modal">
+    <h3 id="webhookModalTitle">新建 Webhook 订阅</h3>
+    <input type="hidden" id="webhookEditId">
+    <div class="settings-field"><label>绑定项目（可选）</label><input type="text" id="whProject" placeholder="留空表示所有项目"></div>
+    <div class="settings-field"><label>URL *</label><input type="text" id="whUrl" placeholder="https://..."></div>
+    <div class="settings-field"><label>签名密钥（可选）</label><input type="text" id="whSecret" placeholder="留空不签名"><div class="hint">设置后请求头携带 X-FeedShit-Signature: sha256=HMAC</div></div>
+    <div class="settings-field"><label>事件</label><input type="text" id="whEvents" placeholder="* 或 feedback.created,feedback.resolved"></div>
+    <div class="settings-field"><div class="toggle"><input type="checkbox" id="whActive" checked><span>启用</span></div></div>
+    <div class="modal-actions">
+      <button class="btn-sm" onclick="closeWebhookModal()">取消</button>
+      <button class="btn-save" id="whSaveBtn" onclick="saveWebhook()">保存</button>
     </div>
   </div>
 </div>
@@ -669,16 +704,18 @@ tr:last-child td{border-bottom:none}
     var status = document.getElementById('statusFilter').value;
     var priority = document.getElementById('priorityFilter').value;
     var assignee = document.getElementById('assigneeFilter').value;
+    var category = document.getElementById('categoryFilter').value;
     var keyword = document.getElementById('keywordSearch').value.trim();
 
     // Save filter state to memory
-    filterMemory = {project:project, status:status, priority:priority, assignee:assignee, keyword:keyword};
+    filterMemory = {project:project, status:status, priority:priority, assignee:assignee, category:category, keyword:keyword};
 
     var url = '/api/v1/admin/feedbacks?limit=100';
     if (project) url += '&project=' + encodeURIComponent(project);
     if (status) url += '&status=' + encodeURIComponent(status);
     if (priority) url += '&priority=' + encodeURIComponent(priority);
     if (assignee) url += '&assignee=' + encodeURIComponent(assignee);
+    if (category) url += '&category=' + encodeURIComponent(category);
     if (keyword) url += '&keyword=' + encodeURIComponent(keyword);
     var resp = await api(url);
     if (!resp) return;
@@ -718,6 +755,7 @@ tr:last-child td{border-bottom:none}
     if (filterMemory.status) document.getElementById('statusFilter').value = filterMemory.status;
     if (filterMemory.priority) document.getElementById('priorityFilter').value = filterMemory.priority;
     if (filterMemory.assignee) document.getElementById('assigneeFilter').value = filterMemory.assignee;
+    if (filterMemory.category) document.getElementById('categoryFilter').value = filterMemory.category;
     if (filterMemory.keyword) document.getElementById('keywordSearch').value = filterMemory.keyword;
   }
 
@@ -742,7 +780,7 @@ tr:last-child td{border-bottom:none}
   function renderTable() {
     var tbody = document.getElementById('feedbackTable');
     if (feedbacks.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无反馈记录</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty">暂无反馈记录</td></tr>';
       updateBulkBar();
       return;
     }
@@ -757,6 +795,7 @@ tr:last-child td{border-bottom:none}
         '<td><a href="#" onclick="showDetail('+f.id+');return false;">'+esc(f.title)+'</a>'+dupBadge+'</td>' +
         '<td>'+priorityBadge(f.priority)+'</td>' +
         '<td>'+statusBadge(f.status)+'</td>' +
+        '<td style="text-align:center;color:#666;font-size:.85rem">'+(f.votes||0)+'</td>' +
         '<td style="font-size:.8rem;color:#666">'+(f.assignee ? esc(f.assignee) : '-')+'</td>' +
         '<td style="font-family:monospace;font-size:.8rem;color:#888">'+esc(f.client_ip)+'</td>' +
         '<td style="color:#888;font-size:.8rem">'+dt+'</td>' +
@@ -906,6 +945,17 @@ tr:last-child td{border-bottom:none}
       html += '<button class="btn-sm" onclick="markDuplicate('+f.id+')" style="font-size:.75rem">标记重复</button>';
     }
     html += '</div>';
+
+    // Roadmap (M3)
+    var rmStatusOpts = [['planning','规划中'],['in_progress','进行中'],['released','已发布']];
+    var rmOptHtml = rmStatusOpts.map(function(o){ return '<option value="'+o[0]+'"'+(f.roadmap_status===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('');
+    html += '<div class="roadmap-row" style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap">' +
+      '<label style="font-size:.8rem;color:#666">公开到路线图：</label>' +
+      '<label class="toggle"><input type="checkbox" id="roadmapPublic"'+(f.public_on_roadmap?' checked':'')+'><span>'+(f.public_on_roadmap?'是':'否')+'</span></label>' +
+      '<label style="font-size:.8rem;color:#666">看板状态：</label>' +
+      '<select id="roadmapStatus">'+rmOptHtml+'</select>' +
+      '<button onclick="saveRoadmap('+f.id+')">保存路线图</button>' +
+      '</div>';
 
     // Files
     var files = [];
@@ -1088,11 +1138,23 @@ tr:last-child td{border-bottom:none}
     showList(); loadFeedbacks(); loadStats();
   };
 
-  // --- CSV Export ---
-  window.exportCSV = function() {
+  window.saveRoadmap = async function(id) {
+    var pub = document.getElementById('roadmapPublic');
+    var statusSel = document.getElementById('roadmapStatus');
+    if (!statusSel) return;
+    var body = {public: !!(pub && pub.checked), status: statusSel.value};
+    var d = await apiJSON('/api/v1/admin/feedbacks/' + id + '/roadmap', {method:'PUT', body:JSON.stringify(body)});
+    if (!d) return;
+    if (d.error) { showToast(d.error,'error'); return; }
+    showToast('路线图已更新','success');
+    showDetail(id);
+  };
+
+  // --- Export (CSV / JSON / XLSX) ---
+  window.exportFeedback = function(fmt) {
     var project = document.getElementById('projectFilter').value;
-    var url = '/api/v1/admin/feedbacks/export';
-    if (project) url += '?project=' + encodeURIComponent(project);
+    var url = '/api/v1/admin/feedbacks/export?fmt=' + encodeURIComponent(fmt || 'csv');
+    if (project) url += '&project=' + encodeURIComponent(project);
     window.open(url, '_blank');
   };
 
@@ -1426,7 +1488,7 @@ tr:last-child td{border-bottom:none}
   window.switchSettings = function(section, btn) {
     document.querySelectorAll('.settings-nav button').forEach(function(b){ b.classList.remove('active'); });
     if (btn) btn.classList.add('active');
-    ['email','account','system','tokens','emailtpl','dataops'].forEach(function(s){
+    ['email','account','system','tokens','emailtpl','dataops','webhooks'].forEach(function(s){
       var el = document.getElementById('settings-'+s);
       if (el) el.style.display = s === section ? '' : 'none';
     });
@@ -1436,6 +1498,7 @@ tr:last-child td{border-bottom:none}
     if (section === 'tokens') loadTokens();
     if (section === 'emailtpl') loadEmailTemplate();
     if (section === 'dataops') loadDataOps();
+    if (section === 'webhooks') loadWebhooks();
   };
 
   async function loadEmailSettings() {
@@ -1560,7 +1623,7 @@ tr:last-child td{border-bottom:none}
     if (teamBtn) teamBtn.style.display = currentUserRole === 'admin' ? '' : 'none';
     // Show admin-only settings tabs
     var isAdmin = currentUserRole === 'admin';
-    ['navSettingsTokens','navSettingsEmailTpl','navSettingsDataOps'].forEach(function(id){
+    ['navSettingsTokens','navSettingsEmailTpl','navSettingsDataOps','navSettingsWebhooks'].forEach(function(id){
       var el = document.getElementById(id);
       if (el) el.style.display = isAdmin ? '' : 'none';
     });
@@ -1605,11 +1668,15 @@ tr:last-child td{border-bottom:none}
     document.getElementById('adminPwdHint').textContent = '*';
     document.getElementById('adminRole').value = 'editor';
     document.getElementById('adminActive').checked = true;
+    document.getElementById('adminGrantsSection').style.display = '';
+    renderCreateGrants();
     document.getElementById('adminModal').classList.add('active');
   };
 
   window.closeAdminModal = function() {
     document.getElementById('adminModal').classList.remove('active');
+    var ga = document.getElementById('createGrantsArea');
+    if (ga) ga.innerHTML = '';
   };
 
   window.editAdmin = function(id, username, role, isActive) {
@@ -1621,6 +1688,7 @@ tr:last-child td{border-bottom:none}
     document.getElementById('adminPwdHint').textContent = '';
     document.getElementById('adminRole').value = role;
     document.getElementById('adminActive').checked = isActive;
+    document.getElementById('adminGrantsSection').style.display = 'none';
     document.getElementById('adminModal').classList.add('active');
   };
 
@@ -1643,9 +1711,12 @@ tr:last-child td{border-bottom:none}
       // Create
       if (!username) { showToast('用户名不能为空', 'error'); return; }
       if (!password) { showToast('密码不能为空', 'error'); return; }
+      var body = {username: username, password: password, role: role};
+      var grants = collectCreateGrants();
+      if (grants.length > 0) body.grants = grants;
       var d = await apiJSON('/api/v1/admin/admins', {
         method: 'POST',
-        body: JSON.stringify({username: username, password: password, role: role})
+        body: JSON.stringify(body)
       });
       if (!d) return;
       if (d.error) { showToast(d.error, 'error'); return; }
@@ -1654,6 +1725,75 @@ tr:last-child td{border-bottom:none}
     closeAdminModal();
     loadAdmins();
   };
+
+  // ---- Create-admin initial grants editor ----
+  async function renderCreateGrants() {
+    var area = document.getElementById('createGrantsArea');
+    if (!area) return;
+    if (!allProjects || allProjects.length === 0) {
+      var pResp = await api('/api/v1/admin/projects');
+      if (pResp) { var pd = await pResp.json(); allProjects = pd.projects || []; }
+    }
+    if (!allProjects || allProjects.length === 0) {
+      area.innerHTML = '<p style="font-size:.8rem;color:#999">暂无可用项目</p>';
+      return;
+    }
+    var html = '';
+    allProjects.forEach(function(p){
+      html += '<div class="grant-project-row" style="margin-bottom:8px;padding:6px;border:1px solid #e8e8e8;border-radius:4px">';
+      html += '<label style="display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:500">';
+      html += '<input type="checkbox" class="cgrant-proj-cb" data-slug="'+esc(p.slug)+'" style="width:auto"> ';
+      html += esc(p.name)+' <span style="color:#999;font-size:.72rem">('+esc(p.slug)+')</span></label>';
+      html += '<div class="cgrant-detail" style="display:none;margin-top:6px;padding-left:20px">';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.78rem;color:#666">角色:</span>';
+      html += '<select class="cgrant-role" data-slug="'+esc(p.slug)+'" style="font-size:.78rem;padding:2px 4px">';
+      html += '<option value="viewer">只读</option><option value="editor" selected>编辑</option><option value="manager">经理</option></select></div>';
+      html += '<div class="cgrant-cats" data-slug="'+esc(p.slug)+'" style="font-size:.78rem;margin-top:4px"></div>';
+      html += '</div></div>';
+    });
+    area.innerHTML = html;
+    area.querySelectorAll('.cgrant-proj-cb').forEach(function(cb){
+      cb.addEventListener('change', function(){
+        var detail = this.closest('.grant-project-row').querySelector('.cgrant-detail');
+        detail.style.display = this.checked ? '' : 'none';
+        if (this.checked) loadCreateCategories(this.getAttribute('data-slug'));
+      });
+    });
+  }
+
+  async function loadCreateCategories(slug) {
+    var cResp = await api('/api/v1/admin/projects/'+encodeURIComponent(slug)+'/categories');
+    var cats = [];
+    if (cResp) { var cd = await cResp.json(); cats = (cd.categories||[]).filter(function(c){ return c.is_active; }); }
+    var area = document.querySelector('.cgrant-cats[data-slug="'+CSS.escape(slug)+'"]');
+    if (!area) return;
+    if (cats.length === 0) { area.innerHTML = '<span style="color:#999">该项目暂无分类</span>'; return; }
+    var h = '<div style="color:#999;font-size:.72rem;margin-bottom:2px">分类(不选=全部):</div>';
+    cats.forEach(function(cat){
+      h += '<label style="display:inline-flex;align-items:center;gap:3px;margin-right:6px;font-size:.75rem;cursor:pointer">';
+      h += '<input type="checkbox" class="cgrant-cat" data-slug="'+esc(slug)+'" data-cat="'+esc(cat.key)+'" style="width:auto"> '+esc(cat.name)+'</label>';
+    });
+    area.innerHTML = h;
+  }
+
+  function collectCreateGrants() {
+    var grants = [];
+    var area = document.getElementById('createGrantsArea');
+    if (!area) return grants;
+    area.querySelectorAll('.cgrant-proj-cb').forEach(function(cb){
+      if (!cb.checked) return;
+      var slug = cb.getAttribute('data-slug');
+      var roleSel = area.querySelector('.cgrant-role[data-slug="'+CSS.escape(slug)+'"]');
+      var role = roleSel ? roleSel.value : 'editor';
+      var cats = [];
+      area.querySelectorAll('.cgrant-cat[data-slug="'+CSS.escape(slug)+'"]').forEach(function(catCb){
+        if (catCb.checked) cats.push(catCb.getAttribute('data-cat'));
+      });
+      if (cats.length === 0) grants.push({project_slug:slug, category_key:'*', role:role});
+      else cats.forEach(function(c){ grants.push({project_slug:slug, category_key:c, role:role}); });
+    });
+    return grants;
+  }
 
   window.deleteAdmin = async function(id, username) {
     if (!confirm('确定删除成员 "' + username + '"？此操作不可撤销。')) return;
@@ -1806,7 +1946,7 @@ tr:last-child td{border-bottom:none}
       container.innerHTML = '<p style="font-size:.85rem;color:#999">暂无 API Token</p>';
       return;
     }
-    var html = '<table style="width:100%"><thead><tr><th>名称</th><th>Token</th><th>项目</th><th>状态</th><th>最后使用</th><th>操作</th></tr></thead><tbody>';
+    var html = '<table style="width:100%"><thead><tr><th>名称</th><th>Token</th><th>项目</th><th>限速/时</th><th>配额/日</th><th>状态</th><th>最后使用</th><th>操作</th></tr></thead><tbody>';
     tokens.forEach(function(t){
       var masked = t.token ? t.token.substring(0, 8) + '...' + t.token.substring(t.token.length - 4) : '-';
       var lastUsed = t.last_used_at ? t.last_used_at : '从未';
@@ -1814,6 +1954,8 @@ tr:last-child td{border-bottom:none}
         '<td>' + esc(t.name) + '</td>' +
         '<td><code style="font-size:.8rem">' + esc(masked) + '</code></td>' +
         '<td>' + esc(t.project_id || '全部') + '</td>' +
+        '<td style="font-size:.8rem;color:#666">' + (t.rate_limit ? t.rate_limit : '∞') + '</td>' +
+        '<td style="font-size:.8rem;color:#666">' + (t.quota_per_day ? t.quota_per_day : '∞') + '</td>' +
         '<td>' + (t.is_active ? '<span style="color:green">启用</span>' : '<span style="color:#999">禁用</span>') + '</td>' +
         '<td style="font-size:.8rem;color:#888">' + esc(lastUsed) + '</td>' +
         '<td>' +
@@ -1829,6 +1971,8 @@ tr:last-child td{border-bottom:none}
     document.getElementById('tokenEditId').value = '';
     document.getElementById('tokenName').value = '';
     document.getElementById('tokenProject').value = '';
+    document.getElementById('tokenRateLimit').value = '60';
+    document.getElementById('tokenQuotaPerDay').value = '1000';
     document.getElementById('tokenResult').style.display = 'none';
     document.getElementById('tokenSaveBtn').style.display = '';
     document.getElementById('tokenModalTitle').textContent = '创建 API Token';
@@ -1843,7 +1987,9 @@ tr:last-child td{border-bottom:none}
     var name = document.getElementById('tokenName').value.trim();
     if (!name) { showToast('请输入名称', 'error'); return; }
     var projectId = document.getElementById('tokenProject').value.trim();
-    var d = await apiJSON('/api/v1/admin/api-tokens', {method:'POST', body:JSON.stringify({name:name, project_id:projectId})});
+    var rateLimit = parseInt(document.getElementById('tokenRateLimit').value) || 0;
+    var quotaPerDay = parseInt(document.getElementById('tokenQuotaPerDay').value) || 0;
+    var d = await apiJSON('/api/v1/admin/api-tokens', {method:'POST', body:JSON.stringify({name:name, project_id:projectId, rate_limit:rateLimit, quota_per_day:quotaPerDay})});
     if (!d) return;
     document.getElementById('tokenValue').textContent = d.token;
     document.getElementById('tokenResult').style.display = '';
@@ -1864,6 +2010,91 @@ tr:last-child td{border-bottom:none}
     if (!d) return;
     showToast(d.message, 'success');
     loadTokens();
+  };
+
+  // ========== Webhook Subscriptions (M6) ==========
+  async function loadWebhooks() {
+    var resp = await api('/api/v1/admin/webhooks');
+    if (!resp) return;
+    var d = await resp.json();
+    var subs = d.subscriptions || [];
+    var container = document.getElementById('webhookList');
+    if (!container) return;
+    if (subs.length === 0) { container.innerHTML = '<p style="font-size:.85rem;color:#999">暂无 Webhook 订阅</p>'; return; }
+    var html = '<table style="width:100%"><thead><tr><th>ID</th><th>项目</th><th>URL</th><th>事件</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+    subs.forEach(function(s){
+      html += '<tr>' +
+        '<td>'+s.id+'</td>' +
+        '<td>'+esc(s.project_slug || '全部')+'</td>' +
+        '<td style="font-size:.8rem;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><code>'+esc(s.url)+'</code></td>' +
+        '<td style="font-size:.8rem;color:#666">'+esc(s.events || '*')+'</td>' +
+        '<td>'+(s.is_active ? '<span style="color:green">启用</span>' : '<span style="color:#999">禁用</span>')+'</td>' +
+        '<td><button class="btn-sm" onclick="editWebhook('+s.id+')" style="font-size:.75rem">编辑</button> ' +
+        '<button class="btn-sm btn-danger" onclick="deleteWebhook('+s.id+')" style="font-size:.75rem">删除</button></td>' +
+        '</tr>';
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+  window.openWebhookModal = function() {
+    document.getElementById('webhookModalTitle').textContent = '新建 Webhook 订阅';
+    document.getElementById('webhookEditId').value = '';
+    document.getElementById('whProject').value = '';
+    document.getElementById('whUrl').value = '';
+    document.getElementById('whSecret').value = '';
+    document.getElementById('whEvents').value = '*';
+    document.getElementById('whActive').checked = true;
+    document.getElementById('webhookModal').classList.add('active');
+  };
+  window.closeWebhookModal = function() {
+    document.getElementById('webhookModal').classList.remove('active');
+  };
+  window.editWebhook = async function(id) {
+    var resp = await api('/api/v1/admin/webhooks');
+    if (!resp) return;
+    var d = await resp.json();
+    var subs = d.subscriptions || [];
+    var sub = subs.find(function(s){ return s.id === id; });
+    if (!sub) { showToast('订阅不存在', 'error'); return; }
+    document.getElementById('webhookModalTitle').textContent = '编辑 Webhook 订阅';
+    document.getElementById('webhookEditId').value = id;
+    document.getElementById('whProject').value = sub.project_slug || '';
+    document.getElementById('whUrl').value = sub.url || '';
+    document.getElementById('whSecret').value = '';
+    document.getElementById('whEvents').value = sub.events || '*';
+    document.getElementById('whActive').checked = sub.is_active;
+    document.getElementById('webhookModal').classList.add('active');
+  };
+  window.saveWebhook = async function() {
+    var id = document.getElementById('webhookEditId').value;
+    var url = document.getElementById('whUrl').value.trim();
+    if (!url) { showToast('URL 不能为空', 'error'); return; }
+    var body = {
+      project_slug: document.getElementById('whProject').value.trim(),
+      url: url,
+      secret: document.getElementById('whSecret').value,
+      events: document.getElementById('whEvents').value.trim() || '*',
+      is_active: document.getElementById('whActive').checked
+    };
+    var d;
+    if (id) {
+      d = await apiJSON('/api/v1/admin/webhooks/' + id, {method:'PUT', body:JSON.stringify(body)});
+    } else {
+      d = await apiJSON('/api/v1/admin/webhooks', {method:'POST', body:JSON.stringify(body)});
+    }
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast(d.message || '已保存', 'success');
+    closeWebhookModal();
+    loadWebhooks();
+  };
+  window.deleteWebhook = async function(id) {
+    if (!confirm('确定删除此 Webhook 订阅？')) return;
+    var d = await apiJSON('/api/v1/admin/webhooks/' + id, {method:'DELETE'});
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast(d.message, 'success');
+    loadWebhooks();
   };
 
   // ========== Email Template ==========

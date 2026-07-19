@@ -2,7 +2,9 @@ package app
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
@@ -17,10 +19,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/xuri/excelize/v2"
 	"golang.org/x/crypto/bcrypt"
 
 	"feedshit/internal/config"
@@ -38,6 +42,10 @@ type App struct {
 	Mailer       *email.Mailer
 	NonceCache   *middleware.NonceCache
 	LoginTracker *middleware.LoginAttemptTracker
+
+	// M7: per-token rate limiting (in-memory, single-instance)
+	tokenMu       sync.Mutex
+	tokenHourHits map[string]int
 }
 
 // New creates a new App instance.
@@ -50,7 +58,19 @@ func New(cfg *config.Config, db *database.Database, sm *middleware.SessionManage
 		Mailer:       mailer,
 		NonceCache:   middleware.NewNonceCache(),
 		LoginTracker: middleware.NewLoginAttemptTracker(10),
+		tokenHourHits: make(map[string]int),
 	}
+	// Periodically clear per-token hourly hit counters to avoid unbounded memory
+	// growth. Keys embed the hour string, so clearing hourly is safe — counters
+	// reset each hour anyway. Fixes the in-memory leak in APITokenAuthMiddleware.
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		for range ticker.C {
+			a.tokenMu.Lock()
+			a.tokenHourHits = make(map[string]int)
+			a.tokenMu.Unlock()
+		}
+	}()
 	// Load CDN config from DB at startup
 	if cdn := db.GetConfig("cdn_provider"); cdn != "" {
 		middleware.SetCDNProvider(cdn)
@@ -505,12 +525,24 @@ func (a *App) AdminLogin(c *gin.Context) {
 	token := a.SM.Create(req.Username, role)
 	csrfToken := a.SM.GetCSRFToken(token)
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("admin_session", token, 86400, "/", "", false, true)
-	middleware.SetCSRFCookie(c, csrfToken)
+	c.SetCookie("admin_session", token, 86400, "/", "", a.cookieSecure(c), true)
+	middleware.SetCSRFCookie(c, csrfToken, a.cookieSecure(c))
 
 	a.DB.InsertAuditLog("login", "管理员登录", req.Username, clientIP)
 
 	c.JSON(http.StatusOK, gin.H{"message": "登录成功", "role": role})
+}
+
+// cookieSecure determines whether auth cookies should be marked Secure,
+// based on whether the request is (or is behind a proxy terminated at) HTTPS.
+func (a *App) cookieSecure(c *gin.Context) bool {
+	if c.Request.TLS != nil {
+		return true
+	}
+	if proto := c.GetHeader("X-Forwarded-Proto"); proto == "https" {
+		return true
+	}
+	return strings.HasPrefix(a.Cfg.BaseURL, "https")
 }
 
 func (a *App) AdminLogout(c *gin.Context) {
@@ -518,7 +550,7 @@ func (a *App) AdminLogout(c *gin.Context) {
 	if t, ok := token.(string); ok {
 		a.SM.Revoke(t)
 	}
-	c.SetCookie("admin_session", "", -1, "/", "", false, true)
+	c.SetCookie("admin_session", "", -1, "/", "", a.cookieSecure(c), true)
 	c.SetCookie("csrf_token", "", -1, "/", "", false, false)
 	c.JSON(http.StatusOK, gin.H{"message": "已退出"})
 }
@@ -541,10 +573,16 @@ func (a *App) AdminStats(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取统计失败"})
 		return
 	}
+	csatAvg, csatTotal, _, cerr := a.DB.GetCSATStats()
+	if cerr != nil {
+		csatAvg, csatTotal = 0, 0
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"total_feedbacks": total,
 		"total_projects":  projects,
 		"today_feedbacks": today,
+		"csat_avg":        csatAvg,
+		"csat_total":      csatTotal,
 	})
 }
 
@@ -749,6 +787,12 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 		subject := email.BuildStatusChangeSubject(a.DB, vars)
 		body := email.BuildStatusChangeBody(a.DB, vars)
 		go a.Mailer.SendStatusChangeNotification(oldFb, subject, body)
+
+		// M2 CSAT: invite submitter to rate once resolved
+		if req.Status == "resolved" && oldFb.ContactEmail != "" {
+			trackURL := a.Cfg.BaseURL + "/track#token=" + oldFb.TrackingToken
+			go a.Mailer.SendCSATInvite(oldFb, trackURL)
+		}
 	}
 
 	// Webhook notification
@@ -817,7 +861,10 @@ func (a *App) AdminServeFile(c *gin.Context) {
 		return
 	}
 
-	absPath := filepath.Join(a.Cfg.DataDir, cleaned)
+	// Restrict file serving to the uploads/ subdirectory only — never the whole
+	// DataDir (which also contains the SQLite DB and backup snapshots).
+	baseDir := filepath.Join(a.Cfg.DataDir, "uploads")
+	absPath := filepath.Join(baseDir, cleaned)
 	// EvalSymlinks resolves symlinks to prevent symlink-based path traversal
 	absResolved, err := filepath.EvalSymlinks(absPath)
 	if err != nil {
@@ -829,7 +876,8 @@ func (a *App) AdminServeFile(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "路径解析失败"})
 		return
 	}
-	if !strings.HasPrefix(absResolved, absDataDirResolved) {
+	absBaseResolved := filepath.Join(absDataDirResolved, "uploads")
+	if !strings.HasPrefix(absResolved, absBaseResolved+string(os.PathSeparator)) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "非法路径"})
 		return
 	}
@@ -1195,6 +1243,24 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 		return
 	}
 
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("export", fmt.Sprintf("导出反馈 %d 条 (项目: %s)", len(feedbacks), projectID), fmt.Sprintf("%v", user), clientIP)
+
+	// M12: support json / xlsx export formats
+	switch c.Query("fmt") {
+	case "json":
+		a.exportJSON(c, projectID, feedbacks)
+		return
+	case "xlsx":
+		a.exportXLSX(c, projectID, feedbacks)
+		return
+	default:
+		a.exportCSV(c, projectID, feedbacks)
+	}
+}
+
+func (a *App) exportCSV(c *gin.Context, projectID string, feedbacks []database.Feedback) {
 	filename := "feedbacks"
 	if projectID != "" {
 		filename = "feedbacks_" + projectID
@@ -1226,6 +1292,49 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 		})
 	}
 	w.Flush()
+}
+
+func (a *App) exportJSON(c *gin.Context, projectID string, feedbacks []database.Feedback) {
+	filename := "feedbacks"
+	if projectID != "" {
+		filename = "feedbacks_" + projectID
+	}
+	filename += "_" + time.Now().Format("20060102_150405") + ".json"
+
+	c.Header("Content-Disposition", "attachment; filename="+filename)
+	c.Header("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(c.Writer).Encode(feedbacks); err != nil {
+		log.Printf("[EXPORT] JSON encode failed: %v", err)
+	}
+}
+
+func (a *App) exportXLSX(c *gin.Context, projectID string, feedbacks []database.Feedback) {
+	filename := "feedbacks"
+	if projectID != "" {
+		filename = "feedbacks_" + projectID
+	}
+	filename += "_" + time.Now().Format("20060102_150405") + ".xlsx"
+
+	f := excelize.NewFile()
+	sheet := "Feedbacks"
+	f.SetSheetName("Sheet1", sheet)
+	headers := []string{"ID", "项目", "标题", "描述", "自定义字段", "附件", "状态", "标签", "指派", "联系人", "联系邮箱", "来源IP", "提交时间"}
+	f.SetSheetRow(sheet, "A1", &headers)
+	for i, fb := range feedbacks {
+		row := []interface{}{
+			fb.ID, fb.ProjectID, fb.Title, fb.Description, fb.CustomData, fb.FilePaths,
+			fb.Status, fb.Tags, fb.Assignee, fb.ContactName, fb.ContactEmail, fb.ClientIP,
+			fb.CreatedAt.Format("2006-01-02 15:04:05"),
+		}
+		cell, _ := excelize.CoordinatesToCellName(1, i+2)
+		f.SetSheetRow(sheet, cell, &row)
+	}
+
+	c.Header("Content-Disposition", "attachment; filename="+filename)
+	c.Header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	if err := f.Write(c.Writer); err != nil {
+		log.Printf("[EXPORT] XLSX write failed: %v", err)
+	}
 }
 
 // ========== Admin: Audit Logs ==========
@@ -1377,6 +1486,7 @@ func (a *App) AdminGetSystemConfig(c *gin.Context) {
 		"rate_limit_per_hr":     a.Cfg.RateLimitPerHour,
 		"max_upload_mb":         a.Cfg.MaxUploadSize / 1024 / 1024,
 		"webhook_url":           webhookURL,
+		"webhook_url_deprecated": true,
 		"webhook_type":          webhookType,
 		"archive_days":          archiveDays,
 		"backup_retention_days": backupRetention,
@@ -1416,7 +1526,8 @@ func (a *App) AdminUpdateSystemConfig(c *gin.Context) {
 	}
 	if req.WebhookURL != "" {
 		a.Cfg.WebhookURL = req.WebhookURL
-		a.DB.SetConfig("webhook_url", req.WebhookURL, "Webhook 通知 URL")
+		a.DB.SetConfig("webhook_url", req.WebhookURL, "Webhook 通知 URL (已废弃，仅展示)")
+		log.Printf("WARN: webhook_url is deprecated; it is stored for display only and no longer triggers outbound notifications. Use subscription-based webhooks via /api/v1/admin/webhooks instead.")
 	}
 	if req.WebhookType != "" {
 		a.DB.SetConfig("webhook_type", req.WebhookType, "Webhook 类型 (auto/feishu/dingtalk/slack/wecom)")
@@ -1502,58 +1613,217 @@ func (a *App) SendWebhookNotification(fb *database.Feedback) {
 
 // sendWebhookEvent sends a webhook notification for any event type.
 func (a *App) sendWebhookEvent(event string, data map[string]interface{}, fb *database.Feedback) {
+	// Build the platform-specific payload the same way as before.
 	webhookURL := a.DB.GetConfig("webhook_url")
 	if webhookURL == "" {
 		webhookURL = a.Cfg.WebhookURL
 	}
-	if webhookURL == "" {
-		return
-	}
-
-	platform := a.DB.GetConfig("webhook_type")
-	if platform == "" {
-		platform = detectWebhookPlatform(webhookURL)
-	}
 
 	var payload []byte
 	var err error
+	var platform string
 
-	switch platform {
-	case "feishu":
-		payload, err = buildFeishuCard(event, data, fb)
-	case "dingtalk":
-		payload, err = buildDingTalkCard(event, data, fb)
-	case "slack":
-		payload, err = buildSlackCard(event, data, fb)
-	case "wecom":
-		payload, err = buildWeComCard(event, data, fb)
-	default:
+	if fb != nil {
+		platform = a.DB.GetConfig("webhook_type")
+		if platform == "" && webhookURL != "" {
+			platform = detectWebhookPlatform(webhookURL)
+		}
+		switch platform {
+		case "feishu":
+			payload, err = buildFeishuCard(event, data, fb)
+		case "dingtalk":
+			payload, err = buildDingTalkCard(event, data, fb)
+		case "slack":
+			payload, err = buildSlackCard(event, data, fb)
+		case "wecom":
+			payload, err = buildWeComCard(event, data, fb)
+		default:
+			wrapper := map[string]interface{}{
+				"event":     event,
+				"data":      data,
+				"timestamp": time.Now().Format(time.RFC3339),
+			}
+			payload, err = json.Marshal(wrapper)
+		}
+	} else {
 		wrapper := map[string]interface{}{
-			"event":      event,
-			"data":       data,
-			"timestamp":  time.Now().Format(time.RFC3339),
+			"event":     event,
+			"data":      data,
+			"timestamp": time.Now().Format(time.RFC3339),
 		}
 		payload, err = json.Marshal(wrapper)
 	}
-
 	if err != nil {
 		log.Printf("[WEBHOOK] Failed to build %s payload for %s: %v", platform, event, err)
 		return
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(webhookURL, "application/json", bytes.NewReader(payload))
+	slug := ""
+	if fb != nil {
+		slug = fb.ProjectID
+	}
+
+	// Enqueue for subscription-based delivery (with retry + signature at send time).
+	// The legacy single webhook_url channel has been removed (app.go:1668); all
+	// outbound webhooks now go through HMAC-signed subscription deliveries.
+	if eerr := a.DB.EnqueueWebhook(event, string(payload), slug); eerr != nil {
+		log.Printf("[WEBHOOK] Enqueue failed for %s: %v", event, eerr)
+	}
+}
+
+// ProcessWebhookOutbox delivers due webhook outbox rows with HMAC signing and exponential backoff.
+func (a *App) ProcessWebhookOutbox() {
+	batch, err := a.DB.GetDueOutbox(time.Now().Unix(), 50)
 	if err != nil {
-		log.Printf("[WEBHOOK] Failed to send %s event to %s: %v", event, platform, err)
+		log.Printf("[WEBHOOK] outbox query failed: %v", err)
+		return
+	}
+	for _, o := range batch {
+		a.deliverWebhook(o)
+	}
+}
+
+func (a *App) deliverWebhook(o database.WebhookOutbox) {
+	req, err := http.NewRequest(http.MethodPost, o.URL, bytes.NewReader([]byte(o.Payload)))
+	if err != nil {
+		a.DB.MarkOutboxFailure(o.ID, err.Error(), o.Attempts+1, time.Now().Unix()+webhookBackoff(o.Attempts), 8)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if o.Secret != "" {
+		mac := hmac.New(sha256.New, []byte(o.Secret))
+		mac.Write([]byte(o.Payload))
+		req.Header.Set("X-FeedShit-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		a.DB.MarkOutboxFailure(o.ID, err.Error(), o.Attempts+1, time.Now().Unix()+webhookBackoff(o.Attempts), 8)
 		return
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode >= 300 {
-		log.Printf("[WEBHOOK] %s event to %s returned status %d", event, platform, resp.StatusCode)
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		a.DB.MarkOutboxSuccess(o.ID)
+		log.Printf("[WEBHOOK] delivered outbox #%d to %s", o.ID, o.URL)
 	} else {
-		log.Printf("[WEBHOOK] %s event sent via %s for feedback #%v", event, platform, data["id"])
+		a.DB.MarkOutboxFailure(o.ID, fmt.Sprintf("status %d: %s", resp.StatusCode, string(body)), o.Attempts+1, time.Now().Unix()+webhookBackoff(o.Attempts), 8)
 	}
+}
+
+// webhookBackoff returns the retry delay (seconds) for a given attempt count, capped at 1h.
+func webhookBackoff(attempts int) int64 {
+	d := 30 * (1 << uint(attempts))
+	if d > 3600 {
+		d = 3600
+	}
+	return int64(d)
+}
+
+// ========== M6 Webhook Subscriptions (admin CRUD) ==========
+
+func maskSecret(s string) string {
+	if len(s) <= 4 {
+		return "****"
+	}
+	return s[:2] + "****" + s[len(s)-2:]
+}
+
+func (a *App) AdminListWebhookSubscriptions(c *gin.Context) {
+	subs, err := a.DB.ListWebhookSubscriptions()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+	if subs == nil {
+		subs = []database.WebhookSubscription{}
+	}
+	for i := range subs {
+		subs[i].Secret = maskSecret(subs[i].Secret)
+	}
+	c.JSON(http.StatusOK, gin.H{"subscriptions": subs})
+}
+
+func (a *App) AdminCreateWebhookSubscription(c *gin.Context) {
+	var req struct {
+		ProjectSlug string `json:"project_slug"`
+		URL         string `json:"url"`
+		Secret      string `json:"secret"`
+		Events      string `json:"events"`
+		IsActive    bool   `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	if req.URL == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "URL 不能为空"})
+		return
+	}
+	if req.Events == "" {
+		req.Events = "*"
+	}
+	id, err := a.DB.CreateWebhookSubscription(req.ProjectSlug, req.URL, req.Secret, req.Events, req.IsActive)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
+		return
+	}
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("create_webhook_sub", fmt.Sprintf("创建 Webhook 订阅 #%d", id), fmt.Sprintf("%v", user), clientIP)
+	c.JSON(http.StatusCreated, gin.H{"id": id, "message": "已创建"})
+}
+
+func (a *App) AdminUpdateWebhookSubscription(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	var req struct {
+		URL      string `json:"url"`
+		Secret   string `json:"secret"`
+		Events   string `json:"events"`
+		IsActive *bool  `json:"is_active"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	// Preserve existing secret when not provided
+	if req.Secret == "" {
+		subs, _ := a.DB.ListWebhookSubscriptions()
+		for _, s := range subs {
+			if s.ID == id {
+				req.Secret = s.Secret
+				break
+			}
+		}
+	}
+	if err := a.DB.UpdateWebhookSubscription(id, req.URL, req.Secret, req.Events, req.IsActive); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("update_webhook_sub", fmt.Sprintf("更新 Webhook 订阅 #%d", id), fmt.Sprintf("%v", user), clientIP)
+	c.JSON(http.StatusOK, gin.H{"message": "已更新"})
+}
+
+func (a *App) AdminDeleteWebhookSubscription(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	if err := a.DB.DeleteWebhookSubscription(id); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
+		return
+	}
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("delete_webhook_sub", fmt.Sprintf("删除 Webhook 订阅 #%d", id), fmt.Sprintf("%v", user), clientIP)
+	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
 // eventTitle returns a human-readable title for a webhook event.
@@ -1823,6 +2093,17 @@ func (a *App) AdminListFeedbackNotes(c *gin.Context) {
 		return
 	}
 
+	// Authorization: only users with read access to the feedback may list its notes.
+	fb, deny := a.checkFeedbackReadPerm(c, id)
+	if fb == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "反馈不存在"})
+		return
+	}
+	if deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
+		return
+	}
+
 	notes, err := a.DB.ListFeedbackNotes(id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
@@ -1838,6 +2119,27 @@ func (a *App) AdminDeleteFeedbackNote(c *gin.Context) {
 	noteID, err := strconv.ParseInt(c.Param("noteId"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	// Resolve the note to find its parent feedback, then enforce write permission.
+	note, err := a.DB.GetFeedbackNote(noteID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+	if note == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "备注不存在"})
+		return
+	}
+
+	fb, deny := a.checkFeedbackWritePerm(c, note.FeedbackID)
+	if fb == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "反馈不存在"})
+		return
+	}
+	if deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
 		return
 	}
 
@@ -2083,15 +2385,26 @@ func (a *App) PublicTrackFeedback(c *gin.Context) {
 		publicNotes = []database.FeedbackNote{}
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"id":          fb.ID,
-		"project_id":  fb.ProjectID,
-		"title":       fb.Title,
-		"description": fb.Description,
-		"status":      fb.Status,
-		"created_at":  fb.CreatedAt.Format("2006-01-02 15:04:05"),
-		"notes":       publicNotes,
-	})
+	rating, _ := a.DB.GetRating(fb.ID)
+	resp := gin.H{
+		"id":           fb.ID,
+		"project_id":   fb.ProjectID,
+		"title":        fb.Title,
+		"description":  fb.Description,
+		"status":       fb.Status,
+		"category":     fb.Category,
+		"priority":     fb.Priority,
+		"votes":        fb.Votes,
+		"created_at":   fb.CreatedAt.Format("2006-01-02 15:04:05"),
+		"allow_rating": fb.Status == "resolved",
+		"notes":        publicNotes,
+	}
+	if rating != nil {
+		resp["rating"] = rating.Score
+		resp["rating_comment"] = rating.Comment
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // PublicSubmitReply allows a submitter to add a follow-up reply to their feedback.
@@ -2134,6 +2447,48 @@ func (a *App) PublicSubmitReply(c *gin.Context) {
 	})
 }
 
+// PublicSubmitRating lets a submitter rate a resolved feedback via their tracking token (M2 CSAT).
+func (a *App) PublicSubmitRating(c *gin.Context) {
+	token := strings.TrimSpace(c.Query("token"))
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少跟踪令牌"})
+		return
+	}
+	fb, err := a.DB.GetFeedbackByTrackingToken(token)
+	if err != nil || fb == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "未找到对应的反馈记录"})
+		return
+	}
+	if fb.Status != "resolved" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅已解决的反馈可评分"})
+		return
+	}
+
+	var req struct {
+		Score   int    `json:"score"`
+		Comment string `json:"comment"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	if req.Score < 1 || req.Score > 5 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "评分必须为 1-5"})
+		return
+	}
+
+	if err := a.DB.UpsertRating(fb.ID, req.Score, strings.TrimSpace(req.Comment)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存评分失败"})
+		return
+	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("csat_rating", fmt.Sprintf("反馈 #%d 评分 %d", fb.ID, req.Score), fmt.Sprintf("%v", user), clientIP)
+
+	c.JSON(http.StatusOK, gin.H{"message": "评分已提交", "score": req.Score})
+}
+
 // ========== Current User ==========
 
 // AdminGetCurrentUser returns the currently logged-in user's info.
@@ -2167,6 +2522,11 @@ func (a *App) AdminCreateAdmin(c *gin.Context) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 		Role     string `json:"role"`
+		Grants   []struct {
+			ProjectSlug string `json:"project_slug"`
+			CategoryKey string `json:"category_key"`
+			Role        string `json:"role"`
+		} `json:"grants"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -2196,6 +2556,39 @@ func (a *App) AdminCreateAdmin(c *gin.Context) {
 		req.Role = "editor"
 	}
 
+	// Validate initial grants before creating the account (fail fast)
+	var grants []database.MemberGrant
+	if len(req.Grants) > 0 {
+		grantRoles := map[string]bool{"viewer": true, "editor": true, "manager": true}
+		grants = make([]database.MemberGrant, 0, len(req.Grants))
+		for i, g := range req.Grants {
+			if g.ProjectSlug == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("第 %d 条授权缺少 project_slug", i+1)})
+				return
+			}
+			if g.CategoryKey == "" {
+				g.CategoryKey = "*"
+			}
+			if !grantRoles[g.Role] {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("第 %d 条授权角色无效: %s", i+1, g.Role)})
+				return
+			}
+			proj, perr := a.DB.GetProjectBySlug(g.ProjectSlug)
+			if perr != nil || proj == nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("项目不存在: %s", g.ProjectSlug)})
+				return
+			}
+			if g.CategoryKey != "*" {
+				cat, cerr := a.DB.GetCategoryByKey(g.ProjectSlug, g.CategoryKey)
+				if cerr != nil || cat == nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("第 %d 条授权分类不存在: %s", i+1, g.CategoryKey)})
+					return
+				}
+			}
+			grants = append(grants, database.MemberGrant{ProjectSlug: g.ProjectSlug, CategoryKey: g.CategoryKey, Role: g.Role})
+		}
+	}
+
 	// Check if username already exists
 	existing, _ := a.DB.GetAdminByUsername(req.Username)
 	if existing != nil {
@@ -2215,9 +2608,16 @@ func (a *App) AdminCreateAdmin(c *gin.Context) {
 		return
 	}
 
+	// Persist initial grants so the new admin isn't empty-handed
+	if len(grants) > 0 {
+		if gerr := a.DB.SetMemberGrants(id, grants); gerr != nil {
+			log.Printf("[ADMIN] failed to set initial grants for %s: %v", req.Username, gerr)
+		}
+	}
+
 	currentUser, _ := c.Get("admin_user")
 	clientIP := middleware.GetClientIP(c)
-	a.DB.InsertAuditLog("create_admin", fmt.Sprintf("创建管理员 %s (角色: %s)", req.Username, req.Role), fmt.Sprintf("%v", currentUser), clientIP)
+	a.DB.InsertAuditLog("create_admin", fmt.Sprintf("创建管理员 %s (角色: %s, 授权 %d 条)", req.Username, req.Role, len(grants)), fmt.Sprintf("%v", currentUser), clientIP)
 
 	c.JSON(http.StatusCreated, gin.H{"message": "管理员已创建", "id": id})
 }
@@ -2570,8 +2970,10 @@ func (a *App) AdminListAPITokens(c *gin.Context) {
 // AdminCreateAPIToken creates a new API token.
 func (a *App) AdminCreateAPIToken(c *gin.Context) {
 	var req struct {
-		Name      string `json:"name"`
-		ProjectID string `json:"project_id"`
+		Name        string `json:"name"`
+		ProjectID   string `json:"project_id"`
+		RateLimit   int    `json:"rate_limit"`
+		QuotaPerDay int    `json:"quota_per_day"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -2590,7 +2992,15 @@ func (a *App) AdminCreateAPIToken(c *gin.Context) {
 	}
 	tokenStr := "fs_" + hex.EncodeToString(tokenBytes)
 
-	id, err := a.DB.CreateAPIToken(tokenStr, req.Name, req.ProjectID)
+	// Apply the configured default rate limit when the caller does not specify
+	// one (or specifies a non-positive value). A positive rate limit always
+	// gates the middleware; 0 means unlimited.
+	rateLimit := req.RateLimit
+	if rateLimit <= 0 {
+		rateLimit = a.Cfg.APITokenDefaultRateLimit
+	}
+
+	id, err := a.DB.CreateAPIToken(tokenStr, req.Name, req.ProjectID, rateLimit, req.QuotaPerDay)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
 		return
@@ -2598,14 +3008,16 @@ func (a *App) AdminCreateAPIToken(c *gin.Context) {
 
 	user, _ := c.Get("admin_user")
 	clientIP := middleware.GetClientIP(c)
-	a.DB.InsertAuditLog("create_api_token", fmt.Sprintf("创建 API Token: %s", req.Name), fmt.Sprintf("%v", user), clientIP)
+	a.DB.InsertAuditLog("create_api_token", fmt.Sprintf("创建 API Token: %s (限速 %d/时, 配额 %d/日)", req.Name, rateLimit, req.QuotaPerDay), fmt.Sprintf("%v", user), clientIP)
 
 	c.JSON(http.StatusCreated, gin.H{
-		"id":         id,
-		"token":      tokenStr,
-		"name":       req.Name,
-		"project_id": req.ProjectID,
-		"is_active":  true,
+		"id":           id,
+		"token":        tokenStr,
+		"name":         req.Name,
+		"project_id":   req.ProjectID,
+		"rate_limit":   rateLimit,
+		"quota_per_day": req.QuotaPerDay,
+		"is_active":    true,
 	})
 }
 
@@ -2618,16 +3030,18 @@ func (a *App) AdminUpdateAPIToken(c *gin.Context) {
 	}
 
 	var req struct {
-		Name      string `json:"name"`
-		ProjectID string `json:"project_id"`
-		IsActive  *bool  `json:"is_active"`
+		Name        string `json:"name"`
+		ProjectID   string `json:"project_id"`
+		IsActive    *bool  `json:"is_active"`
+		RateLimit   *int   `json:"rate_limit"`
+		QuotaPerDay *int   `json:"quota_per_day"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
 		return
 	}
 
-	if err := a.DB.UpdateAPIToken(id, req.Name, req.ProjectID, req.IsActive); err != nil {
+	if err := a.DB.UpdateAPIToken(id, req.Name, req.ProjectID, req.IsActive, req.RateLimit, req.QuotaPerDay); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
 		return
 	}
@@ -2659,6 +3073,81 @@ func (a *App) AdminDeleteAPIToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
+// PublicVoteFeedback records an upvote on a feedback from any visitor (M4).
+func (a *App) PublicVoteFeedback(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	var voterKey string
+	if t := strings.TrimSpace(c.Query("token")); t != "" {
+		voterKey = "tok:" + t
+	} else {
+		ua := c.GetHeader("User-Agent")
+		h := sha256.Sum256([]byte(middleware.GetClientIP(c) + "|" + ua))
+		voterKey = "anon:" + hex.EncodeToString(h[:])
+	}
+	already, err := a.DB.InsertVote(id, voterKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "投票失败"})
+		return
+	}
+	votes, _ := a.DB.CountVotes(id)
+	c.JSON(http.StatusOK, gin.H{"voted": !already, "votes": votes})
+}
+
+// PublicRoadmap returns public roadmap items for a project (M3).
+func (a *App) PublicRoadmap(c *gin.Context) {
+	slug := strings.TrimSpace(c.Query("slug"))
+	category := strings.TrimSpace(c.Query("category"))
+	items, err := a.DB.GetPublicRoadmap(slug, category)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+	if items == nil {
+		items = []database.RoadmapItem{}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+// AdminSetRoadmap toggles public visibility and/or board status of a feedback (M3).
+func (a *App) AdminSetRoadmap(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	if _, deny := a.checkFeedbackWritePerm(c, id); deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
+		return
+	}
+	var req struct {
+		Public bool   `json:"public"`
+		Status string `json:"status"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	if req.Status != "" {
+		valid := map[string]bool{"planning": true, "in_progress": true, "released": true}
+		if !valid[req.Status] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的看板状态"})
+			return
+		}
+	}
+	if err := a.DB.SetRoadmap(id, req.Public, req.Status); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("set_roadmap", fmt.Sprintf("反馈 #%d 看板: public=%v status=%s", id, req.Public, req.Status), fmt.Sprintf("%v", user), clientIP)
+	c.JSON(http.StatusOK, gin.H{"message": "已更新"})
+}
+
 // ========== API Token Auth Middleware ==========
 
 // APITokenAuthMiddleware authenticates requests using Bearer token from API tokens.
@@ -2675,6 +3164,29 @@ func (a *App) APITokenAuthMiddleware() gin.HandlerFunc {
 		if err != nil || token == nil {
 			c.Next()
 			return
+		}
+		// Per-hour rate limit (in-memory, single-instance)
+		if token.RateLimit > 0 {
+			a.tokenMu.Lock()
+			hour := time.Now().Format("2006-01-02T15")
+			key := tokenStr + "#" + hour
+			if a.tokenHourHits[key] >= token.RateLimit {
+				a.tokenMu.Unlock()
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "API Token 每小时请求次数超限", "retry_after": 3600})
+				return
+			}
+			a.tokenHourHits[key]++
+			a.tokenMu.Unlock()
+		}
+		// Daily quota
+		if token.QuotaPerDay > 0 {
+			ok, qerr := a.DB.RecordTokenUsage(tokenStr, token.QuotaPerDay)
+			if qerr != nil {
+				log.Printf("[API] quota check failed: %v", qerr)
+			} else if !ok {
+				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "API Token 每日配额已用尽"})
+				return
+			}
 		}
 		// Valid API token — set project context and skip further auth
 		c.Set("api_token_project", token.ProjectID)

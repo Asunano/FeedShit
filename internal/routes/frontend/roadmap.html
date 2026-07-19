@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>产品路线图 · FeedShit</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f6f8; color: #222; margin: 0; padding: 24px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  h1 { font-size: 1.4rem; margin: 0; }
+  .sub { color: #888; font-size: .85rem; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  select { padding: 6px 10px; border: 1px solid #d0d0d0; border-radius: 6px; font-size: .85rem; background: #fff; }
+  .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .col { background: #fff; border: 1px solid #e6e6e6; border-radius: 10px; padding: 12px; min-height: 200px; }
+  .col h2 { font-size: .95rem; margin: 0 0 10px; padding-bottom: 8px; border-bottom: 2px solid #eee; }
+  .col.planning h2 { border-color: #f0a020; }
+  .col.in_progress h2 { border-color: #3b82f6; }
+  .col.released h2 { border-color: #22c55e; }
+  .card { background: #fafbfc; border: 1px solid #ececec; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+  .card .title { font-weight: 600; font-size: .9rem; margin-bottom: 6px; }
+  .card .meta { display: flex; align-items: center; justify-content: space-between; font-size: .75rem; color: #888; }
+  .cat { display: inline-block; background: #eef; color: #446; border-radius: 10px; padding: 1px 8px; font-size: .7rem; }
+  .vote { border: 1px solid #d0d0d0; background: #fff; border-radius: 14px; padding: 2px 10px; cursor: pointer; font-size: .75rem; }
+  .vote:hover { border-color: #3b82f6; color: #3b82f6; }
+  .vote.voted { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+  .empty { color: #bbb; font-size: .8rem; text-align: center; padding: 20px 0; }
+  .status { color:#999;font-size:.8rem;margin-top:4px }
+  a.home { color: #3b82f6; text-decoration: none; font-size: .85rem; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>产品路线图</h1>
+    <span class="sub" id="projName"></span>
+  </header>
+  <div class="toolbar">
+    <select id="catFilter"><option value="">全部分类</option></select>
+    <a class="home" href="/">← 返回首页</a>
+  </div>
+  <div class="board">
+    <div class="col planning"><h2>📋 规划中</h2><div id="col-planning"></div></div>
+    <div class="col in_progress"><h2>🚧 进行中</h2><div id="col-in_progress"></div></div>
+    <div class="col released"><h2>🚀 已发布</h2><div id="col-released"></div></div>
+  </div>
+</div>
+<script>
+  function slugFromPath() {
+    var m = location.pathname.match(/\/p\/([^/]+)\/roadmap/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+  var slug = slugFromPath();
+  var voted = {};
+
+  function esc(s) { return (s==null?'':String(s)).replace(/[&<>"]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  function vote(id, btn) {
+    if (voted[id]) return;
+    var url = '/api/v1/feedback/' + id + '/vote';
+    if (location.hash) url += '?token=' + encodeURIComponent(location.hash.slice(1));
+    fetch(url, { method: 'POST' }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.votes != null) {
+        voted[id] = true;
+        btn.classList.add('voted');
+        btn.textContent = '👍 ' + d.votes;
+      }
+    }).catch(function(){});
+  }
+
+  function card(it) {
+    var cls = it.roadmap_status || 'planning';
+    var div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML =
+      '<div class="title">' + esc(it.title) + '</div>' +
+      '<div class="meta"><span class="cat">' + esc(it.category || '未分类') + '</span>' +
+      '<button class="vote" onclick="vote(' + it.id + ', this)">👍 ' + (it.votes || 0) + '</button></div>';
+    return div;
+  }
+
+  function render(items) {
+    ['planning','in_progress','released'].forEach(function(st){
+      document.getElementById('col-' + st).innerHTML = '';
+    });
+    var counts = {planning:0, in_progress:0, released:0};
+    items.forEach(function(it){
+      var st = it.roadmap_status || 'planning';
+      if (!counts.hasOwnProperty(st)) st = 'planning';
+      document.getElementById('col-' + st).appendChild(card(it));
+      counts[st]++;
+    });
+    ['planning','in_progress','released'].forEach(function(st){
+      if (counts[st] === 0) {
+        var e = document.createElement('div');
+        e.className = 'empty'; e.textContent = '暂无';
+        document.getElementById('col-' + st).appendChild(e);
+      }
+    });
+  }
+
+  function load() {
+    var cat = document.getElementById('catFilter').value;
+    var url = '/api/v1/roadmap?slug=' + encodeURIComponent(slug) + (cat ? '&category=' + encodeURIComponent(cat) : '');
+    fetch(url).then(function(r){ return r.json(); }).then(function(d){
+      var items = d.items || [];
+      render(items);
+      // populate category filter
+      var cats = {};
+      items.forEach(function(it){ if (it.category) cats[it.category] = true; });
+      var sel = document.getElementById('catFilter');
+      var cur = sel.value;
+      sel.innerHTML = '<option value="">全部分类</option>';
+      Object.keys(cats).forEach(function(c){
+        var o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o);
+      });
+      sel.value = cur;
+    }).catch(function(){ render([]); });
+  }
+
+  document.getElementById('catFilter').addEventListener('change', load);
+  load();
+</script>
+</body>
+</html>

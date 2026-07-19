@@ -90,6 +90,16 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
         提交于 <span id="fbDate"></span>
       </div>
       <div class="fb-desc" id="fbDesc"></div>
+      <div class="fb-vote" id="fbVote" style="margin-top:10px;display:none">
+        <button class="vote-btn" id="voteBtn" onclick="voteFeedback()">👍 有用 (<span id="voteCount">0</span>)</button>
+      </div>
+      <div class="fb-rating" id="fbRating" style="margin-top:12px;display:none">
+        <div style="font-size:.8rem;color:#666;margin-bottom:4px">为本次服务评分：</div>
+        <div id="ratingStars" style="font-size:1.4rem;cursor:pointer"></div>
+        <textarea id="ratingComment" placeholder="说点什么（选填）..." style="width:100%;margin-top:6px;padding:6px;border:1px solid #d0d0d0;border-radius:6px;font-size:.85rem"></textarea>
+        <button class="btn btn-sm" id="ratingBtn" onclick="submitRating()" style="margin-top:6px">提交评分</button>
+        <span id="ratingDone" style="color:#22c55e;font-size:.8rem;margin-left:8px"></span>
+      </div>
     </div>
 
     <div class="card">
@@ -115,6 +125,8 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 (function(){
   var statusLabels = {pending:'待处理',processing:'处理中',resolved:'已解决',closed:'已关闭'};
   var currentToken = '';
+  var currentId = 0;
+  var ratingScore = 0;
 
   // Check URL hash for token
   function initFromHash() {
@@ -167,6 +179,27 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 
     var desc = data.description || '（无详细描述）';
     document.getElementById('fbDesc').textContent = desc;
+    currentId = data.id;
+
+    // Vote display
+    var voteBox = document.getElementById('fbVote');
+    if (data.votes != null) {
+      voteBox.style.display = 'block';
+      document.getElementById('voteCount').textContent = data.votes;
+    } else {
+      voteBox.style.display = 'none';
+    }
+
+    // Rating (CSAT) — only when resolved
+    var ratingBox = document.getElementById('fbRating');
+    if (data.allow_rating) {
+      ratingBox.style.display = 'block';
+      renderStars();
+      document.getElementById('ratingComment').value = '';
+      document.getElementById('ratingDone').textContent = data.rating ? ('您已评分：' + data.rating + ' 星') : '';
+    } else {
+      ratingBox.style.display = 'none';
+    }
 
     // Render notes
     var notesList = document.getElementById('notesList');
@@ -229,6 +262,53 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
       .finally(function(){
         btn.disabled = false;
       });
+  };
+
+  function renderStars() {
+    var box = document.getElementById('ratingStars');
+    box.innerHTML = '';
+    for (var i = 1; i <= 5; i++) {
+      (function(n){
+        var s = document.createElement('span');
+        s.textContent = n <= ratingScore ? '★' : '☆';
+        s.style.color = n <= ratingScore ? '#f5a623' : '#ccc';
+        s.onclick = function(){ ratingScore = n; renderStars(); };
+        box.appendChild(s);
+      })(i);
+    }
+  }
+
+  window.submitRating = function() {
+    if (!ratingScore) { document.getElementById('ratingDone').textContent = '请先选择星级'; return; }
+    var btn = document.getElementById('ratingBtn');
+    btn.disabled = true;
+    fetch('/api/v1/track/' + encodeURIComponent(currentToken) + '/rating', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ score: ratingScore, comment: document.getElementById('ratingComment').value.trim() })
+    }).then(function(r){ return r.json().then(function(d){ return {status:r.status, data:d}; }); })
+      .then(function(res){
+        if (res.status === 200) {
+          document.getElementById('ratingDone').textContent = '感谢评分：' + ratingScore + ' 星';
+        } else {
+          document.getElementById('ratingDone').textContent = res.data.error || '提交失败';
+        }
+      }).catch(function(){ document.getElementById('ratingDone').textContent = '网络错误'; })
+        .finally(function(){ btn.disabled = false; });
+  };
+
+  window.voteFeedback = function() {
+    var btn = document.getElementById('voteBtn');
+    btn.disabled = true;
+    fetch('/api/v1/feedback/' + currentId + '/vote?token=' + encodeURIComponent(currentToken), { method: 'POST' })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if (d.votes != null) {
+          document.getElementById('voteCount').textContent = d.votes;
+          if (d.voted) btn.textContent = '👍 已投票 (' + d.votes + ')';
+        }
+      }).catch(function(){})
+      .finally(function(){ btn.disabled = false; });
   };
 
   function showLookupStatus(type, msg) {

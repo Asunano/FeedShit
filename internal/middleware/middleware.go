@@ -193,9 +193,9 @@ func CSRFMiddleware(sm *SessionManager) gin.HandlerFunc {
 }
 
 // SetCSRFCookie sets a non-HttpOnly CSRF cookie after successful login.
-func SetCSRFCookie(c *gin.Context, csrfToken string) {
+func SetCSRFCookie(c *gin.Context, csrfToken string, secure bool) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("csrf_token", csrfToken, 86400, "/", "", false, false)
+	c.SetCookie("csrf_token", csrfToken, 86400, "/", "", secure, false)
 }
 
 // ========== PoW Nonce Replay Protection ==========
@@ -463,18 +463,18 @@ func GetClientIP(c *gin.Context) string {
 	// "auto" — try all known CDN/proxy headers in priority order
 	// "cloudflare" — CF-Connecting-IP only
 	// "generic" — X-Forwarded-For / X-Real-Ip / Forwarded
-	if cdnProvider == "none" {
+	if getCDNProvider() == "none" {
 		return remoteIP
 	}
 
 	// Only read CDN/proxy headers when trusted proxies are explicitly configured
 	// AND the direct connection is from a trusted proxy.
-	if len(trustedProxies) == 0 {
+	if len(getTrustedProxies()) == 0 {
 		return remoteIP
 	}
 
 	trusted := false
-	for _, tp := range trustedProxies {
+	for _, tp := range getTrustedProxies() {
 		if tp == remoteIP || tp == "*" {
 			trusted = true
 			break
@@ -484,7 +484,7 @@ func GetClientIP(c *gin.Context) string {
 		return remoteIP
 	}
 
-	switch cdnProvider {
+	switch getCDNProvider() {
 	case "cloudflare":
 		// Cloudflare always sets CF-Connecting-IP, most trustworthy
 		if cf := c.GetHeader("CF-Connecting-IP"); cf != "" {
@@ -538,20 +538,33 @@ func GetClientIP(c *gin.Context) string {
 	return remoteIP
 }
 
-// trustedProxies is set via SetTrustedProxies from config.
-var trustedProxies []string
+// trustedProxies and cdnProvider are protected by proxyMu to avoid data races
+// between request-time reads (GetClientIP) and config-time writes
+// (SetTrustedProxies / SetCDNProvider). Previously accessed as bare package
+// globals, which trips `go test -race`.
+var (
+	proxyMu        sync.RWMutex
+	trustedProxies []string
+	cdnProvider    = "auto"
+)
 
 // SetTrustedProxies configures which proxy IPs are trusted for reading CDN headers.
 func SetTrustedProxies(proxies []string) {
+	proxyMu.Lock()
+	defer proxyMu.Unlock()
 	trustedProxies = proxies
 }
 
-// cdnProvider controls which headers to read for real client IP.
-// Values: "auto" (default), "cloudflare", "generic", "none"
-var cdnProvider = "auto"
+func getTrustedProxies() []string {
+	proxyMu.RLock()
+	defer proxyMu.RUnlock()
+	return trustedProxies
+}
 
 // SetCDNProvider sets the CDN provider for IP detection.
 func SetCDNProvider(provider string) {
+	proxyMu.Lock()
+	defer proxyMu.Unlock()
 	switch provider {
 	case "none", "cloudflare", "generic", "auto":
 		cdnProvider = provider
@@ -560,9 +573,15 @@ func SetCDNProvider(provider string) {
 	}
 }
 
+func getCDNProvider() string {
+	proxyMu.RLock()
+	defer proxyMu.RUnlock()
+	return cdnProvider
+}
+
 // GetCDNProvider returns the current CDN provider setting.
 func GetCDNProvider() string {
-	return cdnProvider
+	return getCDNProvider()
 }
 
 // FormatSize converts bytes to a human-readable string.

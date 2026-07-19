@@ -285,3 +285,81 @@ func (m *Mailer) SendStatusChangeNotification(fb *database.Feedback, subject, ht
 		log.Printf("[MAIL] Submitter notification sent for feedback #%d to %s", fb.ID, fb.ContactEmail)
 	}
 }
+
+// ========== M2 CSAT (Customer Satisfaction) ==========
+
+// BuildCSATSubject builds the subject for a CSAT rating invitation.
+func BuildCSATSubject(db *database.Database, vars map[string]string) string {
+	tpl := db.GetConfig("email_template_subject")
+	if tpl != "" {
+		return renderTemplate(tpl, vars)
+	}
+	return fmt.Sprintf("[FeedShit] 请为反馈 #%s 的服务评分", vars["id"])
+}
+
+// BuildCSATBody builds the HTML body for a CSAT rating invitation, with a link to the track page.
+func BuildCSATBody(db *database.Database, vars map[string]string) string {
+	tpl := db.GetConfig("email_template_body")
+	if tpl != "" {
+		return renderTemplate(tpl, vars)
+	}
+	safeTitle := html.EscapeString(vars["title"])
+	safeID := html.EscapeString(vars["id"])
+	trackURL := vars["track_url"]
+	return fmt.Sprintf(`<html><body style="font-family:-apple-system,sans-serif;color:#333;max-width:600px;margin:0 auto">
+<h2>您的反馈已处理完毕，请评分</h2>
+<p><strong>编号：</strong>#%s</p>
+<p><strong>标题：</strong>%s</p>
+<p>我们已处理完成您的反馈，点击下方按钮为本次服务打个分：</p>
+<p><a href="%s" style="display:inline-block;padding:10px 20px;background:#e53e3e;color:white;text-decoration:none;border-radius:4px">去评分</a></p>
+<p style="color:#999;font-size:12px;margin-top:24px">此邮件由 FeedShit 自动发送</p>
+</body></html>`, safeID, safeTitle, trackURL)
+}
+
+// SendCSATInvite emails a satisfaction-rating invitation to the feedback submitter.
+func (m *Mailer) SendCSATInvite(fb *database.Feedback, trackURL string) {
+	if fb.ContactEmail == "" {
+		return
+	}
+
+	cfg := getEmailConfig(m.db)
+	host := cfg["smtp_host"]
+	port := cfg["smtp_port"]
+	user := cfg["smtp_user"]
+	pass := cfg["smtp_pass"]
+	from := cfg["smtp_from"]
+
+	if host == "" {
+		log.Printf("[MAIL] SMTP not configured, skipping CSAT invite for feedback #%d", fb.ID)
+		return
+	}
+	if port == "" {
+		port = "587"
+	}
+	if from == "" {
+		from = user
+	}
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		portNum = 587
+	}
+
+	vars := map[string]string{
+		"id":       fmt.Sprintf("%d", fb.ID),
+		"title":    fb.Title,
+		"track_url": trackURL,
+	}
+	subject := BuildCSATSubject(m.db, vars)
+	body := BuildCSATBody(m.db, vars)
+
+	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
+		from, fb.ContactEmail, subject, body)
+
+	addr := fmt.Sprintf("%s:%d", host, portNum)
+	auth := smtp.PlainAuth("", user, pass, host)
+	if err := smtp.SendMail(addr, auth, from, []string{fb.ContactEmail}, []byte(msg)); err != nil {
+		log.Printf("[MAIL] Failed to send CSAT invite for feedback #%d: %v", fb.ID, err)
+	} else {
+		log.Printf("[MAIL] CSAT invite sent for feedback #%d to %s", fb.ID, fb.ContactEmail)
+	}
+}
