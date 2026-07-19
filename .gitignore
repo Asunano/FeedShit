@@ -45,4 +45,6 @@ FEATURE_VERIFICATION.md
 deliverables/
 # QA verbose logs (local only)
 qa_*.log
+# Coverage output
+coverage*.out
 /nul
