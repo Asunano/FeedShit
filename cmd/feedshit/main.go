@@ -107,12 +107,15 @@ func main() {
 		}
 	}()
 
-	// Webhook outbox retry ticker
+	// Webhook outbox retry ticker (locked for multi-instance safety)
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			application.ProcessWebhookOutbox()
+			if token, ok := report.AcquireJobLock(db, "webhook_outbox", 10*time.Second); ok {
+				application.ProcessWebhookOutbox()
+				report.ReleaseJobLock(db, "webhook_outbox", token)
+			}
 		}
 	}()
 

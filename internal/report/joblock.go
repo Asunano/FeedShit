@@ -32,10 +32,10 @@ func AcquireJobLock(db *database.Database, key string, ttl time.Duration) (strin
 	deadline := time.Now().Unix() + int64(ttl.Seconds())
 	now := time.Now().Unix()
 
-	// Step 1: 尝试更新已有锁（过期锁可续约，自己的锁可重入）
+	// Step 1: 尝试更新已有过期锁（允许抢占过期锁）
 	res, err := db.ExecRaw(
-		`UPDATE job_locks SET token = ?, locked_until = ? WHERE key = ? AND (locked_until < ? OR token = ?)`,
-		token, deadline, key, now, token,
+		`UPDATE job_locks SET token = ?, locked_until = ? WHERE key = ? AND locked_until < ?`,
+		token, deadline, key, now,
 	)
 	if err != nil {
 		log.Printf("[JOBLOCK] UPDATE 抢锁失败 key=%s: %v", key, err)

@@ -32,5 +32,12 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test ./...
+      - name: Test (with race detector)
+        run: go test -race -count=1 ./...
+
+      - name: Upload coverage
+        run: go test -coverprofile=coverage.out ./...
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out

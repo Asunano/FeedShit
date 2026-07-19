@@ -3,6 +3,7 @@ package app
 import (
 	"database/sql"
 	"fmt"
+	"html"
 	"net/http"
 	"os"
 	"strconv"
@@ -72,6 +73,11 @@ func (a *App) AdminListFAQs(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
 		return
 	}
+	// Enforce project-level access for non-admin users
+	if err := a.checkFAQProjectAccess(c, slug); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
 	faqs, err := a.DB.ListFAQs(slug)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
@@ -90,6 +96,11 @@ func (a *App) AdminCreateFAQ(c *gin.Context) {
 	proj, projErr := a.DB.GetProjectBySlug(slug)
 	if projErr != nil || proj == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
+		return
+	}
+	// Enforce project-level access for non-admin users
+	if err := a.checkFAQProjectAccess(c, slug); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
 	var req struct {
@@ -116,7 +127,7 @@ func (a *App) AdminCreateFAQ(c *gin.Context) {
 	if req.IsActive != nil {
 		isActive = *req.IsActive
 	}
-	faqID, err := a.DB.CreateFAQ(slug, req.Question, req.Answer, req.SortOrder, isActive)
+	faqID, err := a.DB.CreateFAQ(slug, req.Question, html.EscapeString(req.Answer), req.SortOrder, isActive)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建失败"})
 		return
@@ -134,6 +145,11 @@ func (a *App) AdminUpdateFAQ(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("faqId"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	// Enforce project-level access for non-admin users
+	if err := a.checkFAQProjectAccess(c, slug); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
 	var req struct {
@@ -154,7 +170,7 @@ func (a *App) AdminUpdateFAQ(c *gin.Context) {
 	if req.IsActive != nil {
 		isActive = *req.IsActive
 	}
-	if err := a.DB.UpdateFAQ(id, slug, req.Question, req.Answer, req.SortOrder, isActive); err != nil {
+	if err := a.DB.UpdateFAQ(id, slug, req.Question, html.EscapeString(req.Answer), req.SortOrder, isActive); err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "FAQ 不存在"})
 			return
@@ -177,6 +193,11 @@ func (a *App) AdminDeleteFAQ(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 		return
 	}
+	// Enforce project-level access for non-admin users
+	if err := a.checkFAQProjectAccess(c, slug); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
 	if err := a.DB.DeleteFAQ(id, slug); err != nil {
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusNotFound, gin.H{"error": "FAQ 不存在"})
@@ -189,4 +210,38 @@ func (a *App) AdminDeleteFAQ(c *gin.Context) {
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("delete_faq", "删除 FAQ #"+strconv.FormatInt(id, 10), fmt.Sprintf("%v", user), clientIP)
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
+}
+
+// checkFAQProjectAccess enforces project-level access for non-admin users.
+// Admin users bypass this check. Returns nil if access is granted.
+// If no admin session context is set (e.g. direct handler calls in tests),
+// the check is skipped — route-level middleware (RequireRole) is the primary gate.
+func (a *App) checkFAQProjectAccess(c *gin.Context, slug string) error {
+	role, exists := c.Get("admin_role")
+	if !exists {
+		return nil // no session context; route middleware handles auth
+	}
+	roleStr, _ := role.(string)
+	if roleStr == "admin" {
+		return nil
+	}
+	username, _ := c.Get("admin_user")
+	usernameStr, _ := username.(string)
+	if usernameStr == "" {
+		return nil
+	}
+	admin, _ := a.DB.GetAdminByUsername(usernameStr)
+	if admin == nil {
+		return fmt.Errorf("用户不存在")
+	}
+	plan, _ := a.DB.GetAdminAccessPlan(admin.ID)
+	if plan == nil || len(plan) == 0 {
+		return fmt.Errorf("无权访问该项目")
+	}
+	for _, pa := range plan {
+		if pa.Slug == slug {
+			return nil
+		}
+	}
+	return fmt.Errorf("无权访问该项目")
 }

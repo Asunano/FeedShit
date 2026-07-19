@@ -182,6 +182,8 @@ func EncryptFile(src, dst string) error {
 
 // DecryptFile decrypts a file produced by EncryptFile using the master key.
 // Format: [12 bytes nonce][GCM ciphertext + 16 byte auth tag].
+// NOTE: This function is not called by the app at runtime — it exists as a utility
+// for manual decryption by operators with access to the master key.
 func DecryptFile(src, dst string) error {
 	if len(masterKey) != 32 {
 		return fmt.Errorf("master key not initialized")
@@ -207,7 +209,7 @@ func DecryptFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("decrypt (wrong key or tampered data): %w", err)
 	}
-	if err := os.WriteFile(dst, plaintext, 0600); err != nil {
+	if err := os.WriteFile(dst, plaintext, 0400); err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
 	return nil

@@ -15,6 +15,30 @@ import (
 	"feedshit/internal/security"
 )
 
+// Feedback status constants — used across database, app, and email layers.
+const (
+	StatusPending   = "pending"
+	StatusProcessing = "processing"
+	StatusResolved  = "resolved"
+	StatusClosed    = "closed"
+)
+
+// StatusLabels maps internal status keys to human-readable Chinese labels.
+var StatusLabels = map[string]string{
+	StatusPending:   "待处理",
+	StatusProcessing: "处理中",
+	StatusResolved:  "已解决",
+	StatusClosed:    "已关闭",
+}
+
+// ValidStatuses is the set of all accepted feedback status values.
+var ValidStatuses = map[string]bool{
+	StatusPending:   true,
+	StatusProcessing: true,
+	StatusResolved:  true,
+	StatusClosed:    true,
+}
+
 // Feedback represents a single feedback submission.
 type Feedback struct {
 	ID            int64     `json:"id"`
@@ -602,9 +626,18 @@ func buildAccessPlanWhere(plan []ProjectAccess) (string, []interface{}) {
 }
 
 // ListFeedbacks returns feedbacks filtered by project_id (empty = all), paginated.
+// limit is automatically clamped to [1, 500] to prevent uncontrolled queries.
 func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess, limit, offset int) ([]Feedback, int, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+
+	// Safety clamp: limit must be in [1, 500]
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
 
 	var total int
 	var rows *sql.Rows
@@ -687,9 +720,18 @@ func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess
 }
 
 // SearchFeedbacks supports keyword search across multiple fields, status/priority/assignee filters, and project filter.
+// limit is automatically clamped to [1, 500] to prevent uncontrolled queries.
 func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAccess, keyword, status, priority, assignee, category string, limit, offset int) ([]Feedback, int, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+
+	// Safety clamp: limit must be in [1, 500]
+	if limit <= 0 || limit > 500 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
 
 	where := "WHERE 1=1"
 	args := []interface{}{}
@@ -862,6 +904,36 @@ func (d *Database) GetStats() (total int, projects int, today int, err error) {
 		return
 	}
 	err = d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks WHERE date(created_at, 'unixepoch') = date('now')`).Scan(&today)
+	return
+}
+
+// GetStatsForProjects returns stats scoped to a list of project slugs.
+// Used for non-admin users with limited member_grants.
+func (d *Database) GetStatsForProjects(projectIDs []string) (total int, projects int, today int, err error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	if len(projectIDs) == 0 {
+		return 0, 0, 0, nil
+	}
+
+	placeholders := make([]string, len(projectIDs))
+	args := make([]interface{}, len(projectIDs))
+	for i, pid := range projectIDs {
+		placeholders[i] = "?"
+		args[i] = pid
+	}
+	inClause := "project_id IN (" + strings.Join(placeholders, ",") + ")"
+
+	err = d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks WHERE `+inClause, args...).Scan(&total)
+	if err != nil {
+		return
+	}
+	err = d.db.QueryRow(`SELECT COUNT(DISTINCT project_id) FROM feedbacks WHERE `+inClause, args...).Scan(&projects)
+	if err != nil {
+		return
+	}
+	err = d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks WHERE `+inClause+` AND date(created_at, 'unixepoch') = date('now')`, args...).Scan(&today)
 	return
 }
 
@@ -1187,6 +1259,68 @@ func (d *Database) GetProjectStats() ([]map[string]interface{}, error) {
 			"count":        count,
 			"latest_at":    latest,
 		})
+	}
+	return result, nil
+}
+
+// GetProjectStatsForProjects returns per-project stats scoped to a list of project slugs.
+func (d *Database) GetProjectStatsForProjects(projectIDs []string) ([]map[string]interface{}, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	if len(projectIDs) == 0 {
+		return []map[string]interface{}{}, nil
+	}
+
+	placeholders := make([]string, len(projectIDs))
+	args := make([]interface{}, len(projectIDs))
+	for i, pid := range projectIDs {
+		placeholders[i] = "?"
+		args[i] = pid
+	}
+	inClause := "f.project_id IN (" + strings.Join(placeholders, ",") + ")"
+
+	rows, err := d.db.Query(`
+		SELECT f.project_id, COUNT(*) as cnt,
+			   COALESCE(MAX(f.created_at), 0) as latest,
+			   COALESCE(p.name, '') as project_name
+		FROM feedbacks f
+		LEFT JOIN projects p ON p.slug = f.project_id
+		WHERE `+inClause+`
+		GROUP BY f.project_id
+		ORDER BY cnt DESC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		var projectID string
+		var projectName sql.NullString
+		var count int
+		var latestAt int64
+		if err := rows.Scan(&projectID, &count, &latestAt, &projectName); err != nil {
+			return nil, err
+		}
+		name := ""
+		if projectName.Valid {
+			name = projectName.String
+		}
+		latest := ""
+		if latestAt > 0 {
+			latest = time.Unix(latestAt, 0).Format("2006-01-02 15:04:05")
+		}
+		result = append(result, map[string]interface{}{
+			"project_id":   projectID,
+			"project_name": name,
+			"count":        count,
+			"latest_at":    latest,
+		})
+	}
+	if result == nil {
+		result = []map[string]interface{}{}
 	}
 	return result, nil
 }

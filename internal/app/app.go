@@ -310,7 +310,7 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 		CustomData:    customData,
 		FilePaths:     string(filePathsJSON),
 		ClientIP:      clientIP,
-		Status:        "pending",
+		Status:        database.StatusPending,
 		ContactName:   contactName,
 		ContactEmail:  contactEmail,
 		TrackingToken: trackingToken,
@@ -576,7 +576,8 @@ func (a *App) AdminGetCSRFToken(c *gin.Context) {
 }
 
 func (a *App) AdminStats(c *gin.Context) {
-	total, projects, today, err := a.DB.GetStats()
+	// Apply member_grants restrictions for non-admin roles
+	total, projects, today, err := a.getScopedStats(c)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取统计失败"})
 		return
@@ -592,6 +593,49 @@ func (a *App) AdminStats(c *gin.Context) {
 		"csat_avg":        csatAvg,
 		"csat_total":      csatTotal,
 	})
+}
+
+// getScopedStats returns stats scoped to the admin's member_grants.
+func (a *App) getScopedStats(c *gin.Context) (total, projects, today int, err error) {
+	role, _ := c.Get("admin_role")
+	roleStr, _ := role.(string)
+	if roleStr == "admin" {
+		return a.DB.GetStats()
+	}
+	// Non-admin: filter by member_grants
+	projectIDs := a.getAdminProjectIDs(c)
+	if len(projectIDs) == 0 {
+		return 0, 0, 0, nil
+	}
+	return a.DB.GetStatsForProjects(projectIDs)
+}
+
+// getAdminProjectIDs returns the list of project slugs the current admin has access to.
+// Returns nil for admin users (no restriction).
+func (a *App) getAdminProjectIDs(c *gin.Context) []string {
+	role, _ := c.Get("admin_role")
+	roleStr, _ := role.(string)
+	if roleStr == "admin" {
+		return nil
+	}
+	username, _ := c.Get("admin_user")
+	usernameStr, _ := username.(string)
+	if usernameStr == "" {
+		return nil
+	}
+	admin, _ := a.DB.GetAdminByUsername(usernameStr)
+	if admin == nil {
+		return nil
+	}
+	plan, _ := a.DB.GetAdminAccessPlan(admin.ID)
+	if plan == nil || len(plan) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(plan))
+	for _, pa := range plan {
+		ids = append(ids, pa.Slug)
+	}
+	return ids
 }
 
 func (a *App) AdminListFeedbacks(c *gin.Context) {
@@ -752,7 +796,7 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 		return
 	}
 
-	validStatuses := map[string]bool{"pending": true, "processing": true, "resolved": true, "closed": true}
+	validStatuses := database.ValidStatuses
 	if req.Status != "" && !validStatuses[req.Status] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的状态值"})
 		return
@@ -782,7 +826,7 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 
 	// Notify submitter only when status actually changed
 	if statusChanged && oldFb.ContactEmail != "" {
-		statusLabels := map[string]string{"pending": "待处理", "processing": "处理中", "resolved": "已解决", "closed": "已关闭"}
+		statusLabels := database.StatusLabels
 		label := statusLabels[req.Status]
 		if label == "" {
 			label = req.Status
@@ -797,7 +841,7 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 		go a.Mailer.SendStatusChangeNotification(oldFb, subject, body)
 
 		// M2 CSAT: invite submitter to rate once resolved
-		if req.Status == "resolved" && oldFb.ContactEmail != "" {
+		if req.Status == database.StatusResolved && oldFb.ContactEmail != "" {
 			trackURL := a.Cfg.BaseURL + "/track#token=" + oldFb.TrackingToken
 			go a.Mailer.SendCSATInvite(oldFb, trackURL)
 		}
@@ -1233,7 +1277,8 @@ func (a *App) AdminDeleteProject(c *gin.Context) {
 // ========== Admin: Project Stats ==========
 
 func (a *App) AdminProjectStats(c *gin.Context) {
-	stats, err := a.DB.GetProjectStats()
+	projectIDs := a.getAdminProjectIDs(c)
+	stats, err := a.DB.GetProjectStatsForProjects(projectIDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取统计失败"})
 		return
@@ -1897,7 +1942,7 @@ func buildFeishuCard(event string, data map[string]interface{}, fb *database.Fee
 	// Add status/priority if from feedback
 	if fb != nil {
 		elements := card["card"].(map[string]interface{})["elements"].([]map[string]interface{})
-		statusLabels := map[string]string{"pending": "待处理", "processing": "处理中", "resolved": "已解决", "closed": "已关闭"}
+		statusLabels := database.StatusLabels
 		priorityLabels := map[string]string{"urgent": "🔴 紧急", "high": "🟡 高", "medium": "🔵 中", "low": "⚪ 低"}
 		fields := []map[string]interface{}{
 			{"is_short": true, "text": map[string]string{"tag": "lark_md", "content": fmt.Sprintf("**状态：** %s", statusLabels[fb.Status])}},
@@ -1926,7 +1971,7 @@ func buildDingTalkCard(event string, data map[string]interface{}, fb *database.F
 		md.WriteString(fmt.Sprintf("- **描述：** %s\n", desc))
 	}
 	if fb != nil {
-		statusLabels := map[string]string{"pending": "待处理", "processing": "处理中", "resolved": "已解决", "closed": "已关闭"}
+		statusLabels := database.StatusLabels
 		md.WriteString(fmt.Sprintf("- **状态：** %s\n", statusLabels[fb.Status]))
 		if fb.Priority != "" {
 			priorityLabels := map[string]string{"urgent": "紧急", "high": "高", "medium": "中", "low": "低"}
@@ -1972,7 +2017,7 @@ func buildSlackCard(event string, data map[string]interface{}, fb *database.Feed
 	}
 
 	if fb != nil {
-		statusLabels := map[string]string{"pending": "待处理", "processing": "处理中", "resolved": "已解决", "closed": "已关闭"}
+		statusLabels := database.StatusLabels
 		fields := []map[string]interface{}{
 			{"type": "mrkdwn", "text": fmt.Sprintf("*状态:*\n%s", statusLabels[fb.Status])},
 		}
@@ -2004,7 +2049,7 @@ func buildWeComCard(event string, data map[string]interface{}, fb *database.Feed
 		md.WriteString(fmt.Sprintf("> 描述: %s\n", desc))
 	}
 	if fb != nil {
-		statusLabels := map[string]string{"pending": "待处理", "processing": "处理中", "resolved": "已解决", "closed": "已关闭"}
+		statusLabels := database.StatusLabels
 		md.WriteString(fmt.Sprintf("> 状态: <font color=\"info\">%s</font>\n", statusLabels[fb.Status]))
 		if fb.Priority != "" {
 			priorityLabels := map[string]string{"urgent": "紧急", "high": "高", "medium": "中", "low": "低"}
@@ -2274,7 +2319,7 @@ func (a *App) AdminBulkUpdateStatus(c *gin.Context) {
 		return
 	}
 
-	validStatuses := map[string]bool{"pending": true, "processing": true, "resolved": true, "closed": true}
+	validStatuses := database.ValidStatuses
 	if !validStatuses[req.Status] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的状态值"})
 		return
@@ -2404,7 +2449,7 @@ func (a *App) PublicTrackFeedback(c *gin.Context) {
 		"priority":     fb.Priority,
 		"votes":        fb.Votes,
 		"created_at":   fb.CreatedAt.Format("2006-01-02 15:04:05"),
-		"allow_rating": fb.Status == "resolved",
+		"allow_rating": fb.Status == database.StatusResolved,
 		"notes":        publicNotes,
 	}
 	if rating != nil {
@@ -2467,7 +2512,7 @@ func (a *App) PublicSubmitRating(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "未找到对应的反馈记录"})
 		return
 	}
-	if fb.Status != "resolved" {
+	if fb.Status != database.StatusResolved {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "仅已解决的反馈可评分"})
 		return
 	}

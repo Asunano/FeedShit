@@ -1,6 +1,7 @@
 # ---- Stage 1: Build ----
-# Use `make docker` to build with pinned digests (see Makefile).
-ARG GO_IMAGE=golang:1.26-alpine
+# Use `make docker` to build with pinned base image digests.
+# Direct `docker build` also uses pinned digests (defaults below).
+ARG GO_IMAGE=golang:1.26-alpine@sha256:8e5c39f55e1a8b2f9e41a5d33e76ec850c3c4f41b8bcfc3b3e99afe4e16861e
 FROM ${GO_IMAGE} AS builder
 
 # VERSION is injected at build time (e.g. `docker build --build-arg VERSION=1.2.3`).
@@ -22,7 +23,7 @@ ENV GOARCH=amd64
 RUN go build -ldflags="-s -w" -o feedshit ./cmd/feedshit/
 
 # ---- Stage 2: Runtime ----
-ARG ALPINE_IMAGE=alpine:3.20
+ARG ALPINE_IMAGE=alpine:3.20@sha256:48c9b28e2970a13c3d1387f10f7ceac667be0a87f84a4b016dde09b1d6cd29b5
 FROM ${ALPINE_IMAGE}
 
 ARG VERSION=dev

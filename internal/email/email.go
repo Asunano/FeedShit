@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/smtp"
+	"os"
 	"strconv"
 	"strings"
 
@@ -421,7 +422,13 @@ func smtpSend(addr string, auth smtp.Auth, from string, to []string, msg []byte)
 	portNum, _ := strconv.Atoi(port)
 	if portNum == 465 {
 		// Port 465 = SMTP over TLS (implicit SSL).
-		conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: host})
+		// SMTP_SKIP_VERIFY=true accepts self-signed certificates (not recommended for production).
+		skipVerify := os.Getenv("SMTP_SKIP_VERIFY") == "true"
+		tlsCfg := &tls.Config{
+			ServerName:         host,
+			InsecureSkipVerify: skipVerify,
+		}
+		conn, err := tls.Dial("tcp", addr, tlsCfg)
 		if err != nil {
 			return fmt.Errorf("tls dial: %w", err)
 		}
@@ -452,5 +459,9 @@ func smtpSend(addr string, auth smtp.Auth, from string, to []string, msg []byte)
 		return w.Close()
 	}
 	// Port 25/587: STARTTLS via smtp.SendMail.
+	// NOTE: Go's smtp.PlainAuth refuses to send credentials over unencrypted connections.
+	// If the server does not support STARTTLS, authentication will safely fail rather than
+	// transmitting the password in plain text. This is BY DESIGN.
+	// For servers that require LOGIN auth (Office 365, etc.), configure port 465 instead.
 	return smtp.SendMail(addr, auth, from, to, msg)
 }
