@@ -19,7 +19,8 @@ func (d *Database) GetStats() (total int, projects int, today int, err error) {
 	if err != nil {
 		return
 	}
-	err = d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks WHERE date(created_at, 'unixepoch') = date('now')`).Scan(&today)
+	todayStr := time.Now().Format("2006-01-02")
+	err = d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks WHERE date(created_at, 'unixepoch') = ?`, todayStr).Scan(&today)
 	return
 }
 
@@ -49,7 +50,8 @@ func (d *Database) GetStatsForProjects(projectIDs []string) (total int, projects
 	if err != nil {
 		return
 	}
-	err = d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks WHERE `+inClause+` AND date(created_at, 'unixepoch') = date('now')`, args...).Scan(&today)
+	todayStr := time.Now().Format("2006-01-02")
+	err = d.db.QueryRow(`SELECT COUNT(*) FROM feedbacks WHERE `+inClause+` AND date(created_at, 'unixepoch') = ?`, append(args, todayStr)...).Scan(&today)
 	return
 }
 
@@ -58,12 +60,14 @@ func (d *Database) GetDailyTrend(days int) ([]map[string]interface{}, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
+	cutoff := time.Now().AddDate(0, 0, -days).Unix()
+
 	rows, err := d.db.Query(`
 		SELECT date(created_at, 'unixepoch') as day, COUNT(*) as cnt
 		FROM feedbacks
-		WHERE created_at >= strftime('%s', 'now', '-' || ? || ' days')
+		WHERE created_at >= ?
 		GROUP BY day ORDER BY day ASC
-	`, days)
+	`, cutoff)
 	if err != nil {
 		return nil, err
 	}

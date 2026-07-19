@@ -307,12 +307,6 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 		return
 	}
 
-	validStatuses := database.ValidStatuses
-	if req.Status != "" && !validStatuses[req.Status] {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的状态值"})
-		return
-	}
-
 	// Fetch feedback before update to detect actual changes and check permissions
 	oldFb, deny := a.checkFeedbackWritePerm(c, id)
 	if deny != "" {
@@ -323,24 +317,33 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "反馈不存在"})
 		return
 	}
-	oldStatus := oldFb.Status
-	statusChanged := req.Status != "" && req.Status != oldStatus
 
-	if err := a.DB.UpdateFeedbackStatus(id, req.Status, req.Tags); err != nil {
+	// Determine effective status: if request provides empty status, preserve existing value
+	// This allows callers to update tags without touching status.
+	effectiveStatus := req.Status
+	if effectiveStatus == "" {
+		effectiveStatus = oldFb.Status
+	} else if !database.ValidStatuses[effectiveStatus] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的状态值"})
+		return
+	}
+	statusChanged := effectiveStatus != oldFb.Status
+
+	if err := a.DB.UpdateFeedbackStatus(id, effectiveStatus, req.Tags); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
 		return
 	}
 
 	user, _ := c.Get("admin_user")
 	clientIP := middleware.GetClientIP(c)
-	a.DB.InsertAuditLog("update_status", fmt.Sprintf("反馈 #%d 状态更新为 %s", id, req.Status), fmt.Sprintf("%v", user), clientIP)
+	a.DB.InsertAuditLog("update_status", fmt.Sprintf("反馈 #%d 状态更新为 %s", id, effectiveStatus), fmt.Sprintf("%v", user), clientIP)
 
 	// Notify submitter only when status actually changed
 	if statusChanged && oldFb.ContactEmail != "" {
 		statusLabels := database.StatusLabels
-		label := statusLabels[req.Status]
+		label := statusLabels[effectiveStatus]
 		if label == "" {
-			label = req.Status
+			label = effectiveStatus
 		}
 		vars := map[string]string{
 			"id":     fmt.Sprintf("%d", oldFb.ID),
@@ -352,7 +355,7 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 		go a.Mailer.SendStatusChangeNotification(oldFb, subject, body)
 
 		// M2 CSAT: invite submitter to rate once resolved
-		if req.Status == database.StatusResolved && oldFb.ContactEmail != "" {
+		if effectiveStatus == database.StatusResolved && oldFb.ContactEmail != "" {
 			trackURL := a.Cfg.BaseURL + "/track#token=" + oldFb.TrackingToken
 			go a.Mailer.SendCSATInvite(oldFb, trackURL)
 		}
@@ -363,7 +366,7 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 		"id":         oldFb.ID,
 		"project_id": oldFb.ProjectID,
 		"title":      oldFb.Title,
-		"status":     req.Status,
+		"status":     effectiveStatus,
 		"operator":   fmt.Sprintf("%v", user),
 	}, oldFb)
 
@@ -481,6 +484,12 @@ func (a *App) AdminBulkDeleteFeedbacks(c *gin.Context) {
 		return
 	}
 
+	// RBAC: verify write permission on all IDs
+	if deny := a.checkBulkWritePerm(c, req.IDs); deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
+		return
+	}
+
 	// Clean up files for all feedbacks being deleted
 	for _, id := range req.IDs {
 		fb, err := a.DB.GetFeedback(id)
@@ -526,6 +535,12 @@ func (a *App) AdminBulkUpdateStatus(c *gin.Context) {
 		return
 	}
 
+	// RBAC: verify write permission on all IDs
+	if deny := a.checkBulkWritePerm(c, req.IDs); deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
+		return
+	}
+
 	validStatuses := database.ValidStatuses
 	if !validStatuses[req.Status] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的状态值"})
@@ -562,6 +577,12 @@ func (a *App) AdminBulkUpdateTags(c *gin.Context) {
 		return
 	}
 
+	// RBAC: verify write permission on all IDs
+	if deny := a.checkBulkWritePerm(c, req.IDs); deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
+		return
+	}
+
 	affected, err := a.DB.BulkUpdateFeedbackTags(req.IDs, req.Tags)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
@@ -590,6 +611,12 @@ func (a *App) AdminBulkUpdateAssignee(c *gin.Context) {
 		return
 	}
 
+	// RBAC: verify write permission on all IDs
+	if deny := a.checkBulkWritePerm(c, req.IDs); deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
+		return
+	}
+
 	affected, err := a.DB.BulkUpdateFeedbackAssignee(req.IDs, req.Assignee)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
@@ -615,6 +642,12 @@ func (a *App) AdminBulkUpdatePriority(c *gin.Context) {
 	}
 	if len(req.IDs) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未选择反馈"})
+		return
+	}
+
+	// RBAC: verify write permission on all IDs
+	if deny := a.checkBulkWritePerm(c, req.IDs); deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
 		return
 	}
 
@@ -757,6 +790,17 @@ func (a *App) AdminUnmarkDuplicate(c *gin.Context) {
 		return
 	}
 
+	// Check write permission (also loads the feedback)
+	fb, deny := a.checkFeedbackWritePerm(c, id)
+	if deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
+		return
+	}
+	if fb == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "反馈不存在"})
+		return
+	}
+
 	if err := a.DB.UnmarkDuplicate(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "操作失败"})
 		return
@@ -845,6 +889,13 @@ func (a *App) AdminBulkUpdateCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "未选择反馈"})
 		return
 	}
+
+	// RBAC: verify write permission on all IDs
+	if deny := a.checkBulkWritePerm(c, req.IDs); deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
+		return
+	}
+
 	affected, err := a.DB.BulkUpdateCategory(req.IDs, req.Category)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})

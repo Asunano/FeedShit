@@ -1,7 +1,9 @@
 package app
 
 import (
+	"crypto/rand"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -54,6 +56,56 @@ func (a *App) AdminProjectStats(c *gin.Context) {
 
 func (a *App) AdminExportCSV(c *gin.Context) {
 	projectID := c.Query("project")
+
+	// RBAC: non-admin users can only export projects they have access to
+	roleStr, _ := c.Get("admin_role")
+	if roleStr != "admin" {
+		allowedIDs := a.getAdminProjectIDs(c)
+		if projectID != "" {
+			// Verify the requested project is in the allowed list
+			allowed := false
+			for _, id := range allowedIDs {
+				if id == projectID {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				c.JSON(http.StatusForbidden, gin.H{"error": "无权导出该项目"})
+				return
+			}
+		} else {
+			// No specific project → only export accessible projects
+			// ExportFeedbacks with empty string exports ALL, which we don't want
+			// Collect feedbacks from all allowed projects
+			allFeedbacks := []database.Feedback{}
+			for _, pid := range allowedIDs {
+				fbs, err := a.DB.ExportFeedbacks(pid)
+				if err == nil {
+					allFeedbacks = append(allFeedbacks, fbs...)
+				}
+			}
+			feedbacks := allFeedbacks
+
+			user, _ := c.Get("admin_user")
+			clientIP := middleware.GetClientIP(c)
+			a.DB.InsertAuditLog("export", fmt.Sprintf("导出反馈 %d 条 (项目: %s)", len(feedbacks), projectID), fmt.Sprintf("%v", user), clientIP)
+
+			isAdmin := roleStr == "admin"
+			switch c.Query("fmt") {
+			case "json":
+				a.exportJSON(c, projectID, feedbacks, isAdmin)
+				return
+			case "xlsx":
+				a.exportXLSX(c, projectID, feedbacks, isAdmin)
+				return
+			default:
+				a.exportCSV(c, projectID, feedbacks, isAdmin)
+			}
+			return
+		}
+	}
+
 	feedbacks, err := a.DB.ExportFeedbacks(projectID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "导出失败"})
@@ -64,20 +116,21 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("export", fmt.Sprintf("导出反馈 %d 条 (项目: %s)", len(feedbacks), projectID), fmt.Sprintf("%v", user), clientIP)
 
+	isAdmin := roleStr == "admin"
 	// M12: support json / xlsx export formats
 	switch c.Query("fmt") {
 	case "json":
-		a.exportJSON(c, projectID, feedbacks)
+		a.exportJSON(c, projectID, feedbacks, isAdmin)
 		return
 	case "xlsx":
-		a.exportXLSX(c, projectID, feedbacks)
+		a.exportXLSX(c, projectID, feedbacks, isAdmin)
 		return
 	default:
-		a.exportCSV(c, projectID, feedbacks)
+		a.exportCSV(c, projectID, feedbacks, isAdmin)
 	}
 }
 
-func (a *App) exportCSV(c *gin.Context, projectID string, feedbacks []database.Feedback) {
+func (a *App) exportCSV(c *gin.Context, projectID string, feedbacks []database.Feedback, isAdmin bool) {
 	filename := "feedbacks"
 	if projectID != "" {
 		filename = "feedbacks_" + projectID
@@ -92,6 +145,10 @@ func (a *App) exportCSV(c *gin.Context, projectID string, feedbacks []database.F
 	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
 	w.Write([]string{"ID", "项目", "标题", "描述", "自定义字段", "附件", "状态", "标签", "指派", "联系人", "联系邮箱", "来源IP", "提交时间"})
 	for _, fb := range feedbacks {
+		clientIP := fb.ClientIP
+		if !isAdmin && clientIP != "" {
+			clientIP = "已隐藏"
+		}
 		w.Write([]string{
 			strconv.FormatInt(fb.ID, 10),
 			fb.ProjectID,
@@ -104,14 +161,14 @@ func (a *App) exportCSV(c *gin.Context, projectID string, feedbacks []database.F
 			fb.Assignee,
 			fb.ContactName,
 			fb.ContactEmail,
-			fb.ClientIP,
+			clientIP,
 			fb.CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}
 	w.Flush()
 }
 
-func (a *App) exportJSON(c *gin.Context, projectID string, feedbacks []database.Feedback) {
+func (a *App) exportJSON(c *gin.Context, projectID string, feedbacks []database.Feedback, isAdmin bool) {
 	filename := "feedbacks"
 	if projectID != "" {
 		filename = "feedbacks_" + projectID
@@ -120,12 +177,35 @@ func (a *App) exportJSON(c *gin.Context, projectID string, feedbacks []database.
 
 	c.Header("Content-Disposition", "attachment; filename="+filename)
 	c.Header("Content-Type", "application/json; charset=utf-8")
+
+	// Mask client_ip for non-admin users
+	if !isAdmin {
+		sanitized := make([]interface{}, len(feedbacks))
+		for i, fb := range feedbacks {
+			type safeFeedback struct {
+				database.Feedback
+				ClientIP string `json:"client_ip"`
+			}
+			safe := safeFeedback{Feedback: fb}
+			if fb.ClientIP != "" {
+				safe.ClientIP = "已隐藏"
+			} else {
+				safe.ClientIP = fb.ClientIP
+			}
+			sanitized[i] = safe
+		}
+		if err := json.NewEncoder(c.Writer).Encode(sanitized); err != nil {
+			log.Printf("[EXPORT] JSON encode failed: %v", err)
+		}
+		return
+	}
+
 	if err := json.NewEncoder(c.Writer).Encode(feedbacks); err != nil {
 		log.Printf("[EXPORT] JSON encode failed: %v", err)
 	}
 }
 
-func (a *App) exportXLSX(c *gin.Context, projectID string, feedbacks []database.Feedback) {
+func (a *App) exportXLSX(c *gin.Context, projectID string, feedbacks []database.Feedback, isAdmin bool) {
 	filename := "feedbacks"
 	if projectID != "" {
 		filename = "feedbacks_" + projectID
@@ -138,9 +218,13 @@ func (a *App) exportXLSX(c *gin.Context, projectID string, feedbacks []database.
 	headers := []string{"ID", "项目", "标题", "描述", "自定义字段", "附件", "状态", "标签", "指派", "联系人", "联系邮箱", "来源IP", "提交时间"}
 	f.SetSheetRow(sheet, "A1", &headers)
 	for i, fb := range feedbacks {
+		clientIP := fb.ClientIP
+		if !isAdmin && clientIP != "" {
+			clientIP = "已隐藏"
+		}
 		row := []interface{}{
 			fb.ID, fb.ProjectID, fb.Title, fb.Description, fb.CustomData, fb.FilePaths,
-			fb.Status, fb.Tags, fb.Assignee, fb.ContactName, fb.ContactEmail, fb.ClientIP,
+			fb.Status, fb.Tags, fb.Assignee, fb.ContactName, fb.ContactEmail, clientIP,
 			fb.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 		cell, _ := excelize.CoordinatesToCellName(1, i+2)
@@ -310,6 +394,11 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "default 项目已停用"})
 				return
 			}
+			// Bug #7: Check write permission on the default project
+			if !a.checkProjectWritePerm(c, "default") {
+				c.JSON(http.StatusForbidden, gin.H{"error": "您没有 default 项目的编辑权限"})
+				return
+			}
 			globalProjectID = "default"
 		}
 		// else: per-row project_id will be used
@@ -322,6 +411,11 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 		}
 		if !proj.IsActive {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "项目已停用: " + globalProjectID})
+			return
+		}
+		// Bug #7: Check write permission on the form-specified project
+		if !a.checkProjectWritePerm(c, globalProjectID) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "您没有该项目的编辑权限"})
 			return
 		}
 	}
@@ -382,23 +476,47 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 				errors = append(errors, fmt.Sprintf("第 %d 行: 项目已停用: %s", lineNum, rowProj))
 				continue
 			}
+			// Bug #7: Check write permission on per-row project
+			if !a.checkProjectWritePerm(c, rowProj) {
+				errors = append(errors, fmt.Sprintf("第 %d 行: 您没有该项目的编辑权限", lineNum))
+				continue
+			}
 			pid = rowProj
 		}
 
 		createdAtUnix := parseCreatedAt(getCol("created_at"))
 
+		// Bug #8: Validate status and priority from CSV
+		rawStatus := getCol("status")
+		if rawStatus != "" && !database.ValidStatuses[rawStatus] {
+			errors = append(errors, fmt.Sprintf("第 %d 行: 无效的状态值 %q，已跳过", lineNum, rawStatus))
+			continue
+		}
+		validPriorities := map[string]bool{"": true, "low": true, "medium": true, "high": true, "urgent": true}
+		rawPriority := getCol("priority")
+		if !validPriorities[rawPriority] {
+			errors = append(errors, fmt.Sprintf("第 %d 行: 无效的优先级 %q，已跳过", lineNum, rawPriority))
+			continue
+		}
+
+		// Generate tracking token for submitter self-service
+		tokenBytes := make([]byte, 16)
+		rand.Read(tokenBytes)
+		trackingToken := hex.EncodeToString(tokenBytes)
+
 		fb := &database.Feedback{
-			ProjectID:    pid,
-			Title:        title,
-			Description:  getCol("description"),
-			Status:       getCol("status"),
-			Tags:         getCol("tags"),
-			Assignee:     getCol("assignee"),
-			ContactName:  getCol("contact_name"),
-			ContactEmail: getCol("contact_email"),
-			Priority:     getCol("priority"),
-			CustomData:   getCol("custom_data"),
-			ClientIP:     "csv-import",
+			ProjectID:     pid,
+			Title:         title,
+			Description:   getCol("description"),
+			Status:        getCol("status"),
+			Tags:          getCol("tags"),
+			Assignee:      getCol("assignee"),
+			ContactName:   getCol("contact_name"),
+			ContactEmail:  getCol("contact_email"),
+			Priority:      getCol("priority"),
+			CustomData:    getCol("custom_data"),
+			ClientIP:      "csv-import",
+			TrackingToken: trackingToken,
 		}
 
 		if _, err := a.DB.ImportFeedback(fb, createdAtUnix); err != nil {

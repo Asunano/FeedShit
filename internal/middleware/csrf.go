@@ -20,13 +20,16 @@ func CSRFMiddleware(sm *SessionManager) gin.HandlerFunc {
 
 		sessionToken, err := c.Cookie("admin_session")
 		if err != nil || sessionToken == "" {
-			c.Next()
+			// No session — fail closed (defense-in-depth).
+			c.JSON(http.StatusForbidden, gin.H{"error": "CSRF 验证失败，请刷新页面后重试"})
+			c.Abort()
 			return
 		}
 
 		// Verify session is valid
 		if _, _, ok := sm.Validate(sessionToken); !ok {
-			c.Next()
+			c.JSON(http.StatusForbidden, gin.H{"error": "CSRF 验证失败，请刷新页面后重试"})
+			c.Abort()
 			return
 		}
 

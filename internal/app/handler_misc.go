@@ -407,3 +407,43 @@ func (a *App) AdminServeFile(c *gin.Context) {
 
 	c.File(absResolved)
 }
+
+// checkBulkWritePerm verifies the current user has write permission on ALL
+// feedback IDs in the batch. Returns the deny message (empty = all allowed).
+// This prevents non-admin users with project-specific grants from modifying
+// feedbacks in projects they don't have access to.
+func (a *App) checkBulkWritePerm(c *gin.Context, ids []int64) string {
+	roleStr, _ := c.Get("admin_role")
+	if roleStr == "admin" {
+		return "" // admin has full access
+	}
+	for _, id := range ids {
+		_, deny := a.checkFeedbackWritePerm(c, id)
+		if deny != "" {
+			return fmt.Sprintf("反馈 #%d: %s", id, deny)
+		}
+	}
+	return ""
+}
+
+// checkProjectWritePerm reports whether the current user has editor+ permission
+// on the given project (for operations like CSV import where no feedback ID exists yet).
+// Admin users always pass; non-admin users must have a member_grant with role >= editor.
+func (a *App) checkProjectWritePerm(c *gin.Context, projectSlug string) bool {
+	roleStr, _ := c.Get("admin_role")
+	if roleStr == "admin" {
+		return true
+	}
+	username, _ := c.Get("admin_user")
+	usernameStr, _ := username.(string)
+	if usernameStr == "" {
+		return false
+	}
+	admin, err := a.DB.GetAdminByUsername(usernameStr)
+	if err != nil || admin == nil {
+		return false
+	}
+	effectiveRole := a.DB.GetEffectiveRole(admin.ID, projectSlug, "*")
+	roleLevel := map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
+	return roleLevel[effectiveRole] >= 2
+}

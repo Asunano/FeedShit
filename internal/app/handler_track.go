@@ -115,7 +115,7 @@ func (a *App) PublicSubmitReply(c *gin.Context) {
 
 // PublicSubmitRating lets a submitter rate a resolved feedback via their tracking token (M2 CSAT).
 func (a *App) PublicSubmitRating(c *gin.Context) {
-	token := strings.TrimSpace(c.Query("token"))
+	token := strings.TrimSpace(c.Param("token"))
 	if token == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少跟踪令牌"})
 		return
@@ -148,9 +148,9 @@ func (a *App) PublicSubmitRating(c *gin.Context) {
 		return
 	}
 
-	user, _ := c.Get("admin_user")
+	user := "提交者"
 	clientIP := middleware.GetClientIP(c)
-	a.DB.InsertAuditLog("csat_rating", fmt.Sprintf("反馈 #%d 评分 %d", fb.ID, req.Score), fmt.Sprintf("%v", user), clientIP)
+	a.DB.InsertAuditLog("csat_rating", fmt.Sprintf("反馈 #%d 评分 %d", fb.ID, req.Score), user, clientIP)
 
 	c.JSON(http.StatusOK, gin.H{"message": "评分已提交", "score": req.Score})
 }

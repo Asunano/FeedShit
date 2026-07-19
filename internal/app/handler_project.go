@@ -162,8 +162,32 @@ func (a *App) AdminUpdateProject(c *gin.Context) {
 		return
 	}
 
-	// If slug changed, record old slug in history for redirect
-	if req.Slug != "" && req.Slug != existing.Slug {
+	// Validate required fields
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "项目名称不能为空"})
+		return
+	}
+
+	// Validate slug format when provided (empty = keep existing)
+	if req.Slug != "" {
+		for _, ch := range req.Slug {
+			if !((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "标识只能包含小写字母、数字、连字符和下划线"})
+				return
+			}
+		}
+	} else {
+		// Preserve existing slug when not provided
+		req.Slug = existing.Slug
+	}
+
+	// If slug changed, record old slug in history and check uniqueness
+	if req.Slug != existing.Slug {
+		// Check slug uniqueness
+		if existingBySlug, err := a.DB.GetProjectBySlug(req.Slug); err == nil && existingBySlug != nil && existingBySlug.ID != id {
+			c.JSON(http.StatusConflict, gin.H{"error": "标识已被其他项目使用"})
+			return
+		}
 		a.DB.InsertSlugHistory(existing.Slug, req.Slug)
 	}
 
