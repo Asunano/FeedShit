@@ -245,6 +245,12 @@ tr:last-child td{border-bottom:none}
 
 /* Priority selector in detail */
 .priority-selector{display:inline-block;padding:2px 6px;border:1px solid #d0d0d0;border-radius:3px;font-size:.75rem;cursor:pointer;background:#fff}
+
+/* Field editor rows */
+.field-row.three-col{display:flex;gap:8px}
+.field-row.three-col > div{flex:1}
+.field-row.half{display:flex;gap:8px}
+.field-row.half > div{flex:1}
 </style>
 <style id="theme-vars">
 /* ===== Theme tokens (M14) ===== */
@@ -851,14 +857,71 @@ tr:last-child td{border-bottom:none}
         <div><label>字段类型</label><select id="feType" onchange="onFieldTypeChange()">
           <option value="text">单行文本</option>
           <option value="textarea">多行文本</option>
+          <option value="number">数字</option>
+          <option value="email">邮箱</option>
+          <option value="url">网址</option>
+          <option value="tel">电话</option>
+          <option value="date">日期</option>
+          <option value="time">时间</option>
+          <option value="color">颜色</option>
           <option value="select">下拉选择</option>
           <option value="checkbox">复选框</option>
           <option value="radio">单选</option>
+          <option value="rating">评分</option>
+          <option value="toggle">开关</option>
+          <option value="slider">滑块</option>
+          <option value="tags">标签</option>
+          <option value="markdown">Markdown</option>
+          <option value="file">文件上传</option>
+          <option value="image">图片上传</option>
+          <option value="hidden">隐藏字段</option>
+          <option value="section">分区标题</option>
+          <option value="html">HTML</option>
         </select></div>
         <div><label>字段名称（英文标识）</label><input type="text" id="feName" placeholder="例：priority"></div>
       </div>
       <div class="field-row full"><div><label>显示标签</label><input type="text" id="feLabel" placeholder="例：优先级"></div></div>
       <div class="field-row full" id="fePlaceholderRow"><div><label>占位提示</label><input type="text" id="fePlaceholder" placeholder="可选"></div></div>
+      <div class="field-row half" id="feDefaultRow" style="display:none"><div><label>默认值</label><input type="text" id="feDefault" placeholder="可选"></div></div>
+      <div class="field-row three-col" id="feMinMaxStepRow" style="display:none">
+        <div><label>最小值</label><input type="number" id="feMin" placeholder="无"></div>
+        <div><label>最大值</label><input type="number" id="feMax" placeholder="无"></div>
+        <div><label>步长</label><input type="number" id="feStep" placeholder="1"></div>
+      </div>
+      <div class="field-row half" id="feMinMaxLenRow" style="display:none">
+        <div><label>最小长度</label><input type="number" id="feMinLength" placeholder="无"></div>
+        <div><label>最大长度</label><input type="number" id="feMaxLength" placeholder="无"></div>
+      </div>
+      <div class="field-row half" id="fePatternRow" style="display:none"><div><label>正则校验</label><input type="text" id="fePattern" placeholder="如 \d{11}"></div></div>
+      <div class="field-row half" id="feRowsRow" style="display:none"><div><label>行数</label><input type="number" id="feRows" placeholder="4"></div></div>
+      <div class="field-row half" id="feAcceptRow" style="display:none"><div><label>允许类型</label><input type="text" id="feAccept" placeholder="如 .pdf,.docx"></div>
+        <div class="toggle" style="margin-left:12px"><input type="checkbox" id="feMultiple"><span>多文件</span></div>
+      </div>
+      <div class="field-row half" id="feIconRow" style="display:none">
+        <div><label>图标</label><select id="feIcon">
+          <option value="star">★ 星星</option>
+          <option value="heart">❤ 心</option>
+          <option value="thumb">👍 拇指</option>
+        </select></div>
+      </div>
+      <div class="field-row half" id="feToggleLabelRow" style="display:none">
+        <div><label>开启时标签</label><input type="text" id="feLabelOn" placeholder="已启用"></div>
+        <div><label>关闭时标签</label><input type="text" id="feLabelOff" placeholder="已禁用"></div>
+      </div>
+      <div class="field-row full" id="feCollapsibleRow" style="display:none">
+        <div class="toggle"><input type="checkbox" id="feCollapsible"><span>可折叠</span></div>
+      </div>
+      <div class="field-row full" id="feContentRow" style="display:none">
+        <div><label>HTML 内容</label><textarea id="feContent" placeholder="输入 HTML" style="min-height:80px;font-family:monospace"></textarea></div>
+      </div>
+      <div class="field-row full" id="feWidthRow">
+        <div><label>宽度</label><select id="feWidth">
+          <option value="full">整行</option>
+          <option value="half">半行</option>
+          <option value="third">三分之一</option>
+        </select></div>
+      </div>
+      <div class="field-row full" id="feHelpRow"><div><label>帮助文本</label><input type="text" id="feHelpText" placeholder="字段下方显示的提示信息（可选）"></div></div>
       <div class="field-row full" id="feOptionsRow" style="display:none">
         <div><label>选项（每行一个）</label><div class="options-editor"><div id="feOptionsList"></div><button class="add-opt" onclick="addOptionRow()">+ 添加选项</button></div></div>
       </div>
@@ -1844,7 +1907,7 @@ tr:last-child td{border-bottom:none}
     if (currentFormSchema.length === 0) {
       html += '<p style="color:#999;font-size:.8rem;margin-bottom:8px">暂无自定义字段。</p>';
     } else {
-      var typeLabels = {text:'单行文本',textarea:'多行文本',select:'下拉选择',checkbox:'复选框',radio:'单选'};
+      var typeLabels = {text:'单行文本',textarea:'多行文本',number:'数字',email:'邮箱',url:'网址',tel:'电话',date:'日期',time:'时间',color:'颜色',select:'下拉选择',checkbox:'复选框',radio:'单选',rating:'评分',toggle:'开关',slider:'滑块',tags:'标签',markdown:'Markdown',file:'文件',image:'图片',hidden:'隐藏',section:'分区',html:'HTML'};
       currentFormSchema.forEach(function(f, i){
         var typeLabel = typeLabels[f.type] || f.type;
         var reqMark = f.required ? ' <span style="color:#c00">*</span>' : '';
@@ -1901,6 +1964,23 @@ tr:last-child td{border-bottom:none}
     document.getElementById('feLabel').value = '';
     document.getElementById('fePlaceholder').value = '';
     document.getElementById('feRequired').checked = false;
+    document.getElementById('feDefault').value = '';
+    document.getElementById('feMin').value = '';
+    document.getElementById('feMax').value = '';
+    document.getElementById('feStep').value = '';
+    document.getElementById('feMinLength').value = '';
+    document.getElementById('feMaxLength').value = '';
+    document.getElementById('fePattern').value = '';
+    document.getElementById('feRows').value = '';
+    document.getElementById('feAccept').value = '';
+    document.getElementById('feMultiple').checked = false;
+    document.getElementById('feIcon').value = 'star';
+    document.getElementById('feLabelOn').value = '';
+    document.getElementById('feLabelOff').value = '';
+    document.getElementById('feCollapsible').checked = false;
+    document.getElementById('feContent').value = '';
+    document.getElementById('feWidth').value = 'full';
+    document.getElementById('feHelpText').value = '';
     document.getElementById('feOptionsList').innerHTML = '';
     onFieldTypeChange();
     document.getElementById('fieldEditorModal').classList.add('active');
@@ -1914,6 +1994,23 @@ tr:last-child td{border-bottom:none}
     document.getElementById('feLabel').value = field.label;
     document.getElementById('fePlaceholder').value = field.placeholder || '';
     document.getElementById('feRequired').checked = !!field.required;
+    document.getElementById('feDefault').value = field.default || '';
+    document.getElementById('feMin').value = field.min || '';
+    document.getElementById('feMax').value = field.max || '';
+    document.getElementById('feStep').value = field.step || '';
+    document.getElementById('feMinLength').value = field.min_length || '';
+    document.getElementById('feMaxLength').value = field.max_length || '';
+    document.getElementById('fePattern').value = field.pattern || '';
+    document.getElementById('feRows').value = field.rows || '';
+    document.getElementById('feAccept').value = field.accept || '';
+    document.getElementById('feMultiple').checked = !!field.multiple;
+    document.getElementById('feIcon').value = field.icon || 'star';
+    document.getElementById('feLabelOn').value = field.label_on || '';
+    document.getElementById('feLabelOff').value = field.label_off || '';
+    document.getElementById('feCollapsible').checked = !!field.collapsible;
+    document.getElementById('feContent').value = field.content || '';
+    document.getElementById('feWidth').value = field.width || 'full';
+    document.getElementById('feHelpText').value = field.help_text || '';
     onFieldTypeChange();
     var optList = document.getElementById('feOptionsList');
     optList.innerHTML = '';
@@ -1925,7 +2022,19 @@ tr:last-child td{border-bottom:none}
     var type = document.getElementById('feType').value;
     var needsOptions = (type === 'select' || type === 'radio' || type === 'checkbox');
     document.getElementById('feOptionsRow').style.display = needsOptions ? '' : 'none';
-    document.getElementById('fePlaceholderRow').style.display = (type === 'text' || type === 'textarea') ? '' : 'none';
+    document.getElementById('fePlaceholderRow').style.display = (type === 'text' || type === 'textarea' || type === 'number' || type === 'email' || type === 'url' || type === 'tel') ? '' : 'none';
+    document.getElementById('feDefaultRow').style.display = (type !== 'section' && type !== 'html' && type !== 'textarea' && type !== 'markdown') ? '' : 'none';
+    document.getElementById('feMinMaxStepRow').style.display = (type === 'number' || type === 'slider') ? '' : 'none';
+    document.getElementById('feMinMaxLenRow').style.display = (type === 'text' || type === 'textarea') ? '' : 'none';
+    document.getElementById('fePatternRow').style.display = (type === 'text' || type === 'tel') ? '' : 'none';
+    document.getElementById('feRowsRow').style.display = (type === 'textarea') ? '' : 'none';
+    document.getElementById('feAcceptRow').style.display = (type === 'file' || type === 'image') ? '' : 'none';
+    document.getElementById('feIconRow').style.display = (type === 'rating') ? '' : 'none';
+    document.getElementById('feToggleLabelRow').style.display = (type === 'toggle') ? '' : 'none';
+    document.getElementById('feCollapsibleRow').style.display = (type === 'section') ? '' : 'none';
+    document.getElementById('feContentRow').style.display = (type === 'html') ? '' : 'none';
+    document.getElementById('feName').style.display = (type === 'section' || type === 'html') ? 'none' : '';
+    document.getElementById('feName').closest('.field-row').style.display = (type === 'section' || type === 'html') ? 'none' : '';
   };
   window.addOptionRow = function(value) {
     var list = document.getElementById('feOptionsList');
@@ -1940,12 +2049,43 @@ tr:last-child td{border-bottom:none}
     var label = document.getElementById('feLabel').value.trim();
     var placeholder = document.getElementById('fePlaceholder').value.trim();
     var required = document.getElementById('feRequired').checked;
-    if (!name || !label) { showToast('字段名称和标签不能为空', 'error'); return; }
-    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) { showToast('字段名称须为英文字母开头', 'error'); return; }
+    if ((type !== 'section' && type !== 'html') && (!name || !label)) { showToast('字段名称和标签不能为空', 'error'); return; }
+    if (name && !/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) { showToast('字段名称须为英文字母开头', 'error'); return; }
     var isDuplicate = currentFormSchema.some(function(f, i){ return f.name === name && i !== editingFieldIndex; });
     if (isDuplicate) { showToast('字段名称已存在', 'error'); return; }
     var field = { type: type, name: name, label: label, required: required };
     if (placeholder) field.placeholder = placeholder;
+    var def = document.getElementById('feDefault').value.trim();
+    if (def) field.default = def;
+    var minV = document.getElementById('feMin').value;
+    if (minV) field.min = Number(minV);
+    var maxV = document.getElementById('feMax').value;
+    if (maxV) field.max = Number(maxV);
+    var stepV = document.getElementById('feStep').value;
+    if (stepV) field.step = Number(stepV);
+    var minL = document.getElementById('feMinLength').value;
+    if (minL) field.min_length = Number(minL);
+    var maxL = document.getElementById('feMaxLength').value;
+    if (maxL) field.max_length = Number(maxL);
+    var pat = document.getElementById('fePattern').value.trim();
+    if (pat) field.pattern = pat;
+    var rows = document.getElementById('feRows').value;
+    if (rows) field.rows = Number(rows);
+    var accept = document.getElementById('feAccept').value.trim();
+    if (accept) field.accept = accept;
+    field.multiple = document.getElementById('feMultiple').checked;
+    var icon = document.getElementById('feIcon').value;
+    if (icon) field.icon = icon;
+    var labelOn = document.getElementById('feLabelOn').value.trim();
+    if (labelOn) field.label_on = labelOn;
+    var labelOff = document.getElementById('feLabelOff').value.trim();
+    if (labelOff) field.label_off = labelOff;
+    field.collapsible = document.getElementById('feCollapsible').checked;
+    var content = document.getElementById('feContent').value.trim();
+    if (content) field.content = content;
+    field.width = document.getElementById('feWidth').value;
+    var helpText = document.getElementById('feHelpText').value.trim();
+    if (helpText) field.help_text = helpText;
     var needsOptions = (type === 'select' || type === 'radio' || type === 'checkbox');
     if (needsOptions) {
       var optInputs = document.getElementById('feOptionsList').querySelectorAll('input');
@@ -1967,7 +2107,7 @@ tr:last-child td{border-bottom:none}
     if (!currentFormSchema || currentFormSchema.length === 0) {
       html = '<p style="color:#999;font-size:.8rem;margin-bottom:8px">暂无自定义字段。</p>';
     } else {
-      var typeLabels = {text:'单行文本',textarea:'多行文本',select:'下拉选择',checkbox:'复选框',radio:'单选'};
+      var typeLabels = {text:'单行文本',textarea:'多行文本',number:'数字',email:'邮箱',url:'网址',tel:'电话',date:'日期',time:'时间',color:'颜色',select:'下拉选择',checkbox:'复选框',radio:'单选',rating:'评分',toggle:'开关',slider:'滑块',tags:'标签',markdown:'Markdown',file:'文件',image:'图片',hidden:'隐藏',section:'分区',html:'HTML'};
       currentFormSchema.forEach(function(f, i){
         var typeLabel = typeLabels[f.type] || f.type;
         var reqMark = f.required ? ' <span style="color:#c00">*</span>' : '';
@@ -1981,7 +2121,6 @@ tr:last-child td{border-bottom:none}
           '<button class="del" onclick="removeField('+i+')">删除</button></div></div>';
       });
     }
-    html += '<button class="fb-add-btn" onclick="addField()">+ 添加字段</button>';
     container.innerHTML = html;
   }
   window.saveFormSchema = async function() {

@@ -164,6 +164,35 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
   .btn{min-height:44px}
   .file-input-wrap{padding:16px}
 }
+
+/* Modular form schema styles */
+.field-half{width:50%;display:inline-block;vertical-align:top;box-sizing:border-box;padding-right:8px}
+.field-third{width:33.33%;display:inline-block;vertical-align:top;box-sizing:border-box;padding-right:8px}
+.help-text{font-size:.75rem;color:#888;margin-top:2px;margin-bottom:0}
+.rating-group{display:flex;gap:4px;padding:4px 0}
+.rating-star{font-size:1.5rem;cursor:pointer;opacity:.3;transition:opacity .15s}
+.rating-star.active,.rating-star:hover{opacity:1}
+.toggle-switch{position:relative;display:inline-block;width:44px;height:24px;vertical-align:middle}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#ccc;border-radius:24px;transition:.2s}
+.toggle-slider::before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle-switch input:checked + .toggle-slider{background:#2563eb}
+.toggle-switch input:checked + .toggle-slider::before{transform:translateX(20px)}
+.toggle-label{margin-left:8px;font-size:.85rem;vertical-align:middle}
+.tags-input{border:1px solid #ddd;border-radius:4px;padding:4px}
+.tags-input input{border:none;outline:none;width:100%;padding:4px}
+.tag-list{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.tag-item{background:#e5e7eb;border-radius:3px;padding:2px 6px;font-size:.8rem;display:inline-flex;align-items:center;gap:4px}
+.tag-remove{cursor:pointer;font-weight:bold;color:#999;font-size:.75rem}
+.tag-remove:hover{color:#c00}
+.section-divider{margin:16px 0;padding:8px 0;border-top:1px solid #eee}
+.section-title{font-size:1rem;font-weight:600;margin:0 0 4px 0;color:#333}
+.section-desc{font-size:.8rem;color:#888;margin:0}
+.custom-html{padding:4px 0}
+.md-preview{background:#f9f9f9;border:1px solid #ddd}
+@media (max-width:768px){
+  .field-half,.field-third{width:100%;display:block;padding-right:0}
+}
 </style>
 <script>
 // ===== 主题（暗黑模式）（M14） =====
@@ -311,127 +340,313 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     catField.style.display = '';
   }
 
-  // ========== Render custom fields from form_schema ==========
+  // ========== Field Registry — modular field type system ==========
+  // Add a new type by appending an entry; no need to touch render/collect/validate.
+
+  var FIELD_REGISTRY = {
+    text: {
+      label: '单行文本',
+      render: function(f, fName) {
+        return '<input type="text" id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'') + '"' +
+          _at('minlength', f.min_length) + _at('maxlength', f.max_length) + _at('pattern', f.pattern) + '>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    textarea: {
+      label: '多行文本',
+      render: function(f, fName) {
+        return '<textarea id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'') + '"' +
+          _at('rows', f.rows||4) + _at('maxlength', f.max_length) + ' style="min-height:80px"></textarea>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    number: {
+      label: '数字',
+      render: function(f, fName) {
+        return '<input type="number" id="' + fName + '" name="' + fName + '"' + _r(f) +
+          _at('min', f.min) + _at('max', f.max) + _at('step', f.step) + ' placeholder="' + _a(f.placeholder||'') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    email: {
+      label: '邮箱',
+      render: function(f, fName) {
+        return '<input type="email" id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    url: {
+      label: '网址',
+      render: function(f, fName) {
+        return '<input type="url" id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    tel: {
+      label: '电话',
+      render: function(f, fName) {
+        return '<input type="tel" id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    date: {
+      label: '日期',
+      render: function(f, fName) {
+        return '<input type="date" id="' + fName + '" name="' + fName + '"' + _r(f) +
+          _at('min', f.min) + _at('max', f.max) + '>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    time: {
+      label: '时间',
+      render: function(f, fName) {
+        return '<input type="time" id="' + fName + '" name="' + fName + '"' + _r(f) + '>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    color: {
+      label: '颜色',
+      render: function(f, fName) {
+        return '<input type="color" id="' + fName + '" name="' + fName + '"' + _r(f) + ' value="' + _a(f.default||'#000000') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    select: {
+      label: '下拉选择',
+      render: function(f, fName) {
+        var h = '<select id="' + fName + '" name="' + fName + '"' + _r(f) + '><option value="">请选择...</option>';
+        (f.options||[]).forEach(function(o){ h += '<option value="' + _a(o) + '">' + _e(o) + '</option>'; });
+        return h + '</select>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    checkbox: {
+      label: '复选框',
+      render: function(f, fName) {
+        var h = '<div class="checkbox-group">';
+        (f.options||[]).forEach(function(o){
+          h += '<label><input type="checkbox" name="' + fName + '" value="' + _a(o) + '"> ' + _e(o) + '</label>';
+        });
+        return h + '</div>';
+      },
+      collect: function(f, fName) {
+        var checks = document.querySelectorAll('input[name="' + fName + '"]:checked');
+        return Array.from(checks).map(function(c){ return c.value; });
+      }
+    },
+    radio: {
+      label: '单选',
+      render: function(f, fName) {
+        var h = '<div class="radio-group">';
+        (f.options||[]).forEach(function(o, i){
+          h += '<label><input type="radio" name="' + fName + '" value="' + _a(o) + '"' + (i===0 && f.required?' required':'') + '> ' + _e(o) + '</label>';
+        });
+        return h + '</div>';
+      },
+      collect: function(f, fName) {
+        var el = document.querySelector('input[name="' + fName + '"]:checked');
+        return el ? el.value : '';
+      }
+    },
+    rating: {
+      label: '评分',
+      render: function(f, fName) {
+        var max = f.max || 5;
+        var icon = f.icon || 'star';
+        var sym = icon === 'heart' ? '\u2764' : icon === 'thumb' ? '\uD83D\uDC4D' : '\u2605';
+        var h = '<div class="rating-group" id="' + fName + '_rg">';
+        for (var i = 1; i <= max; i++) {
+          h += '<span class="rating-star" data-value="' + i + '" onclick="document.getElementById(\\'' + fName + '\\').value=' + i + '; this.parentNode.querySelectorAll(\\'.rating-star\\').forEach(function(e,i2){e.className=\\'rating-star\\'+(i2<' + i + '?\\' active\\':\\'\\')});">' + sym + '</span>';
+        }
+        h += '<input type="hidden" id="' + fName + '" name="' + fName + '" value="' + _a(f.default||'') + '">';
+        return h + '</div>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    toggle: {
+      label: '开关',
+      render: function(f, fName) {
+        var on = f.default === 'on' ? ' checked' : '';
+        return '<label class="toggle-switch"><input type="checkbox" id="' + fName + '" name="' + fName + '"' + _r(f) + on + '>' +
+          '<span class="toggle-slider"></span></label><span class="toggle-label" id="' + fName + '_lbl">' + _e(f.default==='on'?(f.label_on||'已启用'):(f.label_off||'已禁用')) + '</span>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? (el.checked ? 'on' : 'off') : 'off'; }
+    },
+    slider: {
+      label: '滑块',
+      render: function(f, fName) {
+        return '<input type="range" id="' + fName + '" name="' + fName + '"' + _r(f) +
+          _at('min', f.min||0) + _at('max', f.max||100) + _at('step', f.step||1) + '>' +
+          '<output id="' + fName + '_out" style="margin-left:8px;font-weight:600">' + (f.default||50) + '</output>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    tags: {
+      label: '标签',
+      render: function(f, fName) {
+        return '<div class="tags-input" id="' + fName + '_wrap"><input type="text" id="' + fName + '_inp" placeholder="' + _a(f.placeholder||'输入标签后回车') + '" onkeydown="if(event.key===\\'Enter\\'){event.preventDefault();addTag(\\'' + fName + '\\',this.value);}">' +
+          '<div class="tag-list" id="' + fName + '_list"></div><input type="hidden" id="' + fName + '" name="' + fName + '"></div>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    markdown: {
+      label: 'Markdown',
+      render: function(f, fName) {
+        return '<textarea id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'支持 Markdown 语法') + '" style="min-height:120px;font-family:monospace"></textarea>' +
+          '<div class="md-preview" id="' + fName + '_preview" style="display:none;border:1px solid #ddd;border-radius:4px;padding:8px;margin-top:4px;min-height:60px;font-size:.85rem"></div>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    file: {
+      label: '文件上传',
+      render: function(f, fName) {
+        return '<input type="file" id="' + fName + '" name="' + fName + '"' + (f.multiple?' multiple':'') + _at('accept', f.accept) + '>';
+      },
+      collect: function(f, fName) { /* files handled separately via FormData */ return ''; }
+    },
+    image: {
+      label: '图片上传',
+      render: function(f, fName) {
+        return '<input type="file" id="' + fName + '" name="' + fName + '" accept="image/*"' + (f.multiple?' multiple':'') + '>';
+      },
+      collect: function(f, fName) { return ''; }
+    },
+    hidden: {
+      label: '隐藏字段',
+      render: function(f, fName) {
+        return '<input type="hidden" id="' + fName + '" name="' + fName + '" value="' + _a(f.default||'') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    section: {
+      label: '分区标题',
+      render: function(f, fName) {
+        return '<div class="section-divider' + (f.collapsible?' collapsible':'') + '"><h3 class="section-title">' + _e(f.label||'') + '</h3>' +
+          (f.description ? '<p class="section-desc">' + _e(f.description) + '</p>' : '') + '</div>';
+      },
+      collect: function(f, fName) { return ''; }
+    },
+    html: {
+      label: 'HTML',
+      render: function(f, fName) {
+        return '<div class="custom-html">' + (f.content||'') + '</div>';
+      },
+      collect: function(f, fName) { return ''; }
+    }
+  };
+
+  // Internal helpers
+  function _r(f) { return f.required ? ' required' : ''; }
+  function _a(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function _e(s) { return _a(s); }
+  function _at(n, v) { return (v !== undefined && v !== null && v !== '') ? ' ' + n + '="' + _a(String(v)) + '"' : ''; }
+
+  // ========== Render entire form from schema ==========
   var formSchema = PROJECT.form_schema || [];
   if (typeof formSchema === 'string') {
     try { var _p = JSON.parse(formSchema); formSchema = Array.isArray(_p) ? _p : []; } catch(e) { formSchema = []; }
   }
+  // If schema has a "fields" array, use that; otherwise treat schema as an array of fields (legacy)
+  if (formSchema.fields) formSchema = formSchema.fields;
+
   var customContainer = document.getElementById('customFieldsContainer');
 
-  function renderCustomFields() {
-    if (formSchema.length === 0) return;
+  function renderFormBySchema() {
+    if (!formSchema || formSchema.length === 0) return;
     var html = '';
     formSchema.forEach(function(field){
-      var reqMark = field.required ? ' <span class="req">*</span>' : '';
-      var reqAttr = field.required ? ' required' : '';
+      var reg = FIELD_REGISTRY[field.type];
+      if (!reg) { html += '<p class="error">未知字段类型: ' + _e(field.type) + '</p>'; return; }
       var fName = 'cf_' + field.name;
-
-      html += '<div class="field">';
-
-      switch (field.type) {
-        case 'text':
-          html += '<label for="' + fName + '">' + escHtml(field.label) + reqMark + '</label>';
-          html += '<input type="text" id="' + fName + '" name="' + fName + '"' + reqAttr + ' placeholder="' + escAttr(field.placeholder || '') + '">';
-          break;
-
-        case 'textarea':
-          html += '<label for="' + fName + '">' + escHtml(field.label) + reqMark + '</label>';
-          html += '<textarea id="' + fName + '" name="' + fName + '"' + reqAttr + ' placeholder="' + escAttr(field.placeholder || '') + '" style="min-height:80px"></textarea>';
-          break;
-
-        case 'select':
-          html += '<label for="' + fName + '">' + escHtml(field.label) + reqMark + '</label>';
-          html += '<select id="' + fName + '" name="' + fName + '"' + reqAttr + '>';
-          html += '<option value="">请选择...</option>';
-          (field.options || []).forEach(function(opt){
-            html += '<option value="' + escAttr(opt) + '">' + escHtml(opt) + '</option>';
-          });
-          html += '</select>';
-          break;
-
-        case 'checkbox':
-          html += '<label>' + escHtml(field.label) + reqMark + '</label>';
-          html += '<div class="checkbox-group">';
-          (field.options || []).forEach(function(opt, i){
-            html += '<label><input type="checkbox" name="' + fName + '" value="' + escAttr(opt) + '"> ' + escHtml(opt) + '</label>';
-          });
-          html += '</div>';
-          break;
-
-        case 'radio':
-          html += '<label>' + escHtml(field.label) + reqMark + '</label>';
-          html += '<div class="radio-group">';
-          (field.options || []).forEach(function(opt, i){
-            html += '<label><input type="radio" name="' + fName + '" value="' + escAttr(opt) + '"' + (i === 0 && field.required ? ' required' : '') + '> ' + escHtml(opt) + '</label>';
-          });
-          html += '</div>';
-          break;
+      var reqMark = field.required ? ' <span class="req">*</span>' : '';
+      var widthClass = field.width === 'half' ? ' field-half' : field.width === 'third' ? ' field-third' : '';
+      html += '<div class="field' + widthClass + '">';
+      if (field.type !== 'hidden' && field.type !== 'section' && field.type !== 'html') {
+        html += '<label for="' + fName + '">' + _e(field.label) + reqMark + '</label>';
       }
-
+      if (field.type === 'section') {
+        // section type includes its own label internally
+        html += reg.render(field, fName);
+      } else {
+        html += reg.render(field, fName);
+      }
+      if (field.help_text) {
+        html += '<p class="help-text">' + _e(field.help_text) + '</p>';
+      }
       html += '</div>';
     });
     customContainer.innerHTML = html;
-  }
 
-  function escHtml(s) {
-    var d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-  }
-
-  function escAttr(s) {
-    return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  }
-
-  renderCustomFields();
-
-  // ========== File management ==========
-  var imagePreview = document.getElementById('imagePreview');
-  var fileList = document.getElementById('fileList');
-  var imagesInput = document.getElementById('images');
-  var filesInput = document.getElementById('files');
-
-  // Managed file arrays
-  var imageFiles = [];
-  var logFiles = [];
-
-  // ---- Image preview with thumbnails ----
-  function renderImagePreviews() {
-    imagePreview.innerHTML = '';
-    imageFiles.forEach(function(f, i) {
-      var item = document.createElement('div');
-      item.className = 'preview-item';
-
-      var img = document.createElement('img');
-      img.alt = f.name;
-      // Create thumbnail via FileReader
-      var reader = new FileReader();
-      reader.onload = (function(el){ return function(e){ el.src = e.target.result; }; })(img);
-      reader.readAsDataURL(f);
-
-      var nameBar = document.createElement('div');
-      nameBar.className = 'preview-name';
-      nameBar.textContent = f.name;
-
-      var removeBtn = document.createElement('button');
-      removeBtn.type = 'button';
-      removeBtn.className = 'preview-remove';
-      removeBtn.textContent = '\u00d7';
-      removeBtn.title = '移除此图片';
-      removeBtn.addEventListener('click', function(){
-        imageFiles.splice(i, 1);
-        rebuildDataTransfer(imagesInput, imageFiles);
-        renderImagePreviews();
-      });
-
-      item.appendChild(img);
-      item.appendChild(nameBar);
-      item.appendChild(removeBtn);
-      imagePreview.appendChild(item);
+    // Wire up toggle change handler
+    formSchema.forEach(function(field){
+      if (field.type === 'toggle') {
+        var el = document.getElementById('cf_' + field.name);
+        if (el) {
+          el.addEventListener('change', function(){
+            var lbl = document.getElementById('cf_' + field.name + '_lbl');
+            if (lbl) lbl.textContent = this.checked ? (field.label_on || '已启用') : (field.label_off || '已禁用');
+          });
+        }
+      }
+      if (field.type === 'slider') {
+        var el = document.getElementById('cf_' + field.name);
+        if (el) {
+          el.addEventListener('input', function(){
+            var out = document.getElementById('cf_' + field.name + '_out');
+            if (out) out.textContent = this.value;
+          });
+        }
+      }
     });
   }
 
-  // ---- File list (log files) ----
+  // ========== Collect custom data from form ==========
+  function collectFormData() {
+    var data = {};
+    if (!formSchema) return data;
+    formSchema.forEach(function(field){
+      if (field.type === 'section' || field.type === 'html') return;
+      var reg = FIELD_REGISTRY[field.type];
+      if (!reg || !reg.collect) return;
+      var val = reg.collect(field, 'cf_' + field.name);
+      if (val !== '' && val !== undefined && val !== null) {
+        data[field.name] = val;
+      }
+    });
+    return data;
+  }
+
+  // Tags helper (needs global access for inline onclick)
+  window.addTag = function(prefix, val) {
+    val = val.trim();
+    if (!val) return;
+    var hidden = document.getElementById(prefix);
+    var list = document.getElementById(prefix + '_list');
+    var inp = document.getElementById(prefix + '_inp');
+    if (!hidden || !list) return;
+    var existing = hidden.value ? hidden.value.split(',') : [];
+    if (existing.indexOf(val) === -1) {
+      existing.push(val);
+      var tag = document.createElement('span');
+      tag.className = 'tag-item';
+      tag.innerHTML = _e(val) + ' <span class="tag-remove" onclick="removeTag(\\'' + prefix + '\\',\\'' + _a(val) + '\\')">&times;</span>';
+      list.appendChild(tag);
+    }
+    hidden.value = existing.join(',');
+    inp.value = '';
+  };
+  window.removeTag = function(prefix, val) {
+    var hidden = document.getElementById(prefix);
+    var list = document.getElementById(prefix + '_list');
+    if (!hidden || !list) return;
+    var existing = hidden.value.split(',').filter(function(v){ return v !== val; });
+    hidden.value = existing.join(',');
+    list.querySelectorAll('.tag-item').forEach(function(el){
+      if (el.textContent.indexOf(val) === 0) el.remove();
+    });
+  };
+
+  renderFormBySchema();  // ---- File list (log files) ----
   function renderFileList() {
     fileList.innerHTML = '';
     logFiles.forEach(function(f, i) {
@@ -474,27 +689,7 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 
   // ========== Collect custom data ==========
   function collectCustomData() {
-    var data = {};
-    formSchema.forEach(function(field){
-      var fName = 'cf_' + field.name;
-      switch (field.type) {
-        case 'text':
-        case 'textarea':
-        case 'select':
-          var el = document.getElementById(fName);
-          if (el) data[field.name] = el.value.trim();
-          break;
-        case 'checkbox':
-          var checks = document.querySelectorAll('input[name="' + fName + '"]:checked');
-          data[field.name] = Array.from(checks).map(function(c){ return c.value; });
-          break;
-        case 'radio':
-          var radio = document.querySelector('input[name="' + fName + '"]:checked');
-          data[field.name] = radio ? radio.value : '';
-          break;
-      }
-    });
-    return data;
+    return collectFormData();
   }
 
   // ========== Duplicate detection ==========
