@@ -28,6 +28,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .success-msg h3{font-size:1.1rem;margin-bottom:8px;color:#1a7a1a}
 .success-msg p{color:#666;font-size:.9rem}
 .success-msg a{display:inline-block;margin-top:16px;padding:10px 24px;background:#333;color:#fff;border-radius:4px;text-decoration:none}
+.key-notice{margin-top:20px;padding:14px;background:#fff8e1;border:1px solid #f0d060;border-radius:6px;text-align:left;font-size:.82rem}
+.key-notice strong{color:#8a6d00}
+.key-notice p{margin:6px 0;color:#6b5900}
+.key-notice code{background:#f5f0d0;padding:2px 6px;border-radius:3px;font-size:.8rem}
 </style>
 </head>
 <body>
@@ -61,6 +65,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
     <div class="success-msg">
       <h3>设置完成</h3>
       <p>FeedShit 已准备就绪</p>
+      <div class="key-notice">
+        <strong>📌 重要：加密密钥备份</strong>
+        <p>系统已自动生成加密密钥，用于保护 SMTP 密码和 Webhook 密钥。</p>
+        <p>密钥文件位置：<code>data/key/master.key</code></p>
+        <p><strong>请将此文件备份到安全位置</strong>（如密码管理器、U盘）。<br>
+        如果丢失此文件，已保存的邮件密码和 Webhook 密钥将无法解密，需要重新配置。</p>
+      </div>
       <a href="/">返回首页</a>
     </div>
   </div>

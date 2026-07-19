@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"log"
 	"net/http"
 	"os"
@@ -24,22 +25,46 @@ import (
 func main() {
 	cfg := config.LoadConfig()
 
-	// Initialize encryption key: if FEEDSHIT_MASTER_KEY is not set, use a
-	// built-in fallback key so the app works out of the box (double-click).
-	// For production with real security, set FEEDSHIT_MASTER_KEY env var.
-	if err := security.Init(); err != nil {
-		// Fallback key — 32 bytes from SHA-256("FeedShit-default-key").
-		fallback := []byte{0x8c, 0x3b, 0x7a, 0xd1, 0xe5, 0x9f, 0x42, 0x60, 0x1e, 0x2a, 0x4d, 0x8f, 0x7b, 0xc0, 0x95, 0x63, 0x11, 0x3e, 0xf6, 0x2d, 0x9a, 0x74, 0x5b, 0x0e, 0x2c, 0x8d, 0x6f, 0xa1, 0x43, 0x52, 0xe0, 0x7c}
-		if err := security.InitWithKey(fallback); err != nil {
-			log.Fatalf("Failed to set fallback master key: %v", err)
-		}
-		log.Println("[INFO] FEEDSHIT_MASTER_KEY not set — using built-in key (secrets persist, but not cryptographically isolated)")
-		log.Println("[INFO] For production isolation: set FEEDSHIT_MASTER_KEY=<64-hex-chars>")
+	// Ensure data directory exists before security init (needs DATA_DIR/key/)
+	dataDir := cfg.DataDir
+	if err := os.MkdirAll(dataDir+"/key", 0755); err != nil {
+		log.Fatalf("Failed to create key dir: %v", err)
+	}
+	if err := os.MkdirAll(cfg.UploadDir, 0755); err != nil {
+		log.Fatalf("Failed to create upload dir: %v", err)
 	}
 
-	// Ensure data directory exists
-	if err := os.MkdirAll(cfg.UploadDir, 0755); err != nil {
-		log.Fatalf("Failed to create data dir: %v", err)
+	// Initialize encryption key:
+	//   1. If FEEDSHIT_MASTER_KEY env var is set, use it (production isolation).
+	//   2. Else if data/key/master.key exists, read it (persisted across restarts).
+	//   3. Else generate a random key, save to data/key/master.key (first run).
+	keyPath := dataDir + "/key/master.key"
+	if err := security.Init(); err != nil {
+		key, rErr := os.ReadFile(keyPath)
+		if rErr != nil || len(key) != 32 {
+			// Generate a new random key
+			key = make([]byte, 32)
+			if _, genErr := rand.Read(key); genErr != nil {
+				log.Fatalf("Failed to generate master key: %v", genErr)
+			}
+			if wErr := os.WriteFile(keyPath, key, 0600); wErr != nil {
+				log.Fatalf("Failed to save master key to %s: %v", keyPath, wErr)
+			}
+			keyGenerated := true
+			if err := security.InitWithKey(key); err != nil {
+				log.Fatalf("Failed to set master key: %v", err)
+			}
+			log.Printf("[INFO] 加密密钥已生成并保存到 %s", keyPath)
+			log.Printf("[INFO] 请备份此文件！丢失后将无法解密已存储的敏感信息")
+			_ = keyGenerated
+		} else {
+			if err := security.InitWithKey(key); err != nil {
+				log.Fatalf("Failed to set master key from file: %v", err)
+			}
+			log.Printf("[INFO] 已从 %s 加载加密密钥", keyPath)
+		}
+	} else {
+		log.Println("[INFO] 使用 FEEDSHIT_MASTER_KEY 环境变量作为加密密钥")
 	}
 
 	// Initialize database
