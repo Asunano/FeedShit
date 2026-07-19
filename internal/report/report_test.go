@@ -61,12 +61,12 @@ func weekTimestamps() (lastMondayUnix, lastSundayUnix int64) {
 // TestRenderWeeklyReportHTML_SubjectFormat 验证主题格式（第 7 项）。
 func TestRenderWeeklyReportHTML_SubjectFormat(t *testing.T) {
 	data := &ReportData{
-		WeekNumber:    "2026-W29",
-		TotalNew:      128,
-		PendingCount:  23,
-		Categories:    []CategoryStat{},
-		DailyTrend:    []DailyTrendItem{},
-		Projects:      []ProjectStatItem{},
+		WeekNumber:   "2026-W29",
+		TotalNew:     128,
+		PendingCount: 23,
+		Categories:   []CategoryStat{},
+		DailyTrend:   []DailyTrendItem{},
+		Projects:     []ProjectStatItem{},
 	}
 	subject, _ := RenderWeeklyReportHTML(data)
 
@@ -109,12 +109,12 @@ func TestRenderWeeklyReportHTML_HtmlBodySections(t *testing.T) {
 		"2026-07-14 (周一) ~ 2026-07-20 (周日)",
 		"2026-07-21 08:00",
 		"2026-W29",
-		"128",  // TotalNew
-		"23",   // PendingCount (with color #e53e3e)
-		"15",   // ProcessingCount (with color #3182ce)
-		"80",   // ResolvedCount (with color #38a169)
-		"10",   // ClosedCount (with color #a0aec0)
-		"5",    // ProjectCount
+		"128", // TotalNew
+		"23",  // PendingCount (with color #e53e3e)
+		"15",  // ProcessingCount (with color #3182ce)
+		"80",  // ResolvedCount (with color #38a169)
+		"10",  // ClosedCount (with color #a0aec0)
+		"5",   // ProjectCount
 		"功能请求",
 		"Bug报告",
 		"07/14",
@@ -155,11 +155,11 @@ func TestRenderWeeklyReportHTML_HtmlBodySections(t *testing.T) {
 // TestRenderWeeklyReportHTML_NilSlices 验证空切片不导致模板 panic（第 7 项边界条件）。
 func TestRenderWeeklyReportHTML_NilSlices(t *testing.T) {
 	data := &ReportData{
-		WeekNumber:  "2026-W30",
-		TotalNew:    0,
-		Categories:  nil,
-		DailyTrend:  nil,
-		Projects:    nil,
+		WeekNumber: "2026-W30",
+		TotalNew:   0,
+		Categories: nil,
+		DailyTrend: nil,
+		Projects:   nil,
 	}
 	subject, htmlBody := RenderWeeklyReportHTML(data)
 

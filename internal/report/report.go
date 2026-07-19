@@ -13,17 +13,17 @@ import (
 
 // ReportData 周报的全部统计数据。
 type ReportData struct {
-	ReportPeriod    string           // 统计周期描述，如 "2026-07-14 (周一) ~ 2026-07-20 (周日)"
-	GeneratedAt     string           // 生成时间，如 "2026-07-21 08:00"
-	WeekNumber      string           // ISO 周号，如 "2026-W29"
-	TotalNew        int              // 本周新增总数
-	PendingCount    int              // 待处理数
-	ProcessingCount int              // 处理中数
-	ResolvedCount   int              // 已解决数
-	ClosedCount     int              // 已关闭数
-	ProjectCount    int              // 涉及项目数
-	Categories      []CategoryStat   // 分类分布
-	DailyTrend      []DailyTrendItem // 每日趋势
+	ReportPeriod    string            // 统计周期描述，如 "2026-07-14 (周一) ~ 2026-07-20 (周日)"
+	GeneratedAt     string            // 生成时间，如 "2026-07-21 08:00"
+	WeekNumber      string            // ISO 周号，如 "2026-W29"
+	TotalNew        int               // 本周新增总数
+	PendingCount    int               // 待处理数
+	ProcessingCount int               // 处理中数
+	ResolvedCount   int               // 已解决数
+	ClosedCount     int               // 已关闭数
+	ProjectCount    int               // 涉及项目数
+	Categories      []CategoryStat    // 分类分布
+	DailyTrend      []DailyTrendItem  // 每日趋势
 	Projects        []ProjectStatItem // 各项目概况
 }
 
