@@ -34,7 +34,8 @@ func main() {
 		log.Fatalf("Failed to create upload dir: %v", err)
 	}
 
-	// Initialize encryption key (env var → key file → auto-generate)
+	// Initialize encryption key for at-rest encryption of secrets
+	// (SMTP password, webhook secrets). Priority: env var → key file → auto-generate.
 	keyPath := dataDir + "/key/master.key"
 	if err := security.Init(); err != nil {
 		key, rErr := os.ReadFile(keyPath)
@@ -50,7 +51,7 @@ func main() {
 				log.Fatalf("Failed to set master key: %v", err)
 			}
 			log.Printf("[INFO] 加密密钥已生成并保存到 %s", keyPath)
-			log.Printf("[INFO] 请备份此文件！丢失后数据库将无法恢复")
+			log.Printf("[INFO] 请备份此文件！丢失后将无法解密已存储的敏感信息")
 		} else {
 			if err := security.InitWithKey(key); err != nil {
 				log.Fatalf("Failed to set master key from file: %v", err)
@@ -61,22 +62,12 @@ func main() {
 		log.Println("[INFO] 使用 FEEDSHIT_MASTER_KEY 环境变量作为加密密钥")
 	}
 
-	// Decrypt database file if encrypted version exists
-	dbPath := cfg.DBPath
-	encPath := dbPath + ".encrypted"
-	if _, statErr := os.Stat(encPath); statErr == nil {
-		if err := security.DecryptFile(encPath, dbPath); err != nil {
-			log.Fatalf("Failed to decrypt database: %v", err)
-		}
-		os.Remove(encPath)
-		log.Println("[INFO] 数据库已解密")
-	}
-
 	// Initialize database
-	db, err := database.NewDatabase(dbPath)
+	db, err := database.NewDatabase(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
+	defer db.Close()
 
 	// Seed default config
 	db.InitDefaultConfig(cfg)
@@ -179,7 +170,7 @@ func main() {
 	log.Printf("  后台: http://localhost:%s/admin", cfg.Port)
 	log.Printf("  反馈页: http://localhost:%s/fb/{项目slug}", cfg.Port)
 
-	// Graceful shutdown: encrypt database on exit
+	// Graceful shutdown
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -196,18 +187,6 @@ func main() {
 		log.Fatalf("Server failed: %v", err)
 	}
 	log.Println("服务已停止")
-
-	// Close database and encrypt for at-rest protection
-	db.Close()
-	log.Println("[INFO] 正在加密数据库...")
-	if err := security.EncryptFile(dbPath, encPath); err != nil {
-		log.Printf("[ERROR] 数据库加密失败: %v（明文未删除，请手动处理）", err)
-	} else {
-		os.Remove(dbPath)
-		os.Remove(dbPath + "-wal")
-		os.Remove(dbPath + "-shm")
-		log.Println("[INFO] 数据库已加密，明文已清除")
-	}
 }
 
 // pruneBackups prunes old backup files according to the retention policy.
