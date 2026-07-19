@@ -48,3 +48,4 @@ qa_*.log
 # Coverage output
 coverage*.out
 /nul
+architecture-review-v2.md
