@@ -6,14 +6,16 @@
 <title>反馈跟踪</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;line-height:1.6}
+:root{--bg:#f5f5f5;--fg:#333;--card-bg:#fff;--card-border:#e2e2e2;--input-border:#d0d0d0;--muted:#888;--note-bg:#f9f9f9;--note-border:#eee;--note-admin-bg:#f0f7ff;--note-admin-border:#d0e3f7}
+[data-theme="dark"]{--bg:#1a1a2e;--fg:#e0e0e0;--card-bg:#16213e;--card-border:#2a2a4a;--input-border:#3a3a5a;--muted:#8888aa;--note-bg:#1e1e3a;--note-border:#2a2a4a;--note-admin-bg:#1a2a4a;--note-admin-border:#2a4a6a}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6}
 .container{max-width:600px;margin:40px auto;padding:0 16px}
 h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
-.subtitle{color:#888;font-size:.85rem;margin-bottom:24px}
-.card{background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:24px;margin-bottom:16px}
+.subtitle{color:var(--muted);font-size:.85rem;margin-bottom:24px}
+.card{background:var(--card-bg);border:1px solid var(--card-border);border-radius:6px;padding:24px;margin-bottom:16px}
 .field{margin-bottom:16px}
-.field label{display:block;font-size:.85rem;font-weight:500;margin-bottom:4px;color:#555}
-.field input[type=text],.field textarea{width:100%;padding:8px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.9rem;font-family:inherit;transition:border-color .15s}
+.field label{display:block;font-size:.85rem;font-weight:500;margin-bottom:4px;color:var(--muted)}
+.field input[type=text],.field textarea{width:100%;padding:8px 10px;border:1px solid var(--input-border);border-radius:4px;font-size:.9rem;font-family:inherit;background:var(--card-bg);color:var(--fg);transition:border-color .15s}
 .field input:focus,.field textarea:focus{outline:none;border-color:#888}
 .field textarea{resize:vertical;min-height:80px}
 .btn{display:inline-block;padding:10px 24px;background:#333;color:#fff;border:none;border-radius:4px;font-size:.9rem;cursor:pointer;transition:background .15s}
@@ -35,32 +37,39 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 .fb-status.processing{background:#cce5ff;color:#004085}
 .fb-status.resolved{background:#d4edda;color:#155724}
 .fb-status.closed{background:#e2e3e5;color:#383d41}
-.fb-meta{font-size:.8rem;color:#999;margin-bottom:16px}
-.fb-desc{font-size:.9rem;color:#555;white-space:pre-wrap;margin-bottom:20px;padding:12px;background:#f9f9f9;border-radius:4px;border:1px solid #eee}
+.fb-meta{font-size:.8rem;color:var(--muted);margin-bottom:16px}
+.fb-desc{font-size:.9rem;color:var(--fg);white-space:pre-wrap;margin-bottom:20px;padding:12px;background:var(--note-bg);border-radius:4px;border:1px solid var(--note-border)}
 /* Notes timeline */
-.notes-section h3{font-size:.9rem;font-weight:600;margin-bottom:12px;color:#555}
-.note-item{padding:12px;margin-bottom:8px;border-radius:6px;border:1px solid #eee}
-.note-item.admin{background:#f0f7ff;border-color:#d0e3f7}
-.note-item.submitter{background:#f9f9f9;border-color:#e2e2e2}
+.notes-section h3{font-size:.9rem;font-weight:600;margin-bottom:12px;color:var(--muted)}
+.note-item{padding:12px;margin-bottom:8px;border-radius:6px;border:1px solid var(--note-border);background:var(--note-bg)}
+.note-item.admin{background:var(--note-admin-bg);border-color:var(--note-admin-border)}
+.note-item.submitter{background:var(--note-bg);border-color:var(--note-border)}
 .note-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.note-author{font-size:.8rem;font-weight:600;color:#555}
+.note-author{font-size:.8rem;font-weight:600;color:var(--muted)}
 .note-author.admin{color:#004085}
-.note-author.submitter{color:#666}
-.note-time{font-size:.7rem;color:#aaa}
-.note-content{font-size:.85rem;color:#444;white-space:pre-wrap}
-.no-notes{text-align:center;color:#bbb;font-size:.85rem;padding:20px 0}
+.note-author.submitter{color:var(--muted)}
+.note-time{font-size:.7rem;color:var(--muted)}
+.note-content{font-size:.85rem;color:var(--fg);white-space:pre-wrap}
+.no-notes{text-align:center;color:var(--muted);font-size:.85rem;padding:20px 0}
 /* Reply form */
-.reply-section{margin-top:20px;padding-top:16px;border-top:1px solid #eee}
-.reply-section h3{font-size:.9rem;font-weight:600;margin-bottom:12px;color:#555}
+.reply-section{margin-top:20px;padding-top:16px;border-top:1px solid var(--note-border)}
+.reply-section h3{font-size:.9rem;font-weight:600;margin-bottom:12px;color:var(--muted)}
 .reply-form textarea{margin-bottom:8px}
-.reply-form .btn-row{display:flex;justify-content:flex-end}
+.reply-form .file-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.reply-form .file-row input[type=file]{font-size:.8rem}
+.reply-form .btn-row{display:flex;justify-content:flex-end;gap:8px}
+/* Dark mode toggle */
+.theme-toggle{position:fixed;top:12px;right:16px;z-index:100}
+.theme-toggle button{background:none;border:1px solid var(--input-border);border-radius:4px;padding:4px 10px;font-size:.85rem;cursor:pointer;color:var(--muted)}
+.theme-toggle button:hover{background:var(--note-bg)}
 /* Loading */
-.loading{text-align:center;padding:40px;color:#999}
+.loading{text-align:center;padding:40px;color:var(--muted)}
 .loading .spinner{display:inline-block;width:24px;height:24px;border:3px solid #e0e0e0;border-top-color:#888;border-radius:50%;animation:spin .6s linear infinite;margin-bottom:8px}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
+<div class="theme-toggle"><button onclick="toggleTheme()" id="themeBtn">🌙 暗黑</button></div>
 <div class="container">
   <h1>反馈跟踪</h1>
   <p class="subtitle">输入跟踪令牌查看反馈处理进度</p>
@@ -111,6 +120,10 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
         <h3>补充回复</h3>
         <div class="reply-form">
           <textarea id="replyContent" placeholder="如有补充信息请在此填写..."></textarea>
+          <div class="file-row">
+            <input type="file" id="replyFile" multiple>
+            <span id="fileNames" style="font-size:.75rem;color:var(--muted)"></span>
+          </div>
           <div class="btn-row">
             <button class="btn btn-sm" id="replyBtn" onclick="doReply()">提交回复</button>
           </div>
@@ -243,6 +256,13 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     var fd = new FormData();
     fd.append('token', currentToken);
     fd.append('content', content);
+    var fileInput = document.getElementById('replyFile');
+    if (fileInput && fileInput.files && fileInput.files.length > 0) {
+      for (var i = 0; i < fileInput.files.length; i++) {
+        if (fileInput.files[i].size > 20*1024*1024) { showReplyStatus('error', '文件 ' + fileInput.files[i].name + ' 超过 20MB'); btn.disabled = false; return; }
+        fd.append('file', fileInput.files[i]);
+      }
+    }
 
     fetch('/api/v1/track/reply', {method: 'POST', body: fd})
       .then(function(r){ return r.json().then(function(d){ return {status: r.status, data: d}; }); })
@@ -250,6 +270,8 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
         if (res.status === 200) {
           showReplyStatus('success', '回复已提交');
           document.getElementById('replyContent').value = '';
+          document.getElementById('replyFile').value = '';
+          document.getElementById('fileNames').textContent = '';
           // Refresh feedback data
           setTimeout(function(){ doLookup(); }, 500);
         } else {
@@ -342,6 +364,32 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
   // Enter key triggers lookup
   document.getElementById('tokenInput').addEventListener('keydown', function(e){
     if (e.key === 'Enter') { e.preventDefault(); doLookup(); }
+  });
+
+  // Dark mode toggle
+  window.toggleTheme = function() {
+    var html = document.documentElement;
+    var btn = document.getElementById('themeBtn');
+    if (html.getAttribute('data-theme') === 'dark') {
+      html.removeAttribute('data-theme');
+      btn.textContent = '🌙 暗黑';
+      localStorage.setItem('trackTheme', 'light');
+    } else {
+      html.setAttribute('data-theme', 'dark');
+      btn.textContent = '☀️ 明亮';
+      localStorage.setItem('trackTheme', 'dark');
+    }
+  };
+  if (localStorage.getItem('trackTheme') === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.getElementById('themeBtn').textContent = '☀️ 明亮';
+  }
+
+  // File input display
+  document.getElementById('replyFile').addEventListener('change', function(){
+    var names = [];
+    for (var i = 0; i < this.files.length; i++) { names.push(this.files[i].name); }
+    document.getElementById('fileNames').textContent = names.length ? names.join(', ') : '';
   });
 
   initFromHash();

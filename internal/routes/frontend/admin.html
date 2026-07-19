@@ -21,6 +21,8 @@ a:hover{text-decoration:underline}
 .header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
 .header-right button{background:none;border:1px solid #ddd;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:.8rem;color:#666}
 .header-right button:hover{background:#f0f0f0}
+.header-link{font-size:.8rem;color:#666;text-decoration:none;padding:4px 10px;border-radius:4px;transition:background .15s}
+.header-link:hover{background:#f0f0f0;text-decoration:none}
 
 .main{max-width:1100px;margin:20px auto;padding:0 16px}
 
@@ -302,6 +304,8 @@ tr:last-child td{border-bottom:none}
 [data-theme="dark"] .nav button.active{background:#3a3a3a;color:#fff}
 [data-theme="dark"] .header-right button{color:var(--muted);border-color:var(--border)}
 [data-theme="dark"] .header-right button:hover{background:var(--hover)}
+[data-theme="dark"] .header-link{color:var(--muted)}
+[data-theme="dark"] .header-link:hover{background:var(--hover)}
 [data-theme="dark"] .stat-card,
 [data-theme="dark"] .table-wrap,
 [data-theme="dark"] .settings-card,
@@ -559,6 +563,7 @@ tr:last-child td{border-bottom:none}
     <button data-tab="audit" onclick="switchTab('audit')">审计</button>
     <button data-tab="settings" onclick="switchTab('settings')">设置</button>
     <button data-tab="kb" onclick="switchTab('kb')" id="navKb" style="display:none">知识库</button>
+    <a href="/track" class="header-link" target="_blank" title="反馈跟踪">跟踪</a>
   </div>
   <div class="header-right">
     <button id="themeToggle" onclick="toggleTheme()" title="切换暗黑 / 明亮模式">🌙</button>
@@ -711,8 +716,8 @@ tr:last-child td{border-bottom:none}
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>用户名</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
-        <tbody id="adminTable"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+        <thead><tr><th>用户名</th><th>邮箱</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+        <tbody id="adminTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -872,6 +877,7 @@ tr:last-child td{border-bottom:none}
     <h3 id="adminModalTitle">新建成员</h3>
     <input type="hidden" id="adminEditId">
     <div class="settings-field"><label>用户名 *</label><input type="text" id="adminUsername" placeholder="3-32 位"></div>
+    <div class="settings-field"><label>邮箱</label><input type="email" id="adminEmail" placeholder="用于邮件通知"></div>
     <div class="settings-field"><label>密码 <span id="adminPwdHint">*</span></label><input type="password" id="adminPassword" placeholder="至少 8 位，含大小写和数字"><div class="hint" id="adminPwdHelp">留空则不修改密码</div></div>
     <div class="settings-field"><label>角色</label><select id="adminRole">
       <option value="admin">管理员（全部权限）</option>
@@ -2129,7 +2135,7 @@ tr:last-child td{border-bottom:none}
     var admins = d.admins || [];
     var tbody = document.getElementById('adminTable');
     if (admins.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无团队成员</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">暂无团队成员</td></tr>';
       return;
     }
     var roleLabels = {admin:'管理员',manager:'经理',editor:'编辑',viewer:'只读'};
@@ -2137,13 +2143,15 @@ tr:last-child td{border-bottom:none}
       var dt = a.created_at ? a.created_at.replace('T',' ').substring(0,16) : '-';
       var statusText = a.is_active ? '<span style="color:#1a7a1a">启用</span>' : '<span style="color:#c00">停用</span>';
       var isSelf = a.username === currentUsername;
-      var actions = '<button class="btn-sm" onclick="editAdmin('+a.id+',\''+esc(a.username)+'\',\''+a.role+'\','+a.is_active+')">编辑</button>' +
+      var email = a.email || '-';
+      var actions = '<button class="btn-sm" onclick="editAdmin('+a.id+',\''+esc(a.username)+'\',\''+esc(email)+'\',\''+a.role+'\','+a.is_active+')">编辑</button>' +
         ' <button class="btn-sm" onclick="editMemberGrants('+a.id+')">授权</button>';
       if (!isSelf) {
         actions += ' <button class="btn-sm btn-danger" onclick="deleteAdmin('+a.id+',\''+esc(a.username)+'\')">删除</button>';
       }
       return '<tr>' +
         '<td>'+esc(a.username)+(isSelf ? ' <span style="color:#888;font-size:.75rem">(我)</span>' : '')+'</td>' +
+        '<td style="color:#888;font-size:.8rem">'+esc(email)+'</td>' +
         '<td><span class="tag">'+(roleLabels[a.role] || a.role)+'</span></td>' +
         '<td>'+statusText+'</td>' +
         '<td style="color:#888;font-size:.8rem">'+dt+'</td>' +
