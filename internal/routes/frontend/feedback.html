@@ -650,6 +650,38 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 
   renderFormBySchema();
 
+  // ========== File management ==========
+  var imagePreview = document.getElementById('imagePreview');
+  var fileList = document.getElementById('fileList');
+  var imagesInput = document.getElementById('images');
+  var filesInput = document.getElementById('files');
+  var imageFiles = [];
+  var logFiles = [];
+
+  function renderImagePreviews() {
+    imagePreview.innerHTML = '';
+    imageFiles.forEach(function(f, i) {
+      var item = document.createElement('div');
+      item.className = 'preview-item';
+      var img = document.createElement('img');
+      img.alt = f.name;
+      var reader = new FileReader();
+      reader.onload = (function(el){ return function(e){ el.src = e.target.result; }; })(img);
+      reader.readAsDataURL(f);
+      var nameBar = document.createElement('div');
+      nameBar.className = 'preview-name';
+      nameBar.textContent = f.name;
+      var removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'preview-remove';
+      removeBtn.textContent = '\u00d7';
+      removeBtn.title = '移除此图片';
+      removeBtn.addEventListener('click', function(){ imageFiles.splice(i, 1); rebuildDataTransfer(imagesInput, imageFiles); renderImagePreviews(); });
+      item.appendChild(img); item.appendChild(nameBar); item.appendChild(removeBtn);
+      imagePreview.appendChild(item);
+    });
+  }
+
   // ---- File list (log files) ----
   function renderFileList() {
     fileList.innerHTML = '';
