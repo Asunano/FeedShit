@@ -274,6 +274,7 @@ func Register(r *gin.Engine, application *app.App) {
 		adminAPI.POST("/admins", middleware.RequireRole("admin"), application.AdminCreateAdmin)
 		adminAPI.PUT("/admins/:id", middleware.RequireRole("admin"), application.AdminUpdateAdmin)
 		adminAPI.DELETE("/admins/:id", middleware.RequireRole("admin"), application.AdminDeleteAdmin)
+		adminAPI.PUT("/admins/:id/reset-password", middleware.RequireRole("admin"), application.AdminResetPassword)
 
 		// Member grants — fine-grained RBAC (admin only)
 		adminAPI.GET("/admins/:id/grants", middleware.RequireRole("admin"), application.AdminGetMemberGrants)
@@ -308,6 +309,7 @@ func Register(r *gin.Engine, application *app.App) {
 
 		// Backup
 		adminAPI.POST("/backup", application.AdminBackup)
+		adminAPI.GET("/backup/download", application.AdminBackupDownload)
 
 		// API Token management (admin only)
 		adminAPI.GET("/api-tokens", middleware.RequireRole("admin"), application.AdminListAPITokens)

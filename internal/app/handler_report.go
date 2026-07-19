@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 	"feedshit/internal/database"
 	"feedshit/internal/middleware"
+	"feedshit/internal/security"
 )
 
 func (a *App) AdminStats(c *gin.Context) {
@@ -57,6 +59,46 @@ func (a *App) AdminProjectStats(c *gin.Context) {
 func (a *App) AdminExportCSV(c *gin.Context) {
 	projectID := c.Query("project")
 
+	// F6: Read optional filter parameters
+	filterStatus := c.Query("status")
+	filterPriority := c.Query("priority")
+	filterCategory := c.Query("category")
+	filterDateFrom := c.Query("date_from")
+	filterDateTo := c.Query("date_to")
+
+	// Helper: apply in-memory filters to a feedback slice
+	applyFilters := func(list []database.Feedback) []database.Feedback {
+		if filterStatus == "" && filterPriority == "" && filterCategory == "" && filterDateFrom == "" && filterDateTo == "" {
+			return list
+		}
+		var filtered []database.Feedback
+		for _, fb := range list {
+			if filterStatus != "" && fb.Status != filterStatus {
+				continue
+			}
+			if filterPriority != "" && fb.Priority != filterPriority {
+				continue
+			}
+			if filterCategory != "" && fb.Category != filterCategory {
+				continue
+			}
+			if filterDateFrom != "" {
+				t, err := time.Parse("2006-01-02", filterDateFrom)
+				if err == nil && fb.CreatedAt.Before(t) {
+					continue
+				}
+			}
+			if filterDateTo != "" {
+				t, err := time.Parse("2006-01-02", filterDateTo)
+				if err == nil && fb.CreatedAt.After(t.Add(24*time.Hour)) {
+					continue
+				}
+			}
+			filtered = append(filtered, fb)
+		}
+		return filtered
+	}
+
 	// RBAC: non-admin users can only export projects they have access to
 	roleStr, _ := c.Get("admin_role")
 	if roleStr != "admin" {
@@ -87,6 +129,9 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 			}
 			feedbacks := allFeedbacks
 
+			// F6: Apply export filters
+			feedbacks = applyFilters(feedbacks)
+
 			user, _ := c.Get("admin_user")
 			clientIP := middleware.GetClientIP(c)
 			a.DB.InsertAuditLog("export", fmt.Sprintf("导出反馈 %d 条 (项目: %s)", len(feedbacks), projectID), fmt.Sprintf("%v", user), clientIP)
@@ -111,6 +156,9 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "导出失败"})
 		return
 	}
+
+	// F6: Apply export filters
+	feedbacks = applyFilters(feedbacks)
 
 	user, _ := c.Get("admin_user")
 	clientIP := middleware.GetClientIP(c)
@@ -312,6 +360,17 @@ func (a *App) AdminBackup(c *gin.Context) {
 		return
 	}
 
+	// F14: Encrypt the backup file using the master key
+	encryptedPath := backupPath + ".enc"
+	if err := security.EncryptFile(backupPath, encryptedPath); err != nil {
+		// Encryption failure is non-fatal — the unencrypted backup still exists
+		log.Printf("[BACKUP] WARN: encrypt failed (backup saved unencrypted): %v", err)
+	} else {
+		// Remove unencrypted file after successful encryption
+		os.Remove(backupPath)
+		backupPath = encryptedPath
+	}
+
 	user, _ := c.Get("admin_user")
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("backup", fmt.Sprintf("数据库备份: %s", filepath.Base(backupPath)), fmt.Sprintf("%v", user), clientIP)
@@ -320,6 +379,37 @@ func (a *App) AdminBackup(c *gin.Context) {
 		"message": "备份完成",
 		"path":    filepath.Base(backupPath),
 	})
+}
+
+// AdminBackupDownload streams a backup file for download.
+// Route: GET /api/v1/admin/system/backup/download?file=backup_20260401.db
+func (a *App) AdminBackupDownload(c *gin.Context) {
+	filename := c.Query("file")
+	if filename == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 file 参数"})
+		return
+	}
+	// Security: prevent path traversal — only allow filenames, no slashes
+	if strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "非法的文件名"})
+		return
+	}
+	backupDir := filepath.Join(a.Cfg.DataDir, "backups")
+	backupPath := filepath.Join(backupDir, filename)
+
+	// Verify the file exists and is within the backup directory (extra safety)
+	if !strings.HasPrefix(backupPath, filepath.Clean(backupDir)+string(filepath.Separator)) &&
+		backupPath != filepath.Clean(backupDir) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "非法的文件路径"})
+		return
+	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("backup_download", fmt.Sprintf("下载备份: %s", filename), fmt.Sprintf("%v", user), clientIP)
+
+	c.Header("Content-Disposition", "attachment; filename="+filename)
+	c.File(backupPath)
 }
 
 // ========== CSV Import ==========
@@ -390,8 +480,8 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "未指定项目且 default 项目不存在，请通过表单 project_id 或 CSV 项目列指定"})
 				return
 			}
-			if !proj.IsActive {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "default 项目已停用"})
+			if !proj.IsActive || proj.IsArchived {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "项目已停用或已归档"})
 				return
 			}
 			// Bug #7: Check write permission on the default project
@@ -409,8 +499,8 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "项目不存在: " + globalProjectID})
 			return
 		}
-		if !proj.IsActive {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "项目已停用: " + globalProjectID})
+		if !proj.IsActive || proj.IsArchived {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "项目已停用或已归档: " + globalProjectID})
 			return
 		}
 		// Bug #7: Check write permission on the form-specified project
@@ -472,8 +562,8 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 				errors = append(errors, fmt.Sprintf("第 %d 行: 项目不存在: %s", lineNum, rowProj))
 				continue
 			}
-			if !proj.IsActive {
-				errors = append(errors, fmt.Sprintf("第 %d 行: 项目已停用: %s", lineNum, rowProj))
+			if !proj.IsActive || proj.IsArchived {
+				errors = append(errors, fmt.Sprintf("第 %d 行: 项目已停用或已归档: %s", lineNum, rowProj))
 				continue
 			}
 			// Bug #7: Check write permission on per-row project

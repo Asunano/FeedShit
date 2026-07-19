@@ -213,6 +213,11 @@ func (a *App) AdminUpdateProject(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败: " + err.Error()})
 		return
 	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("update_project", fmt.Sprintf("更新项目 #%d: %s (%s)", id, req.Name, req.Slug), fmt.Sprintf("%v", user), clientIP)
+
 	c.JSON(http.StatusOK, gin.H{"message": "项目已更新"})
 }
 
@@ -365,6 +370,18 @@ func (a *App) AdminUpdateCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 		return
 	}
+
+	// RBAC: verify category belongs to a project the user can edit
+	cat, err := a.DB.GetCategory(id)
+	if err != nil || cat == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "分类不存在"})
+		return
+	}
+	if !a.checkProjectWritePerm(c, cat.ProjectSlug) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权修改该项目分类"})
+		return
+	}
+
 	var req struct {
 		Name      string `json:"name"`
 		Color     string `json:"color"`
@@ -395,6 +412,18 @@ func (a *App) AdminDeleteCategory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 		return
 	}
+
+	// RBAC: verify category belongs to a project the user can edit
+	cat, err := a.DB.GetCategory(id)
+	if err != nil || cat == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "分类不存在"})
+		return
+	}
+	if !a.checkProjectWritePerm(c, cat.ProjectSlug) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权删除该项目分类"})
+		return
+	}
+
 	if err := a.DB.DeleteCategory(id); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
 		return

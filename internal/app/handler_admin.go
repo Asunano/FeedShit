@@ -311,6 +311,11 @@ func (a *App) AdminUpdateAdmin(c *gin.Context) {
 		return
 	}
 
+	// F2: If password was changed, revoke all sessions for this admin
+	if req.Password != "" {
+		a.SM.RevokeUserSessions(admin.Username)
+	}
+
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("update_admin", fmt.Sprintf("更新管理员 %s", admin.Username), fmt.Sprintf("%v", currentUser), clientIP)
 
@@ -347,6 +352,60 @@ func (a *App) AdminDeleteAdmin(c *gin.Context) {
 	a.DB.InsertAuditLog("delete_admin", fmt.Sprintf("删除管理员 %s", admin.Username), fmt.Sprintf("%v", currentUser), clientIP)
 
 	c.JSON(http.StatusOK, gin.H{"message": "管理员已删除"})
+}
+
+// ========== F1: Admin Reset Password ==========
+
+// AdminResetPassword allows an admin user to reset another admin's password.
+// Route: PUT /api/v1/admin/admins/:id/reset-password (admin only)
+func (a *App) AdminResetPassword(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	admin, err := a.DB.GetAdminByID(id)
+	if err != nil || admin == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "管理员不存在"})
+		return
+	}
+
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	if req.Password == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "密码不能为空"})
+		return
+	}
+	if err := validatePasswordStrength(req.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	hash, err := hashPassword(req.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "密码加密失败"})
+		return
+	}
+
+	if err := a.DB.UpdateAdminPassword(id, hash); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重置失败"})
+		return
+	}
+
+	// F2: Revoke all sessions for the reset admin
+	a.SM.RevokeUserSessions(admin.Username)
+
+	currentUser, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("reset_password", fmt.Sprintf("重置管理员 %s 的密码", admin.Username), fmt.Sprintf("%v", currentUser), clientIP)
+
+	c.JSON(http.StatusOK, gin.H{"message": "密码已重置"})
 }
 
 // ========== Member Grants (Fine-grained RBAC) ==========

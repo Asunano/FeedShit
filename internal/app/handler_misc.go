@@ -412,15 +412,39 @@ func (a *App) AdminServeFile(c *gin.Context) {
 // feedback IDs in the batch. Returns the deny message (empty = all allowed).
 // This prevents non-admin users with project-specific grants from modifying
 // feedbacks in projects they don't have access to.
+//
+// Uses batch query (GetFeedbacksByIDs) and cached admin lookup to avoid N+1.
 func (a *App) checkBulkWritePerm(c *gin.Context, ids []int64) string {
 	roleStr, _ := c.Get("admin_role")
 	if roleStr == "admin" {
 		return "" // admin has full access
 	}
-	for _, id := range ids {
-		_, deny := a.checkFeedbackWritePerm(c, id)
-		if deny != "" {
-			return fmt.Sprintf("反馈 #%d: %s", id, deny)
+	if len(ids) == 0 {
+		return ""
+	}
+
+	// Single admin lookup for the batch
+	username, _ := c.Get("admin_user")
+	usernameStr, _ := username.(string)
+	if usernameStr == "" {
+		return "无法验证用户身份"
+	}
+	admin, err := a.DB.GetAdminByUsername(usernameStr)
+	if err != nil || admin == nil {
+		return "用户不存在"
+	}
+
+	// Batch query all feedbacks at once
+	feedbacks, err := a.DB.GetFeedbacksByIDs(ids)
+	if err != nil {
+		return "查询反馈失败"
+	}
+
+	roleLevel := map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
+	for _, fb := range feedbacks {
+		effectiveRole := a.DB.GetEffectiveRole(admin.ID, fb.ProjectID, fb.Category)
+		if roleLevel[effectiveRole] < 2 { // need editor (2) or higher
+			return fmt.Sprintf("反馈 #%d: 权限不足", fb.ID)
 		}
 	}
 	return ""

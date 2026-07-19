@@ -65,6 +65,21 @@ func (d *Database) DeleteCategory(id int64) error {
 	return err
 }
 
+// GetCategory returns a single category by ID. Used for RBAC ownership verification.
+func (d *Database) GetCategory(id int64) (*Category, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var c Category
+	var isActive int
+	err := d.db.QueryRow(`SELECT id, project_slug, key, name, color, sort_order, is_active FROM categories WHERE id = ?`, id).
+		Scan(&c.ID, &c.ProjectSlug, &c.Key, &c.Name, &c.Color, &c.SortOrder, &isActive)
+	if err != nil {
+		return nil, err
+	}
+	c.IsActive = isActive == 1
+	return &c, nil
+}
+
 func (d *Database) GetCategoryByKey(projectSlug, key string) (*Category, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()

@@ -116,6 +116,24 @@ func (d *Database) DeleteAdmin(id int64) error {
 	return err
 }
 
+// UpdateAdminPassword updates the password hash for an admin.
+func (d *Database) UpdateAdminPassword(id int64, passwordHash string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(`UPDATE admins SET password_hash = ? WHERE id = ?`, passwordHash, id)
+	return err
+}
+
+// GetAdminEmail returns the contact_email from the most recent feedback by this admin, or empty.
+// This is used for notification dispatching — it's a heuristic since admins don't have a dedicated email field.
+func (d *Database) GetAdminEmail(username string) string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var email string
+	d.db.QueryRow(`SELECT contact_email FROM feedbacks WHERE contact_name = ? AND contact_email != '' ORDER BY created_at DESC LIMIT 1`, username).Scan(&email)
+	return email
+}
+
 // CountAdmins returns the total number of admin accounts.
 func (d *Database) CountAdmins() (int, error) {
 	d.mu.RLock()

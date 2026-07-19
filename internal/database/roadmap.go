@@ -6,9 +6,17 @@ import (
 
 // GetPublicRoadmap returns public, non-duplicate feedbacks for a project,
 // ordered by votes then recency. Sensitive fields (IP, contact, internal notes) excluded.
-func (d *Database) GetPublicRoadmap(projectSlug string, category string) ([]RoadmapItem, error) {
+func (d *Database) GetPublicRoadmap(projectSlug string, category string, limit, offset int) ([]RoadmapItem, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	where := `WHERE public_on_roadmap = 1 AND is_duplicate = 0`
 	args := []interface{}{}
 	if projectSlug != "" {
@@ -24,7 +32,8 @@ func (d *Database) GetPublicRoadmap(projectSlug string, category string) ([]Road
 		FROM feedbacks f
 		LEFT JOIN (SELECT feedback_id, COUNT(*) cnt FROM feedback_votes GROUP BY feedback_id) v ON v.feedback_id = f.id
 		`+where+`
-		ORDER BY v.cnt DESC, f.created_at DESC`, args...)
+		ORDER BY v.cnt DESC, f.created_at DESC
+		LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 	if err != nil {
 		return nil, err
 	}

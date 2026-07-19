@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -156,6 +157,7 @@ func (a *App) AdminListFeedbacks(c *gin.Context) {
 	priority := c.Query("priority")
 	assignee := c.Query("assignee")
 	category := c.Query("category")
+	trackingToken := c.Query("tracking_token")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 
@@ -176,64 +178,73 @@ func (a *App) AdminListFeedbacks(c *gin.Context) {
 
 	if roleStr != "admin" {
 		if usernameStr, ok := username.(string); ok {
-			admin, _ := a.DB.GetAdminByUsername(usernameStr)
-			if admin != nil {
-				plan, _ := a.DB.GetAdminAccessPlan(admin.ID)
-				if plan != nil {
-					// Empty plan = no grants = no access
-					if len(plan) == 0 {
-						c.JSON(http.StatusOK, gin.H{"feedbacks": []database.Feedback{}, "total": 0, "assignees": []string{}})
-						return
-					}
-					// Check if any project has category restrictions
-					hasCategoryRestriction := false
+			admin, err := a.DB.GetAdminByUsername(usernameStr)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "查询用户失败"})
+				return
+			}
+			if admin == nil {
+				// Non-admin user without a valid admin record → no access
+				c.JSON(http.StatusOK, gin.H{"feedbacks": []database.Feedback{}, "total": 0, "assignees": []string{}})
+				return
+			}
+			plan, err := a.DB.GetAdminAccessPlan(admin.ID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "查询权限失败"})
+				return
+			}
+			// Empty plan = no grants = no access
+			if len(plan) == 0 {
+				c.JSON(http.StatusOK, gin.H{"feedbacks": []database.Feedback{}, "total": 0, "assignees": []string{}})
+				return
+			}
+			// Check if any project has category restrictions
+			hasCategoryRestriction := false
+			for _, pa := range plan {
+				if pa.AllowedCategories != nil {
+					hasCategoryRestriction = true
+					break
+				}
+			}
+
+			if hasCategoryRestriction {
+				// Use access plan for fine-grained filtering
+				if project != "" {
+					// Intersect: user-specified project must be in allowed list
+					found := false
 					for _, pa := range plan {
-						if pa.AllowedCategories != nil {
-							hasCategoryRestriction = true
+						if pa.Slug == project {
+							found = true
+							// Filter plan to only this project
+							accessPlan = []database.ProjectAccess{pa}
 							break
 						}
 					}
-
-					if hasCategoryRestriction {
-						// Use access plan for fine-grained filtering
-						if project != "" {
-							// Intersect: user-specified project must be in allowed list
-							found := false
-							for _, pa := range plan {
-								if pa.Slug == project {
-									found = true
-									// Filter plan to only this project
-									accessPlan = []database.ProjectAccess{pa}
-									break
-								}
-							}
-							if !found {
-								c.JSON(http.StatusOK, gin.H{"feedbacks": []database.Feedback{}, "total": 0, "assignees": []string{}})
-								return
-							}
-						} else {
-							accessPlan = plan
+					if !found {
+						c.JSON(http.StatusOK, gin.H{"feedbacks": []database.Feedback{}, "total": 0, "assignees": []string{}})
+						return
+					}
+				} else {
+					accessPlan = plan
+				}
+			} else {
+				// All projects have wildcard — use simple project filter
+				if project != "" {
+					found := false
+					for _, pa := range plan {
+						if pa.Slug == project {
+							found = true
+							break
 						}
-					} else {
-						// All projects have wildcard — use simple project filter
-						if project != "" {
-							found := false
-							for _, pa := range plan {
-								if pa.Slug == project {
-									found = true
-									break
-								}
-							}
-							if !found {
-								c.JSON(http.StatusOK, gin.H{"feedbacks": []database.Feedback{}, "total": 0, "assignees": []string{}})
-								return
-							}
-							projectIDs = []string{project}
-						} else {
-							for _, pa := range plan {
-								projectIDs = append(projectIDs, pa.Slug)
-							}
-						}
+					}
+					if !found {
+						c.JSON(http.StatusOK, gin.H{"feedbacks": []database.Feedback{}, "total": 0, "assignees": []string{}})
+						return
+					}
+					projectIDs = []string{project}
+				} else {
+					for _, pa := range plan {
+						projectIDs = append(projectIDs, pa.Slug)
 					}
 				}
 			}
@@ -249,8 +260,8 @@ func (a *App) AdminListFeedbacks(c *gin.Context) {
 	var total int
 	var err error
 
-	if keyword != "" || status != "" || priority != "" || assignee != "" || category != "" {
-		list, total, err = a.DB.SearchFeedbacks(projectIDs, accessPlan, keyword, status, priority, assignee, category, limit, offset)
+	if keyword != "" || status != "" || priority != "" || assignee != "" || category != "" || trackingToken != "" {
+		list, total, err = a.DB.SearchFeedbacks(projectIDs, accessPlan, keyword, status, priority, assignee, category, trackingToken, limit, offset)
 	} else {
 		list, total, err = a.DB.ListFeedbacks(projectIDs, accessPlan, limit, offset)
 	}
@@ -460,6 +471,26 @@ func (a *App) AdminUpdateFeedbackAssignee(c *gin.Context) {
 			"assignee":   req.Assignee,
 			"operator":   fmt.Sprintf("%v", user),
 		}, fb)
+	}
+
+	// F4: Send email notification to the assignee if it's a known admin
+	if req.Assignee != "" {
+		assigneeEmail := a.DB.GetAdminEmail(req.Assignee)
+		if assigneeEmail != "" {
+			go a.Mailer.Send(assigneeEmail,
+				fmt.Sprintf("[FeedShit] 您被指派处理反馈 #%d", id),
+				fmt.Sprintf(`<html><body style="font-family:-apple-system,sans-serif;color:#333;max-width:600px;margin:0 auto">
+<h2>📋 反馈指派通知</h2>
+<p>反馈 <strong>#%d</strong> 已被指派给您处理：</p>
+<table style="width:100%%;border-collapse:collapse;margin:16px 0">
+<tr><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold;width:100px">标题</td><td style="padding:8px;border-bottom:1px solid #eee">%s</td></tr>
+<tr><td style="padding:8px;border-bottom:1px solid #eee;font-weight:bold">项目</td><td style="padding:8px;border-bottom:1px solid #eee">%s</td></tr>
+</table>
+<p><a href="%s/admin/#feedback/%d" style="display:inline-block;padding:10px 20px;background:#e53e3e;color:white;text-decoration:none;border-radius:4px">在后台查看</a></p>
+<p style="color:#999;font-size:12px;margin-top:24px">此邮件由 FeedShit 自动发送</p>
+</body></html>`,
+					fb.ID, fb.Title, fb.ProjectID, a.Cfg.BaseURL, fb.ID))
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "指派已更新"})
@@ -775,9 +806,22 @@ func (a *App) AdminMarkAsDuplicate(c *gin.Context) {
 		return
 	}
 
+	// F8: Merge notes and votes from the duplicate into the target
+	if err := a.DB.MergeFeedback(id, req.DuplicateOf); err != nil {
+		log.Printf("[MERGE] WARN: partial merge for #%d → #%d: %v", id, req.DuplicateOf, err)
+	}
+
 	user, _ := c.Get("admin_user")
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("mark_duplicate", fmt.Sprintf("反馈 #%d 标记为 #%d 的重复", id, req.DuplicateOf), fmt.Sprintf("%v", user), clientIP)
+
+	// F5: Webhook event for duplicate marking
+	go a.sendWebhookEvent("mark_duplicate", map[string]interface{}{
+		"id":           id,
+		"duplicate_of": req.DuplicateOf,
+		"project_id":   fb.ProjectID,
+		"title":        fb.Title,
+	}, fb)
 
 	c.JSON(http.StatusOK, gin.H{"message": "已标记为重复"})
 }
@@ -809,6 +853,13 @@ func (a *App) AdminUnmarkDuplicate(c *gin.Context) {
 	user, _ := c.Get("admin_user")
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("unmark_duplicate", fmt.Sprintf("反馈 #%d 取消重复标记", id), fmt.Sprintf("%v", user), clientIP)
+
+	// F5: Webhook event for unmark duplicate
+	go a.sendWebhookEvent("unmark_duplicate", map[string]interface{}{
+		"id":         id,
+		"project_id": fb.ProjectID,
+		"title":      fb.Title,
+	}, fb)
 
 	c.JSON(http.StatusOK, gin.H{"message": "已取消重复标记"})
 }
@@ -873,6 +924,15 @@ func (a *App) AdminUpdateFeedbackCategory(c *gin.Context) {
 	user, _ := c.Get("admin_user")
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("update_category", fmt.Sprintf("反馈 #%d 分类更新为 %s", id, req.Category), fmt.Sprintf("%v", user), clientIP)
+
+	// F5: Webhook event for category change
+	go a.sendWebhookEvent("category_change", map[string]interface{}{
+		"id":         id,
+		"project_id": fb.ProjectID,
+		"title":      fb.Title,
+		"category":   req.Category,
+	}, fb)
+
 	c.JSON(http.StatusOK, gin.H{"message": "分类已更新"})
 }
 

@@ -107,6 +107,19 @@ func (a *App) PublicSubmitReply(c *gin.Context) {
 		return
 	}
 
+	// F3: Notify admin about submitter reply
+	go a.Mailer.SendSubmitterReplyNotification(fb, content)
+
+	// F5: Webhook event for submitter reply
+	go a.sendWebhookEvent("new_note", map[string]interface{}{
+		"id":         fb.ID,
+		"project_id": fb.ProjectID,
+		"title":      fb.Title,
+		"note":       content,
+		"is_public":  true,
+		"author":     "提交者",
+	}, fb)
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "回复已提交",
 		"note_id": noteID,
@@ -162,6 +175,18 @@ func (a *App) PublicVoteFeedback(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
 		return
 	}
+
+	// Verify feedback exists and project is active / not archived
+	fb, err := a.DB.GetFeedback(id)
+	if err != nil || fb == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "反馈不存在"})
+		return
+	}
+	proj, projErr := a.DB.GetProjectBySlug(fb.ProjectID)
+	if projErr != nil || proj == nil || !proj.IsActive || proj.IsArchived {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "该项目已停用或已归档，无法投票"})
+		return
+	}
 	var voterKey string
 	if t := strings.TrimSpace(c.Query("token")); t != "" {
 		voterKey = "tok:" + t
@@ -183,7 +208,9 @@ func (a *App) PublicVoteFeedback(c *gin.Context) {
 func (a *App) PublicRoadmap(c *gin.Context) {
 	slug := strings.TrimSpace(c.Query("slug"))
 	category := strings.TrimSpace(c.Query("category"))
-	items, err := a.DB.GetPublicRoadmap(slug, category)
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	items, err := a.DB.GetPublicRoadmap(slug, category, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
 		return

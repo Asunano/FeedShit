@@ -78,7 +78,7 @@ func main() {
 	}
 
 	// Initialize components
-	sm := middleware.NewSessionManager()
+	sm := middleware.NewSessionManagerWithTTL(time.Duration(cfg.SessionTTL) * time.Hour)
 	rl := middleware.NewRateLimiter(cfg.RateLimitPerHour)
 	mailer := email.NewMailer(db, cfg.BaseURL)
 	application := app.New(cfg, db, sm, rl, mailer)

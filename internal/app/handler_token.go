@@ -210,23 +210,52 @@ func (a *App) SubmitFeedbackWithToken(c *gin.Context) {
 	}
 
 	var req struct {
-		Title        string `json:"title"`
-		Description  string `json:"description"`
-		CustomData   string `json:"custom_data"`
-		Tags         string `json:"tags"`
-		ContactName  string `json:"contact_name"`
-		ContactEmail string `json:"contact_email"`
-		Priority     string `json:"priority"`
-		Category     string `json:"category"`
+		Title        string `json:"title" form:"title"`
+		Description  string `json:"description" form:"description"`
+		CustomData   string `json:"custom_data" form:"custom_data"`
+		Tags         string `json:"tags" form:"tags"`
+		ContactName  string `json:"contact_name" form:"contact_name"`
+		ContactEmail string `json:"contact_email" form:"contact_email"`
+		Priority     string `json:"priority" form:"priority"`
+		Category     string `json:"category" form:"category"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		if err.Error() == "http: request body too large" {
-			maxMB := a.Cfg.MaxUploadSize / 1024 / 1024
-			c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("请求体过大，上限 %dMB", maxMB)})
+
+	// F7: Support both JSON and multipart/form-data (for file uploads)
+	var uploadedFiles []string
+	contentType := c.GetHeader("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		// Multipart: parse form + files
+		if err := c.ShouldBind(&req); err != nil {
+			if err.Error() == "http: request body too large" {
+				maxMB := a.Cfg.MaxUploadSize / 1024 / 1024
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("请求体过大，上限 %dMB", maxMB)})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
 			return
 		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
-		return
+		form, ferr := c.MultipartForm()
+		if ferr == nil && form.File["files"] != nil {
+			for _, fh := range form.File["files"] {
+				path, err := a.saveUpload(fh, pid)
+				if err != nil {
+					c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("文件上传失败: %s", err.Error())})
+					return
+				}
+				uploadedFiles = append(uploadedFiles, path)
+			}
+		}
+	} else {
+		// JSON: body only
+		if err := c.ShouldBindJSON(&req); err != nil {
+			if err.Error() == "http: request body too large" {
+				maxMB := a.Cfg.MaxUploadSize / 1024 / 1024
+				c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": fmt.Sprintf("请求体过大，上限 %dMB", maxMB)})
+				return
+			}
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+			return
+		}
 	}
 	if req.Title == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "标题不能为空"})
@@ -245,6 +274,7 @@ func (a *App) SubmitFeedbackWithToken(c *gin.Context) {
 		Title:        req.Title,
 		Description:  req.Description,
 		CustomData:   req.CustomData,
+		FilePaths:    strings.Join(uploadedFiles, ","),
 		Tags:         req.Tags,
 		ContactName:  req.ContactName,
 		ContactEmail: req.ContactEmail,
@@ -269,6 +299,8 @@ func (a *App) SubmitFeedbackWithToken(c *gin.Context) {
 	tokenName, _ := c.Get("api_token_name")
 	a.DB.InsertAuditLog("api_submit", fmt.Sprintf("API Token 提交反馈 #%d: %s", id, req.Title), fmt.Sprintf("%v", tokenName), fb.ClientIP)
 
+	// Send email notification and webhook event
+	go a.Mailer.SendFeedbackNotification(fb)
 	go a.sendWebhookEvent("new_feedback", map[string]interface{}{
 		"id":         fb.ID,
 		"project_id": fb.ProjectID,

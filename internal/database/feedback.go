@@ -179,7 +179,7 @@ func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess
 
 // SearchFeedbacks supports keyword search across multiple fields, status/priority/assignee filters, and project filter.
 // limit is automatically clamped to [1, 500] to prevent uncontrolled queries.
-func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAccess, keyword, status, priority, assignee, category string, limit, offset int) ([]Feedback, int, error) {
+func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAccess, keyword, status, priority, assignee, category, trackingToken string, limit, offset int) ([]Feedback, int, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -233,6 +233,10 @@ func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAcce
 		like := "%" + keyword + "%"
 		where += ` AND (title LIKE ? OR description LIKE ? OR tags LIKE ? OR contact_name LIKE ? OR contact_email LIKE ? OR id IN (SELECT feedback_id FROM feedback_notes WHERE content LIKE ?))`
 		args = append(args, like, like, like, like, like, like)
+	}
+	if trackingToken != "" {
+		where += " AND tracking_token = ?"
+		args = append(args, trackingToken)
 	}
 
 	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash`
@@ -315,6 +319,68 @@ func (d *Database) GetFeedback(id int64) (*Feedback, error) {
 	f.PublicOnRoadmap = isPublic == 1
 	f.CreatedAt = time.Unix(createdAt, 0)
 	return &f, nil
+}
+
+// MergeFeedback moves notes and votes from sourceID to targetID when
+// source is marked as a duplicate of target. This consolidated the data
+// under the target feedback so merging feels seamless.
+func (d *Database) MergeFeedback(sourceID, targetID int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Move notes from source to target
+	if _, err := d.db.Exec(`UPDATE feedback_notes SET feedback_id = ? WHERE feedback_id = ?`, targetID, sourceID); err != nil {
+		return err
+	}
+	// Remove source votes (they would conflict with the same voting key on target)
+	if _, err := d.db.Exec(`DELETE FROM feedback_votes WHERE feedback_id = ?`, sourceID); err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetFeedbacksByIDs returns all feedbacks matching the given IDs (batch query).
+// Used for bulk RBAC checks to avoid N+1 queries.
+func (d *Database) GetFeedbacksByIDs(ids []int64) ([]Feedback, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(ids))
+	args := make([]interface{}, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	rows, err := d.db.Query(
+		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash, public_on_roadmap, roadmap_status
+		 FROM feedbacks WHERE id IN (`+strings.Join(placeholders, ",")+`)`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []Feedback
+	for rows.Next() {
+		var f Feedback
+		var createdAt int64
+		var isDuplicate int
+		var isPublic int
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash, &isPublic, &f.RoadmapStatus); err != nil {
+			return nil, err
+		}
+		f.IsDuplicate = isDuplicate == 1
+		f.PublicOnRoadmap = isPublic == 1
+		f.CreatedAt = time.Unix(createdAt, 0)
+		list = append(list, f)
+	}
+	return list, nil
 }
 
 // UpdateFeedbackStatus updates the status and/or tags of a feedback.
@@ -433,7 +499,7 @@ func (d *Database) ExportFeedbacks(projectID string) ([]Feedback, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash`
+	const cols = `id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash, public_on_roadmap, roadmap_status`
 
 	var rows *sql.Rows
 	var err error
@@ -454,13 +520,43 @@ func (d *Database) ExportFeedbacks(projectID string) ([]Feedback, error) {
 		var f Feedback
 		var createdAt int64
 		var isDuplicate int
-		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash); err != nil {
+		var isPublic int
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash, &isPublic, &f.RoadmapStatus); err != nil {
 			return nil, err
 		}
 		f.IsDuplicate = isDuplicate == 1
+		f.PublicOnRoadmap = isPublic == 1
 		f.CreatedAt = time.Unix(createdAt, 0)
 		list = append(list, f)
 	}
+
+	// Batch-load vote counts
+	if len(list) > 0 {
+		ids := make([]int64, len(list))
+		ph := make([]string, len(list))
+		args := make([]interface{}, len(list))
+		for i, f := range list {
+			ids[i] = f.ID
+			ph[i] = "?"
+			args[i] = f.ID
+		}
+		vrows, verr := d.db.Query(`SELECT feedback_id, COUNT(*) FROM feedback_votes WHERE feedback_id IN (`+strings.Join(ph, ",")+`) GROUP BY feedback_id`, args...)
+		if verr == nil {
+			defer vrows.Close()
+			vmap := make(map[int64]int, len(list))
+			for vrows.Next() {
+				var vid int64
+				var n int
+				if vrows.Scan(&vid, &n) == nil {
+					vmap[vid] = n
+				}
+			}
+			for i := range list {
+				list[i].Votes = vmap[list[i].ID]
+			}
+		}
+	}
+
 	return list, nil
 }
 
