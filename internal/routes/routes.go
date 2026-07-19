@@ -330,6 +330,7 @@ func Register(r *gin.Engine, application *app.App) {
 
 		// CSV Import (editor+)
 		adminAPI.POST("/import/csv", middleware.RequireRole("editor"), application.AdminImportCSV)
+		adminAPI.POST("/import/json", middleware.RequireRole("editor"), application.AdminImportJSON)
 
 		// Data archive & cleanup (admin only)
 		adminAPI.POST("/archive", middleware.RequireRole("admin"), application.AdminArchiveOldFeedbacks)

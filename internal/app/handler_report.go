@@ -620,12 +620,142 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("csv_import", fmt.Sprintf("CSV 导入 %d 条反馈", imported), fmt.Sprintf("%v", user), clientIP)
 
+	// Webhook + email notification for successful imports
+	if imported > 0 {
+		go a.sendWebhookEvent("bulk_operation", map[string]interface{}{
+			"operation": "csv_import",
+			"imported":  imported,
+			"source":    "csv",
+		}, nil)
+	}
+
 	result := gin.H{
 		"imported": imported,
 		"total":    len(records) - 1,
 	}
 	if len(errors) > 0 {
 		result["errors"] = errors
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// AdminImportJSON imports feedbacks from a JSON array.
+// Route: POST /api/v1/admin/import/json (editor+)
+// Body: [{"title":"...", "description":"...", "status":"...", ...}]
+func (a *App) AdminImportJSON(c *gin.Context) {
+	var records []struct {
+		Title        string `json:"title"`
+		Description  string `json:"description"`
+		Status       string `json:"status"`
+		Tags         string `json:"tags"`
+		Assignee     string `json:"assignee"`
+		ContactName  string `json:"contact_name"`
+		ContactEmail string `json:"contact_email"`
+		Priority     string `json:"priority"`
+		ProjectID    string `json:"project_id"`
+		CustomData   string `json:"custom_data"`
+		CreatedAt    string `json:"created_at"`
+	}
+	if err := c.ShouldBindJSON(&records); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "JSON 解析失败: " + err.Error()})
+		return
+	}
+	if len(records) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "导入列表为空"})
+		return
+	}
+
+	imported := 0
+	importErrors := []string{}
+	validPriorities := map[string]bool{"": true, "low": true, "medium": true, "high": true, "urgent": true}
+
+	for i, rec := range records {
+		lineNum := i + 1
+		pid := rec.ProjectID
+		if pid == "" {
+			pid = "default"
+		}
+
+		// Validate project exists, is active, not archived, and user has write perm
+		proj, projErr := a.DB.GetProjectBySlug(pid)
+		if projErr != nil || proj == nil {
+			importErrors = append(importErrors, fmt.Sprintf("第 %d 条: 项目不存在: %s", lineNum, pid))
+			continue
+		}
+		if !proj.IsActive || proj.IsArchived {
+			importErrors = append(importErrors, fmt.Sprintf("第 %d 条: 项目已停用或已归档: %s", lineNum, pid))
+			continue
+		}
+		if !a.checkProjectWritePerm(c, pid) {
+			importErrors = append(importErrors, fmt.Sprintf("第 %d 条: 您没有该项目的编辑权限", lineNum))
+			continue
+		}
+
+		if rec.Title == "" {
+			importErrors = append(importErrors, fmt.Sprintf("第 %d 条: 标题为空，已跳过", lineNum))
+			continue
+		}
+		if rec.Status != "" && !database.ValidStatuses[rec.Status] {
+			importErrors = append(importErrors, fmt.Sprintf("第 %d 条: 无效的状态值 %q", lineNum, rec.Status))
+			continue
+		}
+		if !validPriorities[rec.Priority] {
+			importErrors = append(importErrors, fmt.Sprintf("第 %d 条: 无效的优先级 %q", lineNum, rec.Priority))
+			continue
+		}
+
+		var createdAtUnix int64
+		if rec.CreatedAt != "" {
+			for _, layout := range []string{
+				"2006-01-02 15:04:05", "2006-01-02T15:04:05",
+				"2006-01-02T15:04:05Z", "2006-01-02",
+			} {
+				if t, err := time.Parse(layout, rec.CreatedAt); err == nil {
+					createdAtUnix = t.Unix()
+					break
+				}
+			}
+		}
+
+		tokenBytes := make([]byte, 16)
+		rand.Read(tokenBytes)
+		fb := &database.Feedback{
+			ProjectID:     pid,
+			Title:         rec.Title,
+			Description:   rec.Description,
+			Status:        rec.Status,
+			Tags:          rec.Tags,
+			Assignee:      rec.Assignee,
+			ContactName:   rec.ContactName,
+			ContactEmail:  rec.ContactEmail,
+			Priority:      rec.Priority,
+			CustomData:    rec.CustomData,
+			ClientIP:      "json-import",
+			TrackingToken: hex.EncodeToString(tokenBytes),
+		}
+
+		if _, err := a.DB.ImportFeedback(fb, createdAtUnix); err != nil {
+			importErrors = append(importErrors, fmt.Sprintf("第 %d 条: 导入失败: %v", lineNum, err))
+			continue
+		}
+		imported++
+	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("json_import", fmt.Sprintf("JSON 导入 %d 条反馈", imported), fmt.Sprintf("%v", user), clientIP)
+
+	if imported > 0 {
+		go a.sendWebhookEvent("bulk_operation", map[string]interface{}{
+			"operation": "json_import",
+			"imported":  imported,
+			"source":    "json",
+		}, nil)
+	}
+
+	result := gin.H{"imported": imported, "total": len(records)}
+	if len(importErrors) > 0 {
+		result["errors"] = importErrors
 	}
 	c.JSON(http.StatusOK, result)
 }
