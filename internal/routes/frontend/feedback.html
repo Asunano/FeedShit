@@ -491,10 +491,10 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
       render: function(f, fName) {
         var max = f.max || 5;
         var icon = f.icon || 'star';
-        var sym = icon === 'heart' ? '\u2764' : icon === 'thumb' ? '\uD83D\uDC4D' : '\u2605';
+        var sym = icon === 'heart' ? '❤' : icon === 'thumb' ? '👍' : '★';
         var h = '<div class="rating-group" id="' + fName + '_rg">';
         for (var i = 1; i <= max; i++) {
-          h += '<span class="rating-star" data-value="' + i + '" onclick="document.getElementById(\\'' + fName + '\\').value=' + i + '; this.parentNode.querySelectorAll(\\'.rating-star\\').forEach(function(e,i2){e.className=\\'rating-star\\'+(i2<' + i + '?\\' active\\':\\'\\')});">' + sym + '</span>';
+          h += '<span class="rating-star" data-idx="' + i + '" data-field="' + fName + '">' + sym + '</span>';
         }
         h += '<input type="hidden" id="' + fName + '" name="' + fName + '" value="' + _a(f.default||'') + '">';
         return h + '</div>';
@@ -522,7 +522,7 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     tags: {
       label: '标签',
       render: function(f, fName) {
-        return '<div class="tags-input" id="' + fName + '_wrap"><input type="text" id="' + fName + '_inp" placeholder="' + _a(f.placeholder||'输入标签后回车') + '" onkeydown="if(event.key===\\'Enter\\'){event.preventDefault();addTag(\\'' + fName + '\\',this.value);}">' +
+        return '<div class="tags-input" id="' + fName + '_wrap"><input type="text" id="' + fName + '_inp" placeholder="' + _a(f.placeholder||'输入标签后回车') + '">' +
           '<div class="tag-list" id="' + fName + '_list"></div><input type="hidden" id="' + fName + '" name="' + fName + '"></div>';
       },
       collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
@@ -634,6 +634,63 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
           el.addEventListener('input', function(){
             var out = document.getElementById('cf_' + field.name + '_out');
             if (out) out.textContent = this.value;
+          });
+        }
+      }
+      if (field.type === 'rating') {
+        var rg = document.getElementById('cf_' + field.name + '_rg');
+        if (rg) {
+          rg.addEventListener('click', function(e) {
+            var star = e.target.closest('.rating-star');
+            if (!star) return;
+            var idx = parseInt(star.dataset.idx);
+            var fld = star.dataset.field;
+            document.getElementById(fld).value = idx;
+            rg.querySelectorAll('.rating-star').forEach(function(s, i) {
+              s.className = 'rating-star' + (i < idx ? ' active' : '');
+            });
+          });
+        }
+      }
+      if (field.type === 'tags') {
+        var inp = document.getElementById('cf_' + field.name + '_inp');
+        if (inp) {
+          inp.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              var prefix = 'cf_' + field.name;
+              var val = this.value.trim();
+              if (!val) return;
+              var hidden = document.getElementById(prefix);
+              var list = document.getElementById(prefix + '_list');
+              if (!hidden || !list) return;
+              var existing = hidden.value ? hidden.value.split(',') : [];
+              if (existing.indexOf(val) === -1) {
+                existing.push(val);
+                var tag = document.createElement('span');
+                tag.className = 'tag-item';
+                tag.innerHTML = _e(val) + ' <span class="tag-remove" data-prefix="' + prefix + '" data-val="' + _a(val) + '">&times;</span>';
+                list.appendChild(tag);
+              }
+              hidden.value = existing.join(',');
+              this.value = '';
+            }
+          });
+        }
+        // Tag remove delegation
+        var wrap = document.getElementById('cf_' + field.name + '_wrap');
+        if (wrap) {
+          wrap.addEventListener('click', function(e) {
+            var rm = e.target.closest('.tag-remove');
+            if (!rm) return;
+            var prefix = rm.dataset.prefix;
+            var val = rm.dataset.val;
+            var hidden = document.getElementById(prefix);
+            var list = document.getElementById(prefix + '_list');
+            if (!hidden || !list) return;
+            var existing = hidden.value.split(',').filter(function(v){ return v !== val; });
+            hidden.value = existing.join(',');
+            rm.closest('.tag-item').remove();
           });
         }
       }
