@@ -1942,7 +1942,7 @@ tr:last-child td{border-bottom:none}
 
   window.deleteProject = async function(id, name) {
     if (!confirm('确认删除项目 "'+name+'"？关联的反馈数据和文件将被一并删除。')) return;
-    var d = await apiJSON('/api/v1/admin/projects/' + id, {method: 'DELETE'});
+    var d = await apiJSON('/api/v1/admin/projects/' + id + '?confirm=true', {method: 'DELETE'});
     if (!d) return;
     showToast(d.message || '已删除', 'success');
     loadProjects(); loadStats();

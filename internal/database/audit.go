@@ -48,3 +48,20 @@ func (d *Database) ListAuditLogs(limit, offset int) ([]AuditLog, int, error) {
 	}
 	return list, total, nil
 }
+
+// PruneAuditLogs deletes audit log entries older than the specified number of days.
+// Returns the number of deleted rows.
+func (d *Database) PruneAuditLogs(days int) (int64, error) {
+	if days <= 0 {
+		return 0, nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	cutoff := time.Now().AddDate(0, 0, -days).Unix()
+	res, err := d.db.Exec(`DELETE FROM audit_logs WHERE created_at < ?`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}

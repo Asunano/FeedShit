@@ -47,6 +47,8 @@ deliverables/
 qa_*.log
 # Coverage output
 coverage*.out
+*.cover.out
+.cover.out
 /nul
 architecture-review-v2.md
 /docs

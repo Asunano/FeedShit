@@ -299,6 +299,9 @@ func (d *Database) migrate() error {
 		{24, "hash existing API tokens at rest", `
 			-- data migration: hashed in Go code below
 		`},
+		{25, "admin email field", `
+			ALTER TABLE admins ADD COLUMN email TEXT NOT NULL DEFAULT '';
+		`},
 		// Future migrations go here — never renumber existing entries.
 	}
 

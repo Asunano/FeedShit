@@ -52,7 +52,7 @@ func (a *App) AdminLogin(c *gin.Context) {
 		}
 	}
 
-	// Fallback to legacy config-based admin
+	// Fallback to legacy config-based admin (only valid if password is bcrypt-hashed)
 	if !authenticated {
 		dbUser := a.DB.GetConfig("admin_username")
 		dbPwd := a.DB.GetConfig("admin_password")
@@ -64,7 +64,8 @@ func (a *App) AdminLogin(c *gin.Context) {
 		if dbPwd != "" {
 			effectivePwd = dbPwd
 		}
-		if middleware.SecureCompare(req.Username, effectiveUser) && checkPassword(req.Password, effectivePwd) {
+		// Only accept bcrypt-hashed passwords from config — reject plaintext
+		if isBcryptHash(effectivePwd) && middleware.SecureCompare(req.Username, effectiveUser) && checkPassword(req.Password, effectivePwd) {
 			role = "admin"
 			authenticated = true
 		}

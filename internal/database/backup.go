@@ -63,14 +63,43 @@ func (d *Database) PruneOldBackups(backupDir string, daysOld int) (int, error) {
 		if entry.IsDir() {
 			continue
 		}
+		name := entry.Name()
+		// Prefer the timestamp embedded in the filename
+		// (feedbacks_YYYYMMDD_HHMMSS.db or .db.enc) over ModTime, which can be
+		// altered by rsync, manual touch, or filesystem restores.
+		if t, ok := parseBackupTime(name); ok {
+			if t.Before(cutoff) {
+				os.Remove(filepath.Join(backupDir, name))
+				pruned++
+			}
+			continue
+		}
+		// Fallback to ModTime if the name doesn't match the expected pattern.
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
 		if info.ModTime().Before(cutoff) {
-			os.Remove(filepath.Join(backupDir, entry.Name()))
+			os.Remove(filepath.Join(backupDir, name))
 			pruned++
 		}
 	}
 	return pruned, nil
+}
+
+// parseBackupTime extracts the backup timestamp embedded in a backup filename of
+// the form feedbacks_YYYYMMDD_HHMMSS.db (optionally .enc).
+func parseBackupTime(name string) (time.Time, bool) {
+	const prefix = "feedbacks_"
+	if !strings.HasPrefix(name, prefix) {
+		return time.Time{}, false
+	}
+	rest := name[len(prefix):]
+	rest = strings.TrimSuffix(rest, ".enc")
+	rest = strings.TrimSuffix(rest, ".db")
+	ts, err := time.Parse("20060102_150405", rest)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts, true
 }

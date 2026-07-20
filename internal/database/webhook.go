@@ -82,15 +82,11 @@ func (d *Database) UpdateWebhookSubscription(id int64, url, secret, events strin
 		setClauses = append(setClauses, "secret = ?")
 		args = append(args, enc)
 	} else {
-		// Empty secret means "keep existing". Re-fetch the plaintext secret and
-		// re-encrypt it so the stored ciphertext stays consistent with the
-		// current master key.
-		if old, gerr := d.getWebhookSubscriptionPlainSecret(id); gerr == nil && old != "" {
-			if enc, eerr := security.EncryptWithMaster(old); eerr == nil {
-				setClauses = append(setClauses, "secret = ?")
-				args = append(args, enc)
-			}
-		}
+		// Empty secret means "keep existing": leave the secret column untouched
+		// so the stored value is preserved exactly. Master-key consistency for
+		// already-stored secrets is handled at startup by ReEncryptSecrets, so
+		// re-fetching and re-encrypting here is unnecessary and risks corrupting
+		// the secret if decryption under a rotated key were to fail.
 	}
 	if events != "" {
 		setClauses = append(setClauses, "events = ?")
@@ -110,24 +106,6 @@ func (d *Database) UpdateWebhookSubscription(id int64, url, secret, events strin
 	args = append(args, id)
 	_, err := d.db.Exec(`UPDATE webhook_subscriptions SET `+strings.Join(setClauses, ", ")+` WHERE id = ?`, args...)
 	return err
-}
-
-// getWebhookSubscriptionPlainSecret returns the plaintext secret for a
-// subscription. It assumes the caller already holds the write lock. The raw
-// stored value is decrypted with the master key; legacy plaintext values are
-// returned as-is.
-func (d *Database) getWebhookSubscriptionPlainSecret(id int64) (string, error) {
-	var raw string
-	err := d.db.QueryRow(`SELECT secret FROM webhook_subscriptions WHERE id = ?`, id).Scan(&raw)
-	if err != nil {
-		return "", err
-	}
-	if raw != "" && security.IsEncrypted(raw) {
-		if plain, derr := security.DecryptWithMaster(raw); derr == nil {
-			return plain, nil
-		}
-	}
-	return raw, nil
 }
 
 // ReEncryptSecrets scans sensitive config values and webhook subscription

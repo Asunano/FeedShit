@@ -10,6 +10,12 @@ import (
 // Projects with nil AllowedCategories (wildcard '*') use simple project_id filter.
 // Projects with specific categories use (project_id = ? AND category IN (...)).
 // All conditions are OR'd together.
+//
+// Security: all user-supplied values use parameterized queries (? placeholder).
+// Only SQL keywords and structure are string-concatenated — never user input.
+// Categories are capped at maxCategoryBatch to prevent excessive SQL length.
+const maxCategoryBatch = 500
+
 func buildAccessPlanWhere(plan []ProjectAccess) (string, []interface{}) {
 	if len(plan) == 0 {
 		return " WHERE 1=0", nil // no access
@@ -23,8 +29,12 @@ func buildAccessPlanWhere(plan []ProjectAccess) (string, []interface{}) {
 		if pa.AllowedCategories == nil {
 			unrestrictedSlugs = append(unrestrictedSlugs, pa.Slug)
 		} else if len(pa.AllowedCategories) > 0 {
-			placeholders := make([]string, len(pa.AllowedCategories))
-			for i, cat := range pa.AllowedCategories {
+			cats := pa.AllowedCategories
+			if len(cats) > maxCategoryBatch {
+				cats = cats[:maxCategoryBatch]
+			}
+			placeholders := make([]string, len(cats))
+			for i, cat := range cats {
 				placeholders[i] = "?"
 				args = append(args, cat)
 			}
@@ -177,6 +187,17 @@ func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess
 	return list, total, nil
 }
 
+// escapeLikePattern escapes SQL LIKE wildcards (% and _) and the escape
+// character itself so user input is matched literally instead of as a pattern.
+func escapeLikePattern(s string) string {
+	// Use '!' as the LIKE escape character — it is unambiguous to embed in a
+	// SQL string literal (unlike backslash, which is awkward to quote).
+	s = strings.ReplaceAll(s, "!", "!!")
+	s = strings.ReplaceAll(s, "%", "!%")
+	s = strings.ReplaceAll(s, "_", "!_")
+	return s
+}
+
 // SearchFeedbacks supports keyword search across multiple fields, status/priority/assignee filters, and project filter.
 // limit is automatically clamped to [1, 500] to prevent uncontrolled queries.
 func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAccess, keyword, status, priority, assignee, category, trackingToken string, limit, offset int) ([]Feedback, int, error) {
@@ -230,8 +251,8 @@ func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAcce
 		args = append(args, category)
 	}
 	if keyword != "" {
-		like := "%" + keyword + "%"
-		where += ` AND (title LIKE ? OR description LIKE ? OR tags LIKE ? OR contact_name LIKE ? OR contact_email LIKE ? OR id IN (SELECT feedback_id FROM feedback_notes WHERE content LIKE ?))`
+		like := "%" + escapeLikePattern(keyword) + "%"
+		where += ` AND (title LIKE ? ESCAPE '!' OR description LIKE ? ESCAPE '!' OR tags LIKE ? ESCAPE '!' OR contact_name LIKE ? ESCAPE '!' OR contact_email LIKE ? ESCAPE '!' OR id IN (SELECT feedback_id FROM feedback_notes WHERE content LIKE ? ESCAPE '!'))`
 		args = append(args, like, like, like, like, like, like)
 	}
 	if trackingToken != "" {

@@ -13,6 +13,10 @@ import (
 	"feedshit/internal/middleware"
 )
 
+// defaultInviteExpiryDays is applied when a caller omits expires_in_days.
+// An explicit 0 still means "never expire".
+const defaultInviteExpiryDays = 7
+
 // AdminCreateInvitation generates an invitation link for new team members.
 // Route: POST /api/v1/admin/invitations (admin only)
 func (a *App) AdminCreateInvitation(c *gin.Context) {
@@ -20,7 +24,7 @@ func (a *App) AdminCreateInvitation(c *gin.Context) {
 		Role          string   `json:"role"`
 		ProjectIDs    []string `json:"project_ids"`
 		MaxUses       int      `json:"max_uses"`
-		ExpiresInDays int      `json:"expires_in_days"`
+		ExpiresInDays *int     `json:"expires_in_days"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -33,10 +37,22 @@ func (a *App) AdminCreateInvitation(c *gin.Context) {
 		req.MaxUses = 1
 	}
 
+	// Expiry policy: omit → default (7d); explicit 0 → never expire; positive → N days.
+	// A leaked invitation link must not stay valid forever, so we refuse to create
+	// an open-ended link unless the admin consciously opts in with 0.
+	expiryDays := defaultInviteExpiryDays
+	if req.ExpiresInDays != nil {
+		if *req.ExpiresInDays == 0 {
+			expiryDays = 0
+		} else {
+			expiryDays = *req.ExpiresInDays
+		}
+	}
+
 	user, _ := c.Get("admin_user")
 	username := fmt.Sprintf("%v", user)
 
-	inv, err := a.DB.CreateInvitation(req.Role, req.ProjectIDs, req.MaxUses, username, req.ExpiresInDays)
+	inv, err := a.DB.CreateInvitation(req.Role, req.ProjectIDs, req.MaxUses, username, expiryDays)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "创建邀请失败"})
 		return
@@ -110,7 +126,7 @@ func (a *App) PublicRegisterPage(c *gin.Context) {
 		return
 	}
 
-	html := registerPageHTML
+	html := a.RegisterHTML
 	html = strings.ReplaceAll(html, "INVITE_TOKEN_PLACEHOLDER", token)
 	// Apply CSP nonce if available
 	if nonce, exists := c.Get("csp_nonce"); exists {
@@ -121,81 +137,8 @@ func (a *App) PublicRegisterPage(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
-// registerPageHTML is the HTML for the invitation registration page.
-var registerPageHTML = `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>注册 - FeedShit</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,sans-serif;background:#f5f5f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
-.card{background:#fff;border-radius:8px;padding:32px;width:100%;max-width:400px;box-shadow:0 2px 12px rgba(0,0,0,.08)}
-h1{font-size:1.2rem;margin-bottom:4px;color:#333}
-p{font-size:.85rem;color:#888;margin-bottom:20px}
-.field{margin-bottom:16px}
-label{display:block;font-size:.8rem;font-weight:600;margin-bottom:4px;color:#555}
-input{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:4px;font-size:.9rem}
-input:focus{outline:none;border-color:#e53e3e;box-shadow:0 0 0 2px rgba(229,62,62,.1)}
-.btn{width:100%;padding:10px;background:#e53e3e;color:#fff;border:none;border-radius:4px;font-size:.9rem;cursor:pointer}
-.btn:hover{background:#c53030}
-.btn:disabled{opacity:.6;cursor:not-allowed}
-.error{color:#c00;font-size:.8rem;margin-top:4px;display:none}
-.success{text-align:center;padding:20px}
-.success h2{color:#2d6;font-size:1.1rem;margin-bottom:8px}
-</style>
-</head>
-<body>
-<div class="card">
-  <h1>加入团队</h1>
-  <p>您已被邀请成为团队成员，请设置您的账号信息。</p>
-  <div class="field">
-    <label for="username">用户名</label>
-    <input type="text" id="username" placeholder="3-32 位字母数字" autocomplete="username">
-    <div class="error" id="usernameError"></div>
-  </div>
-  <div class="field">
-    <label for="password">密码</label>
-    <input type="password" id="password" placeholder="至少 8 位，包含大小写字母和数字" autocomplete="new-password">
-    <div class="error" id="passwordError"></div>
-  </div>
-  <button class="btn" id="registerBtn" onclick="doRegister()">注册</button>
-  <div class="error" id="formError" style="margin-top:12px"></div>
-  <div id="successMsg" style="display:none">
-    <div class="success">
-      <h2>✅ 注册成功</h2>
-      <p>您可以 <a href="/admin/" style="color:#e53e3e">登录后台</a> 开始使用了。</p>
-    </div>
-  </div>
-</div>
-<script nonce="__NONCE__">
-var TOKEN = 'INVITE_TOKEN_PLACEHOLDER';
-async function doRegister() {
-  var username = document.getElementById('username').value.trim();
-  var password = document.getElementById('password').value;
-  document.getElementById('formError').style.display = 'none';
-  if (username.length < 3) { document.getElementById('usernameError').textContent='用户名至少 3 位'; document.getElementById('usernameError').style.display=''; return; }
-  if (password.length < 8) { document.getElementById('passwordError').textContent='密码至少 8 位'; document.getElementById('passwordError').style.display=''; return; }
-  document.getElementById('registerBtn').disabled = true;
-  document.getElementById('registerBtn').textContent = '注册中...';
-  try {
-    var resp = await fetch('/api/v1/invite/' + TOKEN + '/register', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:username,password:password})});
-    var d = await resp.json();
-    if (d.error) { document.getElementById('formError').textContent=d.error; document.getElementById('formError').style.display=''; document.getElementById('registerBtn').disabled=false; document.getElementById('registerBtn').textContent='注册'; return; }
-    document.getElementById('registerBtn').style.display='none';
-    document.querySelector('h1').style.display='none';
-    document.querySelector('p').style.display='none';
-    document.getElementById('username').parentNode.style.display='none';
-    document.getElementById('password').parentNode.style.display='none';
-    document.getElementById('successMsg').style.display='';
-  } catch(e) { document.getElementById('formError').textContent='网络错误，请重试'; document.getElementById('formError').style.display=''; document.getElementById('registerBtn').disabled=false; document.getElementById('registerBtn').textContent='注册'; }
-}
-</script>
-</body>
-</html>`
-
 // PublicRegister handles the registration form submission.
+
 func (a *App) PublicRegister(c *gin.Context) {
 	token := c.Param("token")
 

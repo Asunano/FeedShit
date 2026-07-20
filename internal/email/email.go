@@ -472,12 +472,12 @@ func (m *Mailer) Send(to, subject, htmlBody string) {
 
 // smtpSend 发送 SMTP 邮件，自动处理端口 465 (SSL/TLS) 与 STARTTLS。
 // addr: "host:port", auth: SMTP 认证, from: 发件人, to: 收件人列表, msg: 完整的 MIME 消息。
-// 发送失败后自动重试 2 次（间隔 5s、30s）。
+// 发送失败后自动重试 2 次（指数退避：2s、8s）。
 func smtpSend(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		if attempt > 0 {
-			delay := time.Duration(attempt*25+5) * time.Second // 5s, 30s
+			delay := time.Duration(1<<uint(attempt+1)) * time.Second // 2^(attempt+1): 4s, 8s
 			time.Sleep(delay)
 			log.Printf("[MAIL] retry %d/2 after %v", attempt, delay)
 		}

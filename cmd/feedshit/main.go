@@ -90,6 +90,12 @@ func main() {
 	// Auto backup on startup (encrypted)
 	doEncryptedBackup(db, backupDir, "Startup")
 	pruneBackups(db, backupDir, cfg.BackupRetentionDays)
+	// Prune audit logs older than 90 days
+	if n, err := db.PruneAuditLogs(90); err != nil {
+		log.Printf("[AUDIT] 审计日志清理失败: %v", err)
+	} else if n > 0 {
+		log.Printf("[AUDIT] 已清理 %d 条过期审计日志", n)
+	}
 
 	// Create a cancellable context for graceful goroutine management
 	ctx, cancelAll := context.WithCancel(context.Background())

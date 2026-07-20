@@ -57,10 +57,11 @@ func (d *Database) DeleteCategory(id int64) error {
 		return err // not found or DB error
 	}
 
-	// Clear category on any feedbacks referencing this category (orphan handling)
-	d.db.Exec(`UPDATE feedbacks SET category = '' WHERE project_id = ? AND category = ?`, projectSlug, key)
-
-	// Soft-delete: mark inactive instead of removing, so historical references stay valid
+	// Soft-delete: mark inactive instead of removing, so historical references
+	// (including feedbacks that still reference this category) stay valid.
+	// We deliberately do NOT clear feedbacks.category — that would destroy
+	// historical data and contradict the soft-delete intent. Orphan cleanup
+	// only applies to hard deletion, which is intentionally not supported here.
 	_, err = d.db.Exec(`UPDATE categories SET is_active = 0 WHERE id = ?`, id)
 	return err
 }

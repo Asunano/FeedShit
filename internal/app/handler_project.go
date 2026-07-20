@@ -107,6 +107,10 @@ func (a *App) AdminCreateProject(c *gin.Context) {
 			return
 		}
 	}
+	if len(req.Slug) < 3 || len(req.Slug) > 64 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "标识长度须为 3-64 个字符"})
+		return
+	}
 
 	formSchema := req.FormSchema
 	if formSchema == "" {
@@ -169,14 +173,18 @@ func (a *App) AdminUpdateProject(c *gin.Context) {
 	}
 
 	// Validate slug format when provided (empty = keep existing)
-	if req.Slug != "" {
-		for _, ch := range req.Slug {
-			if !((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "标识只能包含小写字母、数字、连字符和下划线"})
+		if req.Slug != "" {
+			for _, ch := range req.Slug {
+				if !((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+					c.JSON(http.StatusBadRequest, gin.H{"error": "标识只能包含小写字母、数字、连字符和下划线"})
+					return
+				}
+			}
+			if len(req.Slug) < 3 || len(req.Slug) > 64 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "标识长度须为 3-64 个字符"})
 				return
 			}
-		}
-	} else {
+		} else {
 		// Preserve existing slug when not provided
 		req.Slug = existing.Slug
 	}
@@ -225,6 +233,27 @@ func (a *App) AdminDeleteProject(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+
+	// Safety: deleting a project cascades to all its feedbacks and uploaded
+	// files, which is unrecoverable. Require explicit confirmation (either the
+	// ?confirm=true query flag or a {"confirm":true} body) to prevent accidental
+	// loss via a stray API call.
+	confirmed := c.Query("confirm") == "true" || c.Query("confirm") == "1"
+	if !confirmed {
+		var body struct {
+			Confirm bool `json:"confirm"`
+		}
+		if bErr := c.ShouldBindJSON(&body); bErr == nil {
+			confirmed = body.Confirm
+		}
+	}
+	if !confirmed {
+		c.JSON(http.StatusPreconditionFailed, gin.H{
+			"error":           "删除项目不可恢复，请确认后重试（携带 confirm=true）",
+			"require_confirm": true,
+		})
 		return
 	}
 

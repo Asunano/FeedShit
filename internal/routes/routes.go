@@ -52,6 +52,9 @@ func Register(r *gin.Engine, application *app.App) {
 	adminHTML := mustReadFS(frontendSub, "admin.html")
 	trackHTML := mustReadFS(frontendSub, "track.html")
 	roadmapHTML := mustReadFS(frontendSub, "roadmap.html")
+	registerHTML := mustReadFS(frontendSub, "register.html")
+
+	application.RegisterHTML = string(registerHTML)
 
 	// ========== Pre-setup whitelist ==========
 	setupWhitelist := []string{

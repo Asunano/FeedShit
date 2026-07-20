@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 
 	"feedshit/internal/config"
 	"feedshit/internal/security"
@@ -12,17 +13,26 @@ import (
 // GetConfig retrieves a config value by key. Returns empty string if not found.
 // Sensitive values (sensitiveConfigKeys) are transparently decrypted.
 func (d *Database) GetConfig(key string) string {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
 	var value string
 	err := d.db.QueryRow(`SELECT value FROM config WHERE key = ?`, key).Scan(&value)
 	if err != nil {
 		return ""
 	}
-	if sensitiveConfigKeys[key] && security.IsEncrypted(value) {
-		plain, derr := security.DecryptWithMaster(value)
-		if derr == nil {
+	return d.decryptConfigValue(key, value)
+}
+
+// decryptConfigValue returns the cleartext for a config value, transparently
+// decrypting it when the key is sensitive and the stored value is encrypted.
+// Non-sensitive keys, plaintext values, and decryption failures return value unchanged.
+func (d *Database) decryptConfigValue(key, value string) string {
+	if sensitiveConfigKeys[key] && value != "" && security.IsEncrypted(value) {
+		if plain, derr := security.DecryptWithMaster(value); derr == nil {
 			return plain
+		} else {
+			log.Printf("WARN: failed to decrypt config key %q, returning stored value: %v", key, derr)
 		}
-		log.Printf("WARN: failed to decrypt config key %q, returning stored value: %v", key, derr)
 	}
 	return value
 }
@@ -68,11 +78,7 @@ func (d *Database) GetAllConfig() ([]DBConfig, error) {
 		if err := rows.Scan(&c.Key, &c.Value, &c.Description); err != nil {
 			return nil, err
 		}
-		if sensitiveConfigKeys[c.Key] && security.IsEncrypted(c.Value) {
-			if plain, derr := security.DecryptWithMaster(c.Value); derr == nil {
-				c.Value = plain
-			}
-		}
+		c.Value = d.decryptConfigValue(c.Key, c.Value)
 		configs = append(configs, c)
 	}
 	return configs, nil
@@ -123,6 +129,7 @@ func (d *Database) GetConfigByPrefix(prefix string) ([]DBConfig, error) {
 		if err := rows.Scan(&c.Key, &c.Value, &c.Description); err != nil {
 			return nil, err
 		}
+		c.Value = d.decryptConfigValue(c.Key, c.Value)
 		configs = append(configs, c)
 	}
 	return configs, nil
@@ -134,6 +141,41 @@ func (d *Database) ExecRaw(sql string, args ...interface{}) (sql.Result, error) 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.db.Exec(sql, args...)
+}
+
+// configKeyEnvMap maps config DB keys to their environment variable names.
+// Used by GetConfigWithFallback to implement DB → env → default resolution.
+var configKeyEnvMap = map[string]string{
+	"smtp_host":               "SMTP_HOST",
+	"smtp_port":               "SMTP_PORT",
+	"smtp_user":               "SMTP_USER",
+	"smtp_pass":               "SMTP_PASS",
+	"smtp_from":               "SMTP_FROM",
+	"smtp_to":                 "SMTP_TO",
+	"notify_enable":           "NOTIFY_ENABLE",
+	"base_url":                "BASE_URL",
+	"pow_difficulty":          "POW_DIFFICULTY",
+	"rate_limit_per_hr":       "RATE_LIMIT_PER_HOUR",
+	"archive_days":            "ARCHIVE_DAYS",
+	"backup_retention_days":   "BACKUP_RETENTION_DAYS",
+	"cdn_provider":            "CDN_PROVIDER",
+	"trusted_proxies":         "TRUSTED_PROXIES",
+}
+
+// GetConfigWithFallback retrieves a config value with a two-tier fallback:
+//  1. DB config table (GetConfig)
+//  2. Environment variable (if mapped in configKeyEnvMap)
+//  3. Returns empty string if neither is set
+func (d *Database) GetConfigWithFallback(key string) string {
+	if v := d.GetConfig(key); v != "" {
+		return v
+	}
+	if envKey, ok := configKeyEnvMap[key]; ok {
+		if v := os.Getenv(envKey); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // QueryRaw 执行原始 SQL 查询（SELECT），供 report 包内部使用。

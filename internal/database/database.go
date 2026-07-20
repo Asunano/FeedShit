@@ -74,6 +74,7 @@ type Feedback struct {
 type Admin struct {
 	ID           int64     `json:"id"`
 	Username     string    `json:"username"`
+	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"`
 	Role         string    `json:"role"`
 	IsActive     bool      `json:"is_active"`

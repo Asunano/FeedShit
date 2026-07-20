@@ -111,6 +111,8 @@ func TestPublicRegisterPage(t *testing.T) {
 		t.Fatalf("CreateInvitation failed: %v", err)
 	}
 
+	app.RegisterHTML = `<!DOCTYPE html><html lang="zh-CN"><body><h1>加入团队</h1><script nonce="__NONCE__">var TOKEN = 'INVITE_TOKEN_PLACEHOLDER';</script></body></html>`
+
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Params = []gin.Param{{Key: "token", Value: inv.Token}}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -127,6 +128,11 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 					allFeedbacks = append(allFeedbacks, fbs...)
 				}
 			}
+			// Merge order from per-project queries is not globally sorted.
+			// Sort the combined slice by created_at descending for a stable order.
+			sort.Slice(allFeedbacks, func(i, j int) bool {
+				return allFeedbacks[i].CreatedAt.After(allFeedbacks[j].CreatedAt)
+			})
 			feedbacks := allFeedbacks
 
 			// F6: Apply export filters
@@ -136,20 +142,10 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 			clientIP := middleware.GetClientIP(c)
 			a.DB.InsertAuditLog("export", fmt.Sprintf("导出反馈 %d 条 (项目: %s)", len(feedbacks), projectID), fmt.Sprintf("%v", user), clientIP)
 
-			isAdmin := roleStr == "admin"
-			switch c.Query("fmt") {
-			case "json":
-				a.exportJSON(c, projectID, feedbacks, isAdmin)
-				return
-			case "xlsx":
-				a.exportXLSX(c, projectID, feedbacks, isAdmin)
-				return
-			default:
-				a.exportCSV(c, projectID, feedbacks, isAdmin)
-			}
-			return
-		}
+		a.dispatchExport(c, projectID, feedbacks, roleStr == "admin")
+		return
 	}
+}
 
 	feedbacks, err := a.DB.ExportFeedbacks(projectID)
 	if err != nil {
@@ -164,15 +160,18 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("export", fmt.Sprintf("导出反馈 %d 条 (项目: %s)", len(feedbacks), projectID), fmt.Sprintf("%v", user), clientIP)
 
-	isAdmin := roleStr == "admin"
-	// M12: support json / xlsx export formats
+	a.dispatchExport(c, projectID, feedbacks, roleStr == "admin")
+}
+
+// dispatchExport writes the feedbacks in the format selected via the "fmt" query
+// parameter (csv default, json, or xlsx). Both the admin and non-admin export
+// paths call this so the format-dispatch logic exists in exactly one place.
+func (a *App) dispatchExport(c *gin.Context, projectID string, feedbacks []database.Feedback, isAdmin bool) {
 	switch c.Query("fmt") {
 	case "json":
 		a.exportJSON(c, projectID, feedbacks, isAdmin)
-		return
 	case "xlsx":
 		a.exportXLSX(c, projectID, feedbacks, isAdmin)
-		return
 	default:
 		a.exportCSV(c, projectID, feedbacks, isAdmin)
 	}
@@ -286,17 +285,36 @@ func (a *App) exportXLSX(c *gin.Context, projectID string, feedbacks []database.
 	f := excelize.NewFile()
 	sheet := "Feedbacks"
 	f.SetSheetName("Sheet1", sheet)
-	headers := []string{"ID", "项目", "标题", "描述", "自定义字段", "附件", "状态", "标签", "指派", "联系人", "联系邮箱", "来源IP", "提交时间"}
+	headers := []string{"ID", "项目", "标题", "描述", "自定义字段", "附件", "状态", "标签", "指派", "联系人", "联系邮箱", "来源IP", "提交时间", "投票", "路线图状态", "是否公开", "备注", "评分"}
 	f.SetSheetRow(sheet, "A1", &headers)
 	for i, fb := range feedbacks {
 		clientIP := fb.ClientIP
 		if !isAdmin && clientIP != "" {
 			clientIP = "已隐藏"
 		}
+		roadmapStatus := ""
+		if fb.PublicOnRoadmap {
+			roadmapStatus = fb.RoadmapStatus
+		}
 		row := []interface{}{
-			fb.ID, fb.ProjectID, fb.Title, fb.Description, fb.CustomData, fb.FilePaths,
-			fb.Status, fb.Tags, fb.Assignee, fb.ContactName, fb.ContactEmail, clientIP,
+			fb.ID,
+			escapeCSVCell(fb.ProjectID),
+			escapeCSVCell(fb.Title),
+			escapeCSVCell(fb.Description),
+			escapeCSVCell(fb.CustomData),
+			escapeCSVCell(fb.FilePaths),
+			escapeCSVCell(fb.Status),
+			escapeCSVCell(fb.Tags),
+			escapeCSVCell(fb.Assignee),
+			escapeCSVCell(fb.ContactName),
+			escapeCSVCell(fb.ContactEmail),
+			clientIP, // "已隐藏" 非用户输入，无需转义
 			fb.CreatedAt.Format("2006-01-02 15:04:05"),
+			fb.Votes,
+			escapeCSVCell(roadmapStatus),
+			fb.PublicOnRoadmap,
+			escapeCSVCell(fb.NotesContent),
+			fb.RatingScore,
 		}
 		cell, _ := excelize.CoordinatesToCellName(1, i+2)
 		f.SetSheetRow(sheet, cell, &row)
@@ -560,6 +578,16 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 		return 0
 	}
 
+	// Wrap the whole import in a transaction: a DB failure on any row rolls
+	// back every previously inserted row (EC#3) instead of leaving a partial
+	// import committed. Validation skips above never touch the DB, so they are
+	// unaffected by the rollback.
+	tx, err := a.DB.BeginTx()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "开启导入事务失败: " + err.Error()})
+		return
+	}
+
 	imported := 0
 	errors := []string{}
 	for i, row := range records[1:] {
@@ -579,7 +607,14 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 
 		// Determine project_id: per-row > form > default
 		pid := globalProjectID
-		if rowProj := getCol("project_id"); rowProj != "" && globalProjectID == "" {
+		if globalProjectID == "" {
+			rowProj := getCol("project_id")
+			if rowProj == "" {
+				// No project resolvable for this row → skip to avoid an
+				// orphaned "ghost" feedback that belongs to no project.
+				errors = append(errors, fmt.Sprintf("第 %d 行: 未指定项目，已跳过", lineNum))
+				continue
+			}
 			// Validate per-row project
 			proj, projErr := a.DB.GetProjectBySlug(rowProj)
 			if projErr != nil || proj == nil {
@@ -590,7 +625,6 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 				errors = append(errors, fmt.Sprintf("第 %d 行: 项目已停用或已归档: %s", lineNum, rowProj))
 				continue
 			}
-			// Bug #7: Check write permission on per-row project
 			if !a.checkProjectWritePerm(c, rowProj) {
 				errors = append(errors, fmt.Sprintf("第 %d 行: 您没有该项目的编辑权限", lineNum))
 				continue
@@ -636,11 +670,20 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 			TrackingToken: trackingToken,
 		}
 
-		if _, err := a.DB.ImportFeedback(fb, createdAtUnix); err != nil {
-			errors = append(errors, fmt.Sprintf("第 %d 行: 导入失败: %v", lineNum, err))
-			continue
+		if _, err := a.DB.ImportFeedbackTx(tx, fb, createdAtUnix); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":  fmt.Sprintf("第 %d 行导入失败，已回滚本次导入", lineNum),
+				"detail": err.Error(),
+			})
+			return
 		}
 		imported++
+	}
+
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交导入失败: " + err.Error()})
+		return
 	}
 
 	user, _ := c.Get("admin_user")

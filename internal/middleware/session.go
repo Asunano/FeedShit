@@ -17,10 +17,11 @@ type SessionManager struct {
 }
 
 type sessionEntry struct {
-	username  string
-	role      string
-	expiry    time.Time
-	csrfToken string
+	username      string
+	role          string
+	expiry        time.Time
+	csrfToken     string
+	csrfRotatedAt time.Time
 }
 
 func NewSessionManager() *SessionManager {
@@ -93,7 +94,13 @@ func (sm *SessionManager) RotateCSRFToken(sessionToken string) string {
 	if !exists {
 		return ""
 	}
+	// Time-based rotation: only rotate once per hour to avoid race conditions
+	// with concurrent requests (e.g. batch operations).
+	if time.Since(entry.csrfRotatedAt) < time.Hour {
+		return entry.csrfToken
+	}
 	entry.csrfToken = generateToken(32)
+	entry.csrfRotatedAt = time.Now()
 	sm.sessions[sessionToken] = entry
 	return entry.csrfToken
 }

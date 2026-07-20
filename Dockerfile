@@ -31,7 +31,7 @@ LABEL org.opencontainers.image.title="FeedShit" \
       org.opencontainers.image.version="${VERSION}" \
       org.opencontainers.image.description="Lightweight multi-project feedback collection system"
 
-RUN apk add --no-cache ca-certificates tzdata \
+RUN apk add --no-cache ca-certificates tzdata wget \
     && addgroup -S appgroup \
     && adduser -S appuser -G appgroup
 

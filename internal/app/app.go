@@ -25,6 +25,13 @@ type App struct {
 	Mailer       *email.Mailer
 	NonceCache   *middleware.NonceCache
 	LoginTracker *middleware.LoginAttemptTracker
+	// AnonVoteLimiter caps anonymous votes per IP to stop vote-farming.
+	AnonVoteLimiter *anonVoteLimiter
+	// ReplyLimiter caps submitter replies per tracking token to blunt
+	// reply-spam (the global IP rate limit is bypassable via proxy pools).
+	ReplyLimiter *anonVoteLimiter
+	// RegisterHTML is the invitation registration page HTML, loaded from embedded FS.
+	RegisterHTML string
 
 	// M7: per-token rate limiting (in-memory, single-instance)
 	tokenMu       sync.Mutex
@@ -41,6 +48,8 @@ func New(cfg *config.Config, db *database.Database, sm *middleware.SessionManage
 		Mailer:        mailer,
 		NonceCache:    middleware.NewNonceCache(),
 		LoginTracker:  middleware.NewLoginAttemptTracker(10),
+		AnonVoteLimiter: newAnonVoteLimiter(100, 24*time.Hour),
+		ReplyLimiter:    newAnonVoteLimiter(30, 24*time.Hour),
 		tokenHourHits: make(map[string]int),
 	}
 	// Periodically clear per-token hourly hit counters to avoid unbounded memory

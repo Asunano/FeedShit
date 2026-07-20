@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -88,6 +90,13 @@ func (a *App) PublicSubmitReply(c *gin.Context) {
 	}
 	if fb == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "未找到对应的反馈记录"})
+		return
+	}
+
+	// Cap replies per tracking token so a leaked token + proxy pool cannot
+	// flood a single feedback with follow-ups.
+	if !a.ReplyLimiter.allow(token) {
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": "回复过于频繁，请稍后再试"})
 		return
 	}
 
@@ -191,6 +200,12 @@ func (a *App) PublicVoteFeedback(c *gin.Context) {
 	if t := strings.TrimSpace(c.Query("token")); t != "" {
 		voterKey = "tok:" + t
 	} else {
+		// Cap anonymous votes per client IP to blunt vote-farming via
+		// proxy pools / User-Agent rotation.
+		if !a.AnonVoteLimiter.allow(middleware.GetClientIP(c)) {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "投票过于频繁，请稍后再试"})
+			return
+		}
 		ua := c.GetHeader("User-Agent")
 		h := sha256.Sum256([]byte(middleware.GetClientIP(c) + "|" + ua))
 		voterKey = "anon:" + hex.EncodeToString(h[:])
@@ -255,4 +270,47 @@ func (a *App) AdminSetRoadmap(c *gin.Context) {
 	clientIP := middleware.GetClientIP(c)
 	a.DB.InsertAuditLog("set_roadmap", fmt.Sprintf("反馈 #%d 看板: public=%v status=%s", id, req.Public, req.Status), fmt.Sprintf("%v", user), clientIP)
 	c.JSON(http.StatusOK, gin.H{"message": "已更新"})
+}
+
+// anonVoteLimiter caps anonymous votes per client IP over a sliding window to
+// blunt vote-farming (the dedup key includes the User-Agent, which an attacker
+// can rotate at will). Legitimate users rarely approach the ceiling.
+type anonVoteLimiter struct {
+	mu       sync.Mutex
+	window   time.Duration
+	maxVotes int
+	hits     map[string][]time.Time
+}
+
+func newAnonVoteLimiter(maxVotes int, window time.Duration) *anonVoteLimiter {
+	return &anonVoteLimiter{
+		maxVotes: maxVotes,
+		window:   window,
+		hits:     make(map[string][]time.Time),
+	}
+}
+
+// allow records one vote attempt for ip and reports whether it is within the
+// cap. Unattributable IPs (empty) are never blocked.
+func (l *anonVoteLimiter) allow(ip string) bool {
+	if ip == "" {
+		return true
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	cutoff := now.Add(-l.window)
+	kept := l.hits[ip][:0]
+	for _, t := range l.hits[ip] {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) >= l.maxVotes {
+		l.hits[ip] = kept
+		return false
+	}
+	kept = append(kept, now)
+	l.hits[ip] = kept
+	return true
 }

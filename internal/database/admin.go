@@ -11,13 +11,21 @@ func (d *Database) CreateAdmin(username, passwordHash, role string) (int64, erro
 	defer d.mu.Unlock()
 
 	res, err := d.db.Exec(
-		`INSERT INTO admins (username, password_hash, role) VALUES (?, ?, ?)`,
+		`INSERT INTO admins (username, password_hash, role, email) VALUES (?, ?, ?, '')`,
 		username, passwordHash, role,
 	)
 	if err != nil {
 		return 0, err
 	}
 	return res.LastInsertId()
+}
+
+// SetAdminEmail updates the email address for an admin account.
+func (d *Database) SetAdminEmail(adminID int64, email string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(`UPDATE admins SET email = ? WHERE id = ?`, email, adminID)
+	return err
 }
 
 // GetAdminByUsername looks up an admin by username. Returns nil if not found.
@@ -124,13 +132,13 @@ func (d *Database) UpdateAdminPassword(id int64, passwordHash string) error {
 	return err
 }
 
-// GetAdminEmail returns the contact_email from the most recent feedback by this admin, or empty.
-// This is used for notification dispatching — it's a heuristic since admins don't have a dedicated email field.
+// GetAdminEmail returns the admin's email from their account record.
+// Previously used a heuristic based on feedback contact_name — now authoritative.
 func (d *Database) GetAdminEmail(username string) string {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	var email string
-	d.db.QueryRow(`SELECT contact_email FROM feedbacks WHERE contact_name = ? AND contact_email != '' ORDER BY created_at DESC LIMIT 1`, username).Scan(&email)
+	d.db.QueryRow(`SELECT email FROM admins WHERE username = ? AND email != ''`, username).Scan(&email)
 	return email
 }
 

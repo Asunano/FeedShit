@@ -21,6 +21,11 @@ import (
 
 // ========== Public Submission ==========
 
+// maxCustomDataBytes caps the size of the custom_data JSON payload. The total
+// request body is already bounded by MaxUploadSize, but a single oversized
+// custom_data field could still exhaust memory, so we cap it explicitly.
+const maxCustomDataBytes = 1 << 20 // 1 MB
+
 func (a *App) SubmitFeedback(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, a.Cfg.MaxUploadSize)
 
@@ -51,6 +56,10 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 	customData := strings.TrimSpace(c.PostForm("custom_data"))
 	if customData == "" {
 		customData = "{}"
+	}
+	if len(customData) > maxCustomDataBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "自定义字段数据过大（上限 1MB）"})
+		return
 	}
 	// Validate custom_data is valid JSON
 	if !json.Valid([]byte(customData)) {
@@ -352,7 +361,15 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 	}
 	statusChanged := effectiveStatus != oldFb.Status
 
-	if err := a.DB.UpdateFeedbackStatus(id, effectiveStatus, req.Tags); err != nil {
+	// Determine effective tags: if the request omits tags (empty), preserve the
+	// existing value. This mirrors the status convention above and prevents a
+	// status-only update from wiping a feedback's tags.
+	effectiveTags := req.Tags
+	if effectiveTags == "" {
+		effectiveTags = oldFb.Tags
+	}
+
+	if err := a.DB.UpdateFeedbackStatus(id, effectiveStatus, effectiveTags); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
 		return
 	}

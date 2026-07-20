@@ -117,12 +117,27 @@ func (d *Database) GetProjectBySlug(slug string) (*Project, error) {
 	return &p, nil
 }
 
-// ListProjects returns all projects ordered by creation date, with feedback counts.
-func (d *Database) ListProjects() ([]Project, error) {
+// listProjectsWithArchive returns projects ordered by creation date (desc) with
+// feedback counts. When archived is non-nil, results are filtered to that archived
+// flag. ListProjects and ListProjectsByArchive delegate here so the query/scan
+// logic is not duplicated.
+func (d *Database) listProjectsWithArchive(archived *bool) ([]Project, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	rows, err := d.db.Query(`SELECT id, name, slug, description, is_active, is_archived, form_schema, created_at FROM projects ORDER BY created_at DESC`)
+	query := `SELECT id, name, slug, description, is_active, is_archived, form_schema, created_at FROM projects`
+	args := []interface{}{}
+	if archived != nil {
+		v := 0
+		if *archived {
+			v = 1
+		}
+		query += ` WHERE is_archived = ?`
+		args = append(args, v)
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +157,7 @@ func (d *Database) ListProjects() ([]Project, error) {
 		projects = append(projects, p)
 	}
 
-	// Batch feedback counts in a single query
+	// Batch feedback counts in a single query (parity with the original ListProjects).
 	if len(projects) > 0 {
 		countRows, err := d.db.Query(`SELECT project_id, COUNT(*) FROM feedbacks GROUP BY project_id`)
 		if err == nil {
@@ -162,6 +177,11 @@ func (d *Database) ListProjects() ([]Project, error) {
 	}
 
 	return projects, nil
+}
+
+// ListProjects returns all projects ordered by creation date, with feedback counts.
+func (d *Database) ListProjects() ([]Project, error) {
+	return d.listProjectsWithArchive(nil)
 }
 
 // GetProjects returns distinct project IDs.
@@ -324,33 +344,7 @@ func (d *Database) ArchiveProject(id int64, archived bool) error {
 
 // ListProjectsByArchive returns projects filtered by archived status.
 func (d *Database) ListProjectsByArchive(archived bool) ([]Project, error) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	v := 0
-	if archived {
-		v = 1
-	}
-	rows, err := d.db.Query(`SELECT id, name, slug, description, is_active, is_archived, form_schema, created_at FROM projects WHERE is_archived = ? ORDER BY created_at DESC`, v)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var projects []Project
-	for rows.Next() {
-		var p Project
-		var createdAt int64
-		var isActive, isArchived int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &createdAt); err != nil {
-			return nil, err
-		}
-		p.IsActive = isActive == 1
-		p.IsArchived = isArchived == 1
-		p.CreatedAt = time.Unix(createdAt, 0)
-		projects = append(projects, p)
-	}
-	return projects, nil
+	return d.listProjectsWithArchive(&archived)
 }
 
 // ========== Slug History (Redirect) ==========
