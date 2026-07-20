@@ -36,6 +36,10 @@ var ValidStatuses = map[string]bool{
 	StatusClosed:     true,
 }
 
+// ValidPriorities is the set of all accepted feedback priority values.
+// "" means no priority set, which is also valid.
+var ValidPriorities = map[string]bool{"": true, "low": true, "medium": true, "high": true, "urgent": true}
+
 // Feedback represents a single feedback submission.
 type Feedback struct {
 	ID              int64     `json:"id"`
@@ -223,8 +227,10 @@ func NewDatabase(dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	// Single-connection mode: consistent with the manual RWMutex in Database struct.
-	// WAL is kept for crash recovery, but concurrent reads are not utilized.
+	// Single-connection mode: SQLite serializes all operations at the driver level.
+	// The manual RWMutex in Database struct is redundant for concurrency safety but
+	// kept for future-proofing (e.g. multi-connection mode, connection pooling) and
+	// to allow goroutine-level coordination for transactions and test isolation.
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 

@@ -85,7 +85,11 @@ func (a *App) AdminUpdateEmailConfig(c *gin.Context) {
 		if item.Key == "smtp_pass" && strings.Contains(item.Value, "*") {
 			continue
 		}
-		a.DB.SetConfig(item.Key, item.Value, "")
+		if err := a.DB.SetConfig(item.Key, item.Value, ""); err != nil {
+			log.Printf("[CONFIG] 保存邮件设置 %s 失败: %v", item.Key, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("保存 %s 失败", item.Key)})
+			return
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "邮件设置已保存"})
 }
@@ -126,7 +130,11 @@ func (a *App) AdminUpdateAccount(c *gin.Context) {
 
 	if req.Username != "" && len(req.Username) >= 2 {
 		a.Cfg.AdminUsername = req.Username
-		a.DB.SetConfig("admin_username", req.Username, "管理员用户名")
+		if err := a.DB.SetConfig("admin_username", req.Username, "管理员用户名"); err != nil {
+			log.Printf("[CONFIG] 保存用户名失败: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存用户名失败"})
+			return
+		}
 	}
 	if req.NewPassword != "" {
 		if err := validatePasswordStrength(req.NewPassword); err != nil {
@@ -139,7 +147,11 @@ func (a *App) AdminUpdateAccount(c *gin.Context) {
 			return
 		}
 		a.Cfg.AdminPassword = hashedPwd
-		a.DB.SetConfig("admin_password", hashedPwd, "管理员密码（bcrypt 哈希）")
+		if err := a.DB.SetConfig("admin_password", hashedPwd, "管理员密码（bcrypt 哈希）"); err != nil {
+			log.Printf("[CONFIG] 保存密码失败: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存密码失败"})
+			return
+		}
 	}
 
 	user, _ := c.Get("admin_user")
@@ -204,39 +216,83 @@ func (a *App) AdminUpdateSystemConfig(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
 		return
 	}
+
+	if err := a.saveSystemConfig(c, &req); err != nil {
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "系统设置已保存"})
+}
+
+// saveSystemConfig persists system config fields and returns on first error.
+func (a *App) saveSystemConfig(c *gin.Context, req *struct {
+	BaseURL         string `json:"base_url"`
+	PoWDifficulty   int    `json:"pow_difficulty"`
+	RateLimit       int    `json:"rate_limit_per_hr"`
+	WebhookURL      string `json:"webhook_url"`
+	WebhookType     string `json:"webhook_type"`
+	ArchiveDays     string `json:"archive_days"`
+	BackupRetention string `json:"backup_retention_days"`
+	CDNProvider     string `json:"cdn_provider"`
+	TrustedProxies  string `json:"trusted_proxies"`
+},
+) error {
 	if req.BaseURL != "" {
 		a.Cfg.BaseURL = req.BaseURL
-		a.DB.SetConfig("base_url", req.BaseURL, "系统基础 URL")
+		if err := a.DB.SetConfig("base_url", req.BaseURL, "系统基础 URL"); err != nil {
+			log.Printf("[CONFIG] 保存 base_url 失败: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存基础 URL 失败"})
+			return err
+		}
 	}
 	if req.PoWDifficulty > 0 && req.PoWDifficulty <= 10 {
 		a.Cfg.PoWDifficulty = req.PoWDifficulty
-		a.DB.SetConfig("pow_difficulty", strconv.Itoa(req.PoWDifficulty), "PoW 难度")
+		if err := a.DB.SetConfig("pow_difficulty", strconv.Itoa(req.PoWDifficulty), "PoW 难度"); err != nil {
+			log.Printf("[CONFIG] 保存 pow_difficulty 失败: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存 PoW 难度失败"})
+			return err
+		}
 	}
 	if req.RateLimit > 0 {
 		a.Cfg.RateLimitPerHour = req.RateLimit
-		a.DB.SetConfig("rate_limit_per_hr", strconv.Itoa(req.RateLimit), "每小时提交上限")
+		if err := a.DB.SetConfig("rate_limit_per_hr", strconv.Itoa(req.RateLimit), "每小时提交上限"); err != nil {
+			log.Printf("[CONFIG] 保存 rate_limit_per_hr 失败: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存速率限制失败"})
+			return err
+		}
 	}
 	if req.WebhookURL != "" {
 		a.Cfg.WebhookURL = req.WebhookURL
-		a.DB.SetConfig("webhook_url", req.WebhookURL, "Webhook 通知 URL (已废弃，仅展示)")
+		if err := a.DB.SetConfig("webhook_url", req.WebhookURL, "Webhook 通知 URL (已废弃，仅展示)"); err != nil {
+			log.Printf("[CONFIG] 保存 webhook_url 失败: %v", err)
+		}
 		log.Printf("WARN: webhook_url is deprecated; it is stored for display only and no longer triggers outbound notifications. Use subscription-based webhooks via /api/v1/admin/webhooks instead.")
 	}
 	if req.WebhookType != "" {
-		a.DB.SetConfig("webhook_type", req.WebhookType, "Webhook 类型 (auto/feishu/dingtalk/slack/wecom)")
+		if err := a.DB.SetConfig("webhook_type", req.WebhookType, "Webhook 类型 (auto/feishu/dingtalk/slack/wecom)"); err != nil {
+			log.Printf("[CONFIG] 保存 webhook_type 失败: %v", err)
+		}
 	}
 	if req.ArchiveDays != "" {
-		a.DB.SetConfig("archive_days", req.ArchiveDays, "自动归档天数 (0=禁用)")
+		if err := a.DB.SetConfig("archive_days", req.ArchiveDays, "自动归档天数 (0=禁用)"); err != nil {
+			log.Printf("[CONFIG] 保存 archive_days 失败: %v", err)
+		}
 	}
 	if req.BackupRetention != "" {
-		a.DB.SetConfig("backup_retention_days", req.BackupRetention, "备份保留天数 (0=不自动清理)")
+		if err := a.DB.SetConfig("backup_retention_days", req.BackupRetention, "备份保留天数 (0=不自动清理)"); err != nil {
+			log.Printf("[CONFIG] 保存 backup_retention_days 失败: %v", err)
+		}
 	}
 	if req.CDNProvider != "" {
-		a.DB.SetConfig("cdn_provider", req.CDNProvider, "CDN 提供商 (auto/cloudflare/generic/none)")
+		if err := a.DB.SetConfig("cdn_provider", req.CDNProvider, "CDN 提供商 (auto/cloudflare/generic/none)"); err != nil {
+			log.Printf("[CONFIG] 保存 cdn_provider 失败: %v", err)
+		}
 		middleware.SetCDNProvider(req.CDNProvider)
 	}
 	if req.TrustedProxies != "" {
-		a.DB.SetConfig("trusted_proxies", req.TrustedProxies, "可信代理 IP（逗号分隔，* 表示全部）")
-		// Apply at runtime
+		if err := a.DB.SetConfig("trusted_proxies", req.TrustedProxies, "可信代理 IP（逗号分隔，* 表示全部）"); err != nil {
+			log.Printf("[CONFIG] 保存 trusted_proxies 失败: %v", err)
+		}
 		var proxies []string
 		for _, p := range strings.Split(req.TrustedProxies, ",") {
 			p = strings.TrimSpace(p)
@@ -246,8 +302,7 @@ func (a *App) AdminUpdateSystemConfig(c *gin.Context) {
 		}
 		middleware.SetTrustedProxies(proxies)
 	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "系统设置已保存"})
+	return nil
 }
 
 // ========== Email Template Config ==========
@@ -275,10 +330,18 @@ func (a *App) AdminUpdateEmailTemplate(c *gin.Context) {
 	}
 
 	if req.SubjectTemplate != "" {
-		a.DB.SetConfig("email_template_subject", req.SubjectTemplate, "邮件通知标题模板")
+		if err := a.DB.SetConfig("email_template_subject", req.SubjectTemplate, "邮件通知标题模板"); err != nil {
+			log.Printf("[CONFIG] 保存邮件主题模板失败: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存主题模板失败"})
+			return
+		}
 	}
 	if req.BodyTemplate != "" {
-		a.DB.SetConfig("email_template_body", req.BodyTemplate, "邮件通知正文模板")
+		if err := a.DB.SetConfig("email_template_body", req.BodyTemplate, "邮件通知正文模板"); err != nil {
+			log.Printf("[CONFIG] 保存邮件正文模板失败: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "保存正文模板失败"})
+			return
+		}
 	}
 
 	user, _ := c.Get("admin_user")

@@ -444,7 +444,7 @@ tr:last-child td{border-bottom:none}
   .kbd-hint{right:10px;bottom:10px}
 }
 </style>
-<script>
+<script nonce="__NONCE__">
 // ===== 主题（暗黑模式）+ 键盘快捷键（M14） =====
 (function(){
   "use strict";
@@ -1101,7 +1101,7 @@ tr:last-child td{border-bottom:none}
 
 <div class="toast" id="toast"></div>
 
-<script>
+<script nonce="__NONCE__">
 (function(){
   var currentTab = 'dashboard';
   var feedbacks = [];
@@ -1130,7 +1130,7 @@ tr:last-child td{border-bottom:none}
   // Fetch CSRF token after login
   async function fetchCSRFToken() {
     try {
-      var resp = await api('/api/v1/admin/csrf-token');
+      var resp = await api('/api/v1/admin/csrf-token', {method:'POST'});
       if (resp) {
         var d = await resp.json();
         csrfToken = d.csrf_token || '';

@@ -1,15 +1,37 @@
 package database
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"strings"
 	"time"
 )
 
+// hashTokenSHA256 returns the SHA-256 hex digest of a token string.
+// This is used to avoid storing raw tokens at rest — a DB leak cannot recover
+// usable tokens, only their hashes.
+func hashTokenSHA256(token string) string {
+	h := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(h[:])
+}
+
+// maskToken returns a truncated/masked version of a token for display.
+// Shows first 8 chars + "...".
+func maskToken(token string) string {
+	if len(token) <= 8 {
+		return token[:len(token)/2] + "..."
+	}
+	return token[:8] + "..."
+}
+
 func (d *Database) CreateAPIToken(token, name, projectID string, rateLimit, quotaPerDay int) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	res, err := d.db.Exec(`INSERT INTO api_tokens (token, name, project_id, rate_limit, quota_per_day) VALUES (?, ?, ?, ?, ?)`, token, name, projectID, rateLimit, quotaPerDay)
+	// Store the SHA-256 hash of the token — never the raw value.
+	res, err := d.db.Exec(
+		`INSERT INTO api_tokens (token, name, project_id, rate_limit, quota_per_day) VALUES (?, ?, ?, ?, ?)`,
+		hashTokenSHA256(token), name, projectID, rateLimit, quotaPerDay)
 	if err != nil {
 		return 0, err
 	}
@@ -34,6 +56,8 @@ func (d *Database) ListAPITokens() ([]APIToken, error) {
 		}
 		t.IsActive = isActive == 1
 		t.CreatedAt = time.Unix(createdAt, 0)
+		// Mask the hash so the list API never exposes usable tokens
+		t.Token = maskToken(t.Token)
 		list = append(list, t)
 	}
 	return list, nil
@@ -45,7 +69,8 @@ func (d *Database) GetAPITokenByToken(token string) (*APIToken, error) {
 	var t APIToken
 	var isActive int
 	var createdAt int64
-	err := d.db.QueryRow(`SELECT id, token, name, project_id, is_active, rate_limit, quota_per_day, COALESCE(last_used_at, ''), created_at FROM api_tokens WHERE token = ?`, token).
+	hash := hashTokenSHA256(token)
+	err := d.db.QueryRow(`SELECT id, token, name, project_id, is_active, rate_limit, quota_per_day, COALESCE(last_used_at, ''), created_at FROM api_tokens WHERE token = ?`, hash).
 		Scan(&t.ID, &t.Token, &t.Name, &t.ProjectID, &isActive, &t.RateLimit, &t.QuotaPerDay, &t.LastUsedAt, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -112,7 +137,7 @@ func (d *Database) DeleteAPIToken(id int64) error {
 func (d *Database) TouchAPIToken(token string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.db.Exec(`UPDATE api_tokens SET last_used_at = strftime('%s', 'now') WHERE token = ?`, token)
+	d.db.Exec(`UPDATE api_tokens SET last_used_at = strftime('%s', 'now') WHERE token = ?`, hashTokenSHA256(token))
 }
 
 // RecordTokenUsage enforces the daily quota for an API token. It atomically
@@ -121,10 +146,11 @@ func (d *Database) TouchAPIToken(token string) {
 func (d *Database) RecordTokenUsage(token string, quotaPerDay int) (bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	hash := hashTokenSHA256(token)
 	today := time.Now().Format("2006-01-02")
 	var used int
 	var date string
-	if err := d.db.QueryRow(`SELECT daily_count, daily_date FROM api_tokens WHERE token = ?`, token).Scan(&used, &date); err != nil {
+	if err := d.db.QueryRow(`SELECT daily_count, daily_date FROM api_tokens WHERE token = ?`, hash).Scan(&used, &date); err != nil {
 		return false, err
 	}
 	if date != today {
@@ -134,9 +160,9 @@ func (d *Database) RecordTokenUsage(token string, quotaPerDay int) (bool, error)
 		return false, nil
 	}
 	if date != today {
-		_, err := d.db.Exec(`UPDATE api_tokens SET daily_count = 1, daily_date = ? WHERE token = ?`, today, token)
+		_, err := d.db.Exec(`UPDATE api_tokens SET daily_count = 1, daily_date = ? WHERE token = ?`, today, hash)
 		return err == nil, err
 	}
-	_, err := d.db.Exec(`UPDATE api_tokens SET daily_count = daily_count + 1 WHERE token = ?`, token)
+	_, err := d.db.Exec(`UPDATE api_tokens SET daily_count = daily_count + 1 WHERE token = ?`, hash)
 	return err == nil, err
 }

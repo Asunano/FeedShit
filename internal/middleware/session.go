@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log"
 	"sync"
 	"time"
 )
@@ -123,6 +124,8 @@ func (sm *SessionManager) cleanupLoop() {
 
 func generateToken(length int) string {
 	b := make([]byte, length)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		log.Fatalf("Failed to generate session token: %v", err)
+	}
 	return hex.EncodeToString(b)
 }

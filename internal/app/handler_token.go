@@ -286,7 +286,10 @@ func (a *App) SubmitFeedbackWithToken(c *gin.Context) {
 
 	// Generate tracking token
 	trackingBytes := make([]byte, 16)
-	rand.Read(trackingBytes)
+	if _, err := rand.Read(trackingBytes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成跟踪令牌失败"})
+		return
+	}
 	fb.TrackingToken = hex.EncodeToString(trackingBytes)
 
 	id, err := a.DB.ImportFeedback(fb, 0)

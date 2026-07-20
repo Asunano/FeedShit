@@ -42,6 +42,11 @@ func isAPIRoute(path string) bool {
 	return strings.HasPrefix(path, "/api/")
 }
 
+// RoleLevel maps role names to numeric levels for hierarchical permission checks.
+// Shared single source of truth for role hierarchy across the codebase.
+// Levels: viewer=1, editor=2, manager=3, admin=4
+var RoleLevel = map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
+
 // RequireRole returns a middleware that restricts access to users with the specified role level.
 // Role hierarchy: admin > manager > editor > viewer.
 // "viewer" can only access routes with no role restriction or viewer-level.
@@ -49,12 +54,11 @@ func isAPIRoute(path string) bool {
 // "manager" can access manager, editor, and viewer routes.
 // "admin" can access all routes.
 func RequireRole(minRole string) gin.HandlerFunc {
-	roleLevel := map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
-	minLevel := roleLevel[minRole]
+	minLevel := RoleLevel[minRole]
 	return func(c *gin.Context) {
 		role, _ := c.Get("admin_role")
 		r, _ := role.(string)
-		if roleLevel[r] < minLevel {
+		if RoleLevel[r] < minLevel {
 			c.JSON(http.StatusForbidden, gin.H{"error": "权限不足"})
 			c.Abort()
 			return

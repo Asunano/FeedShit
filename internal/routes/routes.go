@@ -1,7 +1,9 @@
 package routes
 
 import (
+	"crypto/rand"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"io/fs"
 	"net/http"
@@ -12,6 +14,24 @@ import (
 	"feedshit/internal/app"
 	"feedshit/internal/middleware"
 )
+
+// nonceCtxKey is the gin context key for the CSP nonce value.
+const nonceCtxKey = "csp_nonce"
+
+// nonceMiddleware generates a unique CSP nonce per request and stores it in context.
+func nonceMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			// Fallback: use a static nonce if rand fails (extremely unlikely)
+			c.Set(nonceCtxKey, "fallback")
+			c.Next()
+			return
+		}
+		c.Set(nonceCtxKey, base64.StdEncoding.EncodeToString(b))
+		c.Next()
+	}
+}
 
 //go:embed frontend/*
 var frontendFS embed.FS
@@ -67,13 +87,18 @@ func Register(r *gin.Engine, application *app.App) {
 
 	r.Use(setupGuard)
 
+	// ========== CSP nonce middleware ==========
+	r.Use(nonceMiddleware())
+
 	// ========== Security headers ==========
 
 	// Content-Security-Policy: restricts script/style sources to mitigate XSS.
 	r.Use(func(c *gin.Context) {
+		nonce, _ := c.Get(nonceCtxKey)
+		nonceVal, _ := nonce.(string)
 		c.Header("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline' 'unsafe-eval'; "+
+				"script-src 'self' 'nonce-"+nonceVal+"'; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"img-src 'self' data:; "+
 				"font-src 'self'; "+
@@ -88,12 +113,12 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// Landing page
 	r.GET("/", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", indexHTML)
+		serveHTML(c, indexHTML)
 	})
 
 	// Setup page (always accessible via whitelist)
 	r.GET("/setup", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", setupHTML)
+		serveHTML(c, setupHTML)
 	})
 
 	// ========== Per-project feedback pages ==========
@@ -101,6 +126,8 @@ func Register(r *gin.Engine, application *app.App) {
 	r.GET("/fb/:slug", func(c *gin.Context) {
 		slug := c.Param("slug")
 		project, err := application.DB.GetProjectBySlug(slug)
+		nonceVal, _ := c.Get(nonceCtxKey)
+		nonceStr, _ := nonceVal.(string)
 
 		// If not found, check slug history for redirect
 		if err != nil {
@@ -138,7 +165,9 @@ func Register(r *gin.Engine, application *app.App) {
 			"form_schema": json.RawMessage(formSchemaOrDefault(project.FormSchema)),
 			"categories":  activeCats,
 		})
-		html := strings.Replace(string(feedbackHTML), "/*__PROJECT_DATA__*/null", string(info), 1)
+		// Apply nonce and inject project data into feedback HTML
+		html := strings.ReplaceAll(string(feedbackHTML), "__NONCE__", nonceStr)
+		html = strings.Replace(html, "/*__PROJECT_DATA__*/null", string(info), 1)
 		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 	})
 
@@ -149,7 +178,7 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// Public roadmap board (no login required)
 	r.GET("/p/:slug/roadmap", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", roadmapHTML)
+		serveHTML(c, roadmapHTML)
 	})
 
 	// ========== Public API routes ==========
@@ -182,7 +211,7 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// Public tracking routes (submitter self-service)
 	r.GET("/track", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", trackHTML)
+		serveHTML(c, trackHTML)
 	})
 	r.GET("/api/v1/track/feedback", application.PublicTrackFeedback)
 	trackReply := r.Group("/api/v1/track")
@@ -202,14 +231,14 @@ func Register(r *gin.Engine, application *app.App) {
 			c.Redirect(http.StatusFound, "/admin/login")
 			return
 		}
-		c.Data(http.StatusOK, "text/html; charset=utf-8", adminHTML)
+		serveHTML(c, adminHTML)
 	})
 
 	r.GET("/admin/*path", func(c *gin.Context) {
 		path := c.Param("path")
 
 		if path == "/login" {
-			c.Data(http.StatusOK, "text/html; charset=utf-8", loginHTML)
+			serveHTML(c, loginHTML)
 			return
 		}
 
@@ -228,7 +257,7 @@ func Register(r *gin.Engine, application *app.App) {
 			return
 		}
 
-		c.Data(http.StatusOK, "text/html; charset=utf-8", adminHTML)
+		serveHTML(c, adminHTML)
 	})
 
 	// ========== Admin API routes ==========
@@ -243,7 +272,7 @@ func Register(r *gin.Engine, application *app.App) {
 	{
 		// Session
 		adminAPI.POST("/logout", application.AdminLogout)
-		adminAPI.GET("/csrf-token", application.AdminGetCSRFToken)
+		adminAPI.POST("/csrf-token", application.AdminGetCSRFToken)
 		adminAPI.GET("/me", application.AdminGetCurrentUser)
 
 		// Dashboard
@@ -379,4 +408,14 @@ func formSchemaOrDefault(s string) string {
 		return "[]"
 	}
 	return s
+}
+
+// serveHTML replaces the __NONCE__ placeholder with the per-request CSP nonce
+// and writes the result as text/html. Use this for all HTML page responses to
+// support nonce-based CSP without exposing 'unsafe-inline' for scripts.
+func serveHTML(c *gin.Context, content []byte) {
+	nonce, _ := c.Get(nonceCtxKey)
+	nonceVal, _ := nonce.(string)
+	html := strings.ReplaceAll(string(content), "__NONCE__", nonceVal)
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }

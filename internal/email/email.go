@@ -26,9 +26,20 @@ func NewMailer(db *database.Database, baseURL string) *Mailer {
 	return &Mailer{db: db, baseURL: baseURL}
 }
 
+// getEmailSMTPConfig reads email-related config keys individually (NOT a full table scan).
+// This avoids scanning the entire config table on every email send.
+func getEmailSMTPConfig(db *database.Database) map[string]string {
+	keys := []string{"smtp_host", "smtp_port", "smtp_user", "smtp_pass", "smtp_from", "smtp_to", "notify_enable"}
+	m := make(map[string]string, len(keys))
+	for _, k := range keys {
+		m[k] = db.GetConfig(k)
+	}
+	return m
+}
+
 // SendFeedbackNotification sends an email notification for a new feedback.
 func (m *Mailer) SendFeedbackNotification(fb *database.Feedback) {
-	cfg := getEmailConfig(m.db)
+	cfg := getEmailSMTPConfig(m.db)
 
 	enabled := cfg["notify_enable"]
 	if enabled != "true" {
@@ -121,18 +132,6 @@ func (m *Mailer) SendFeedbackNotification(fb *database.Feedback) {
 	} else {
 		log.Printf("[MAIL] Notification sent for feedback #%d to %s", fb.ID, to)
 	}
-}
-
-func getEmailConfig(db *database.Database) map[string]string {
-	configs, err := db.GetAllConfig()
-	if err != nil {
-		return map[string]string{}
-	}
-	m := make(map[string]string, len(configs))
-	for _, c := range configs {
-		m[c.Key] = c.Value
-	}
-	return m
 }
 
 // renderTemplate applies placeholder substitution to a template string.
@@ -254,7 +253,7 @@ func (m *Mailer) SendStatusChangeNotification(fb *database.Feedback, subject, ht
 		return
 	}
 
-	cfg := getEmailConfig(m.db)
+	cfg := getEmailSMTPConfig(m.db)
 	host := cfg["smtp_host"]
 	port := cfg["smtp_port"]
 	user := cfg["smtp_user"]
@@ -326,7 +325,7 @@ func (m *Mailer) SendCSATInvite(fb *database.Feedback, trackURL string) {
 		return
 	}
 
-	cfg := getEmailConfig(m.db)
+	cfg := getEmailSMTPConfig(m.db)
 	host := cfg["smtp_host"]
 	port := cfg["smtp_port"]
 	user := cfg["smtp_user"]
@@ -370,7 +369,7 @@ func (m *Mailer) SendCSATInvite(fb *database.Feedback, trackURL string) {
 
 // SendSubmitterReplyNotification sends an email to admins when a submitter replies.
 func (m *Mailer) SendSubmitterReplyNotification(fb *database.Feedback, replyContent string) {
-	cfg := getEmailConfig(m.db)
+	cfg := getEmailSMTPConfig(m.db)
 
 	host := cfg["smtp_host"]
 	port := cfg["smtp_port"]
@@ -429,7 +428,7 @@ func (m *Mailer) SendSubmitterReplyNotification(fb *database.Feedback, replyCont
 // Send 发送通用 HTML 邮件。
 // to 为逗号分隔的收件人地址。
 func (m *Mailer) Send(to, subject, htmlBody string) {
-	cfg := getEmailConfig(m.db)
+	cfg := getEmailSMTPConfig(m.db)
 	host := cfg["smtp_host"]
 	port := cfg["smtp_port"]
 	user := cfg["smtp_user"]

@@ -16,6 +16,10 @@ var svgScriptTag = regexp.MustCompile(`(?i)<script[\s\S]*?</script>`)
 var svgEventAttr = regexp.MustCompile(`(?i)\s+on\w+\s*=\s*"[^"]*"`)
 var svgEventAttrSingle = regexp.MustCompile(`(?i)\s+on\w+\s*=\s*'[^']*'`)
 var svgJavascriptURL = regexp.MustCompile(`(?i)(href|xlink:href)\s*=\s*["']?\s*javascript:`)
+var svgEventAttrNoQuote = regexp.MustCompile(`(?i)\s+on\w+\s*=\s*[^\s>"']+`)
+var svgUseElement = regexp.MustCompile(`(?i)<use[\s>][\s\S]*?</use>|<use[\s>][^>]*/?>`)
+var svgForeignObject = regexp.MustCompile(`(?i)<foreignObject[\s>][\s\S]*?</foreignObject>`)
+var svgNestedNamespace = regexp.MustCompile(`(?i)xmlns\s*=\s*["']?[^"'\s]*javascript`)
 
 // detectWebhookPlatform returns the platform name based on the webhook URL.
 func detectWebhookPlatform(url string) string {
@@ -40,8 +44,15 @@ func sanitizeSVG(content string) string {
 	// Remove event handler attributes (onload, onerror, onclick, etc.)
 	content = svgEventAttr.ReplaceAllString(content, "")
 	content = svgEventAttrSingle.ReplaceAllString(content, "")
+	content = svgEventAttrNoQuote.ReplaceAllString(content, "")
 	// Remove javascript: URLs
 	content = svgJavascriptURL.ReplaceAllString(content, `data-removed-href="`)
+	// Remove <use> elements (external resource injection)
+	content = svgUseElement.ReplaceAllString(content, "")
+	// Remove <foreignObject> elements (nested XSS vector)
+	content = svgForeignObject.ReplaceAllString(content, "")
+	// Remove javascript: namespace declarations
+	content = svgNestedNamespace.ReplaceAllString(content, `data-removed-xmlns="`)
 	return content
 }
 

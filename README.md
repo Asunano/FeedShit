@@ -300,3 +300,14 @@ docker compose up -d
 ## License
 
 MIT
+
+## 项目目录结构
+
+| 目录 | 用途 |
+|------|------|
+| `cmd/feedshit/` | 应用入口 + 初始化编排 |
+| `internal/` | Go 内部包（config / database / middleware / app / email / report / routes / security） |
+| `docs/` | **开发者文档** — ADR（架构决策记录）、功能说明（如邀请系统） |
+| `deliverables/` | **工程保障输出** — 代码审查报告、事故复盘、技术债评估等（由 AI 工程保障团队生成） |
+| `test/` | 测试数据（SQLite 数据库快照等） |
+| `.github/workflows/` | CI/CD 配置

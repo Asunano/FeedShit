@@ -98,7 +98,7 @@ func (a *App) checkFeedbackWritePerm(c *gin.Context, fbID int64) (*database.Feed
 				// No grant for this project — deny
 				return fb, "您没有该项目的编辑权限"
 			}
-			roleLevel := map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
+			roleLevel := middleware.RoleLevel
 			if roleLevel[effectiveRole] < 2 { // need editor (2) or higher
 				return fb, "权限不足，需要编辑者及以上角色"
 			}
@@ -346,8 +346,16 @@ func (a *App) DoSetup(c *gin.Context) {
 	// Save admin credentials to DB
 	a.Cfg.AdminUsername = req.AdminUsername
 	a.Cfg.AdminPassword = hashedPwd
-	a.DB.SetConfig("admin_username", req.AdminUsername, "管理员用户名")
-	a.DB.SetConfig("admin_password", hashedPwd, "管理员密码（bcrypt 哈希）")
+	if err := a.DB.SetConfig("admin_username", req.AdminUsername, "管理员用户名"); err != nil {
+		log.Printf("[SETUP] 保存用户名失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存用户名失败"})
+		return
+	}
+	if err := a.DB.SetConfig("admin_password", hashedPwd, "管理员密码（bcrypt 哈希）"); err != nil {
+		log.Printf("[SETUP] 保存密码失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存密码失败"})
+		return
+	}
 
 	// Also insert super admin into admins table for team management visibility
 	if _, err := a.DB.CreateAdmin(req.AdminUsername, hashedPwd, "admin"); err != nil {
@@ -355,7 +363,9 @@ func (a *App) DoSetup(c *gin.Context) {
 	}
 
 	// Mark setup complete
-	a.DB.SetConfig("setup_complete", "true", "初始安装已完成")
+	if err := a.DB.SetConfig("setup_complete", "true", "初始安装已完成"); err != nil {
+		log.Printf("[SETUP] 保存安装状态失败: %v", err)
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "设置完成"})
 }
@@ -447,7 +457,7 @@ func (a *App) checkBulkWritePerm(c *gin.Context, ids []int64) string {
 		return "查询反馈失败"
 	}
 
-	roleLevel := map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
+	roleLevel := middleware.RoleLevel
 	for _, fb := range feedbacks {
 		effectiveRole := a.DB.GetEffectiveRole(admin.ID, fb.ProjectID, fb.Category)
 		if roleLevel[effectiveRole] < 2 { // need editor (2) or higher
@@ -475,7 +485,7 @@ func (a *App) checkProjectWritePerm(c *gin.Context, projectSlug string) bool {
 		return false
 	}
 	effectiveRole := a.DB.GetEffectiveRole(admin.ID, projectSlug, "*")
-	roleLevel := map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
+	roleLevel := middleware.RoleLevel
 	return roleLevel[effectiveRole] >= 2
 }
 

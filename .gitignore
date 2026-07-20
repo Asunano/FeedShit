@@ -49,3 +49,4 @@ qa_*.log
 coverage*.out
 /nul
 architecture-review-v2.md
+/docs

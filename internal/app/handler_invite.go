@@ -112,6 +112,12 @@ func (a *App) PublicRegisterPage(c *gin.Context) {
 
 	html := registerPageHTML
 	html = strings.ReplaceAll(html, "INVITE_TOKEN_PLACEHOLDER", token)
+	// Apply CSP nonce if available
+	if nonce, exists := c.Get("csp_nonce"); exists {
+		if n, ok := nonce.(string); ok {
+			html = strings.ReplaceAll(html, "__NONCE__", n)
+		}
+	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
@@ -163,7 +169,7 @@ input:focus{outline:none;border-color:#e53e3e;box-shadow:0 0 0 2px rgba(229,62,6
     </div>
   </div>
 </div>
-<script>
+<script nonce="__NONCE__">
 var TOKEN = 'INVITE_TOKEN_PLACEHOLDER';
 async function doRegister() {
   var username = document.getElementById('username').value.trim();

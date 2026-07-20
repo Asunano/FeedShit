@@ -1,6 +1,8 @@
 package database
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"strings"
@@ -294,6 +296,9 @@ func (d *Database) migrate() error {
 			);
 			CREATE INDEX IF NOT EXISTS idx_invite_token ON invitation_tokens(token);
 		`},
+		{24, "hash existing API tokens at rest", `
+			-- data migration: hashed in Go code below
+		`},
 		// Future migrations go here — never renumber existing entries.
 	}
 
@@ -313,6 +318,58 @@ func (d *Database) migrate() error {
 		return err
 	}
 
+	// M24: Hash existing API tokens at rest — only applies once.
+	if d.appliedVersion(24) && !migratedAPITokensHashed {
+		if err := d.migrateHashAPITokens(); err != nil {
+			return err
+		}
+		migratedAPITokensHashed = true
+	}
+
+	return nil
+}
+
+// migratedAPITokensHashed prevents re-hashing on every startup after migration 24.
+var migratedAPITokensHashed bool
+
+// migrateHashAPITokens replaces any plaintext API tokens with their SHA-256 hashes.
+func (d *Database) migrateHashAPITokens() error {
+	rows, err := d.db.Query(`SELECT id, token FROM api_tokens`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var updates int
+	for rows.Next() {
+		var id int64
+		var token string
+		if err := rows.Scan(&id, &token); err != nil {
+			return err
+		}
+		// SHA-256 hex is exactly 64 chars — skip if already hashed
+		if len(token) == 64 {
+			isHex := true
+			for _, c := range token {
+				if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+					isHex = false
+					break
+				}
+			}
+			if isHex {
+				continue
+			}
+		}
+		h := sha256.Sum256([]byte(token))
+		hash := hex.EncodeToString(h[:])
+		if _, err := d.db.Exec(`UPDATE api_tokens SET token = ? WHERE id = ?`, hash, id); err != nil {
+			return err
+		}
+		updates++
+	}
+	if updates > 0 {
+		log.Printf("[MIGRATE] Hashed %d existing API token(s) at rest", updates)
+	}
 	return nil
 }
 

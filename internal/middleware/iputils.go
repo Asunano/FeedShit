@@ -73,13 +73,7 @@ func GetClientIP(c *gin.Context) string {
 		return remoteIP
 	}
 
-	trusted := false
-	for _, tp := range getTrustedProxies() {
-		if tp == remoteIP || tp == "*" {
-			trusted = true
-			break
-		}
-	}
+	trusted := isTrustedProxy(remoteIP)
 	if !trusted {
 		return remoteIP
 	}
@@ -145,6 +139,7 @@ func GetClientIP(c *gin.Context) string {
 var (
 	proxyMu        sync.RWMutex
 	trustedProxies []string
+	trustedProxySet map[string]bool // O(1) lookup, built from trustedProxies
 	cdnProvider    = "auto"
 )
 
@@ -153,12 +148,25 @@ func SetTrustedProxies(proxies []string) {
 	proxyMu.Lock()
 	defer proxyMu.Unlock()
 	trustedProxies = proxies
+	trustedProxySet = make(map[string]bool, len(proxies))
+	for _, p := range proxies {
+		trustedProxySet[p] = true
+	}
 }
 
 func getTrustedProxies() []string {
 	proxyMu.RLock()
 	defer proxyMu.RUnlock()
 	return trustedProxies
+}
+
+func isTrustedProxy(ip string) bool {
+	proxyMu.RLock()
+	defer proxyMu.RUnlock()
+	if trustedProxySet["*"] {
+		return true
+	}
+	return trustedProxySet[ip]
 }
 
 // SetCDNProvider sets the CDN provider for IP detection.

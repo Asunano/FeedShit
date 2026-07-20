@@ -123,7 +123,10 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 
 	// Generate tracking token for submitter self-service
 	tokenBytes := make([]byte, 16)
-	rand.Read(tokenBytes)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成跟踪令牌失败"})
+		return
+	}
 	trackingToken := hex.EncodeToString(tokenBytes)
 
 	fb := &database.Feedback{
@@ -712,7 +715,7 @@ func (a *App) AdminBulkUpdatePriority(c *gin.Context) {
 		return
 	}
 
-	validPriorities := map[string]bool{"": true, "low": true, "medium": true, "high": true, "urgent": true}
+	validPriorities := database.ValidPriorities
 	if !validPriorities[req.Priority] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的优先级"})
 		return
@@ -755,7 +758,7 @@ func (a *App) AdminUpdateFeedbackPriority(c *gin.Context) {
 		return
 	}
 
-	validPriorities := map[string]bool{"": true, "low": true, "medium": true, "high": true, "urgent": true}
+	validPriorities := database.ValidPriorities
 	if !validPriorities[req.Priority] {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的优先级"})
 		return
@@ -938,8 +941,8 @@ func (a *App) AdminUpdateFeedbackCategory(c *gin.Context) {
 				admin, _ := a.DB.GetAdminByUsername(usernameStr)
 				if admin != nil {
 					targetRole := a.DB.GetEffectiveRole(admin.ID, fb.ProjectID, req.Category)
-					roleLevel := map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
-					if roleLevel[targetRole] < 2 {
+					roleLevel := middleware.RoleLevel
+				if roleLevel[targetRole] < 2 {
 						c.JSON(http.StatusForbidden, gin.H{"error": "您对目标分类无编辑权限"})
 						return
 					}

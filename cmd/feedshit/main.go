@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -83,35 +84,47 @@ func main() {
 	mailer := email.NewMailer(db, cfg.BaseURL)
 	application := app.New(cfg, db, sm, rl, mailer)
 
-	// Auto backup on startup
+	// Backup directory
 	backupDir := dataDir + "/backups"
-	if bp, err := db.BackupDatabase(backupDir); err != nil {
-		log.Printf("Startup backup failed: %v", err)
-	} else {
-		log.Printf("  Startup backup: %s", bp)
-		pruneBackups(db, backupDir, cfg.BackupRetentionDays)
-	}
 
-	// Daily backup scheduler
+	// Auto backup on startup (encrypted)
+	doEncryptedBackup(db, backupDir, "Startup")
+	pruneBackups(db, backupDir, cfg.BackupRetentionDays)
+
+	// Create a cancellable context for graceful goroutine management
+	ctx, cancelAll := context.WithCancel(context.Background())
+	defer cancelAll()
+
+	// Daily backup scheduler (context-aware)
 	go func() {
 		for {
 			now := time.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day()+1, 3, 0, 0, 0, now.Location())
-			time.Sleep(next.Sub(now))
-			if bp, err := db.BackupDatabase(backupDir); err != nil {
-				log.Printf("Daily backup failed: %v", err)
-			} else {
-				log.Printf("  Daily backup: %s", bp)
-				pruneBackups(db, backupDir, cfg.BackupRetentionDays)
+			sleepDuration := next.Sub(now)
+
+			select {
+			case <-ctx.Done():
+				log.Println("[BACKUP] 每日备份 goroutine 已停止")
+				return
+			case <-time.After(sleepDuration):
 			}
+
+			doEncryptedBackup(db, backupDir, "Daily")
+			pruneBackups(db, backupDir, cfg.BackupRetentionDays)
 		}
 	}()
 
-	// Webhook outbox retry ticker (locked for multi-instance safety)
+	// Webhook outbox retry ticker (context-aware, locked for multi-instance safety)
 	go func() {
 		ticker := time.NewTicker(15 * time.Second)
 		defer ticker.Stop()
-		for range ticker.C {
+		for {
+			select {
+			case <-ctx.Done():
+				log.Println("[WEBHOOK] 出站重试 goroutine 已停止")
+				return
+			case <-ticker.C:
+			}
 			if token, ok := report.AcquireJobLock(db, "webhook_outbox", 10*time.Second); ok {
 				application.ProcessWebhookOutbox()
 				report.ReleaseJobLock(db, "webhook_outbox", token)
@@ -119,7 +132,7 @@ func main() {
 		}
 	}()
 
-	// Weekly report ticker
+	// Weekly report ticker (context-aware)
 	go func() {
 		for {
 			now := time.Now()
@@ -134,7 +147,14 @@ func main() {
 			}
 			sleepDuration := next.Sub(now)
 			log.Printf("[REPORT] 下次周报时间 %s（还有 %v）", next.Format(time.RFC3339), sleepDuration)
-			time.Sleep(sleepDuration)
+
+			select {
+			case <-ctx.Done():
+				log.Println("[REPORT] 周报 goroutine 已停止")
+				return
+			case <-time.After(sleepDuration):
+			}
+
 			if token, ok := report.AcquireJobLock(db, "weekly_report", 1*time.Hour); ok {
 				if err := report.GenerateWeeklyReport(db, mailer); err != nil {
 					log.Printf("[REPORT] 周报生成失败: %v", err)
@@ -173,12 +193,13 @@ func main() {
 	log.Printf("  后台: http://localhost:%s/admin", cfg.Port)
 	log.Printf("  反馈页: http://localhost:%s/fb/{项目slug}", cfg.Port)
 
-	// Graceful shutdown
+	// Graceful shutdown — cancels all background goroutines on signal
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
 		log.Println("正在关闭服务...")
+		cancelAll() // Signal all background goroutines to stop
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		if err := srv.Shutdown(ctx); err != nil {
@@ -190,6 +211,27 @@ func main() {
 		log.Fatalf("Server failed: %v", err)
 	}
 	log.Println("服务已停止")
+}
+
+// doEncryptedBackup runs a database backup and encrypts the result.
+// Logs the outcome and returns without failing on encryption errors.
+func doEncryptedBackup(db *database.Database, backupDir, label string) {
+	bp, err := db.BackupDatabase(backupDir)
+	if err != nil {
+		log.Printf("[BACKUP] %s backup failed: %v", label, err)
+		return
+	}
+	log.Printf("[BACKUP] %s backup: %s", label, filepath.Base(bp))
+
+	// Encrypt the backup file
+	encPath := bp + ".enc"
+	if encErr := security.EncryptFile(bp, encPath); encErr != nil {
+		log.Printf("[BACKUP] %s encryption failed (unencrypted backup kept): %v", label, encErr)
+		return
+	}
+	// Remove the unencrypted file
+	os.Remove(bp)
+	log.Printf("[BACKUP] %s encrypted: %s", label, filepath.Base(encPath))
 }
 
 // pruneBackups prunes old backup files according to the retention policy.

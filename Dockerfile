@@ -54,3 +54,7 @@ ENV PORT=8080
 #   docker build --build-arg VERSION=1.2.3 -t feedshit:1.2.3 .
 # Never ship a bare `latest` to production — it is not traceable.
 ENTRYPOINT ["./feedshit"]
+
+# Healthcheck — orchestrator (K8s/Nomad) uses this for liveness and readiness
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1

@@ -27,7 +27,9 @@ func (d *Database) CreateInvitation(role string, projectIDs []string, maxUses in
 	defer d.mu.Unlock()
 
 	b := make([]byte, 24)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return nil, fmt.Errorf("failed to generate invitation token: %w", err)
+	}
 	token := hex.EncodeToString(b)
 
 	projJSON, _ := json.Marshal(projectIDs)

@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoadConfigDefaults(t *testing.T) {
@@ -16,18 +18,10 @@ func TestLoadConfigDefaults(t *testing.T) {
 
 	cfg := LoadConfig()
 
-	if cfg.Port != "8080" {
-		t.Fatalf("Port = %q, want %q", cfg.Port, "8080")
-	}
-	if cfg.AdminUsername != "admin" {
-		t.Fatalf("AdminUsername = %q, want %q", cfg.AdminUsername, "admin")
-	}
-	if cfg.AdminPassword != "" {
-		t.Fatalf("AdminPassword = %q, want empty", cfg.AdminPassword)
-	}
-	if cfg.DataDir != "./data" {
-		t.Fatalf("DataDir = %q, want ./data", cfg.DataDir)
-	}
+	assert.Equal(t, "8080", cfg.Port)
+	assert.Equal(t, "admin", cfg.AdminUsername)
+	assert.Equal(t, "", cfg.AdminPassword)
+	assert.Equal(t, "./data", cfg.DataDir)
 	if cfg.UploadDir != "./data/uploads" {
 		t.Fatalf("UploadDir = %q, want ./data/uploads", cfg.UploadDir)
 	}

@@ -224,6 +224,7 @@ func (d *Database) GetAllowedProjectSlugs(adminID int64) []string {
 func (d *Database) GetEffectiveRole(adminID int64, projectSlug, categoryKey string) string {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
+	// Refer to middleware.RoleLevel for the shared definition
 	roleLevel := map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
 	bestRole := ""
 	bestLevel := 0

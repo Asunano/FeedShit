@@ -556,6 +556,7 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 				return t.Unix()
 			}
 		}
+		log.Printf("[CSV] WARN: 无法解析时间戳 %q，将使用当前时间", s)
 		return 0
 	}
 
@@ -605,7 +606,7 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 			errors = append(errors, fmt.Sprintf("第 %d 行: 无效的状态值 %q，已跳过", lineNum, rawStatus))
 			continue
 		}
-		validPriorities := map[string]bool{"": true, "low": true, "medium": true, "high": true, "urgent": true}
+		validPriorities := database.ValidPriorities
 		rawPriority := getCol("priority")
 		if !validPriorities[rawPriority] {
 			errors = append(errors, fmt.Sprintf("第 %d 行: 无效的优先级 %q，已跳过", lineNum, rawPriority))
@@ -614,7 +615,10 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 
 		// Generate tracking token for submitter self-service
 		tokenBytes := make([]byte, 16)
-		rand.Read(tokenBytes)
+		if _, err := rand.Read(tokenBytes); err != nil {
+			errors = append(errors, fmt.Sprintf("第 %d 行: 生成令牌失败", lineNum))
+			continue
+		}
 		trackingToken := hex.EncodeToString(tokenBytes)
 
 		fb := &database.Feedback{
@@ -690,7 +694,7 @@ func (a *App) AdminImportJSON(c *gin.Context) {
 
 	imported := 0
 	importErrors := []string{}
-	validPriorities := map[string]bool{"": true, "low": true, "medium": true, "high": true, "urgent": true}
+	validPriorities := database.ValidPriorities
 
 	for i, rec := range records {
 		lineNum := i + 1
@@ -741,7 +745,10 @@ func (a *App) AdminImportJSON(c *gin.Context) {
 		}
 
 		tokenBytes := make([]byte, 16)
-		rand.Read(tokenBytes)
+		if _, err := rand.Read(tokenBytes); err != nil {
+			importErrors = append(importErrors, fmt.Sprintf("第 %d 条: 生成令牌失败", lineNum))
+			continue
+		}
 		fb := &database.Feedback{
 			ProjectID:     pid,
 			Title:         rec.Title,
