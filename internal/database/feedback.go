@@ -329,15 +329,17 @@ func (d *Database) GetFeedback(id int64) (*Feedback, error) {
 	var createdAt int64
 	var isDuplicate int
 	var isPublic int
+	var ratingOpen int
 	err := d.db.QueryRow(
-		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash, public_on_roadmap, roadmap_status
+		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash, public_on_roadmap, roadmap_status, rating_open
 		 FROM feedbacks WHERE id = ?`, id,
-	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash, &isPublic, &f.RoadmapStatus)
+	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash, &isPublic, &f.RoadmapStatus, &ratingOpen)
 	if err != nil {
 		return nil, err
 	}
 	f.IsDuplicate = isDuplicate == 1
 	f.PublicOnRoadmap = isPublic == 1
+	f.RatingOpen = ratingOpen == 1
 	f.CreatedAt = time.Unix(createdAt, 0)
 	return &f, nil
 }
@@ -445,6 +447,56 @@ func (d *Database) UpdateFeedbackStatus(id int64, status, tags string) error {
 	return err
 }
 
+// SetRatingOpen toggles the submitter-facing CSAT rating invitation for a feedback.
+// When open, the tracking page shows the rating widget even if status != resolved.
+func (d *Database) SetRatingOpen(id int64, open bool) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	v := 0
+	if open {
+		v = 1
+	}
+	_, err := d.db.Exec(`UPDATE feedbacks SET rating_open = ?, updated_at = strftime('%s', 'now') WHERE id = ?`, v, id)
+	return err
+}
+
+// RecordStatusChange appends a status-transition event to the feedback's history.
+func (d *Database) RecordStatusChange(feedbackID int64, from, to, by, note string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(
+		`INSERT INTO feedback_status_history (feedback_id, from_status, to_status, changed_by, note) VALUES (?, ?, ?, ?, ?)`,
+		feedbackID, from, to, by, note)
+	return err
+}
+
+// ListStatusHistory returns the status-change timeline for a feedback, oldest first.
+func (d *Database) ListStatusHistory(feedbackID int64) ([]StatusChange, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	rows, err := d.db.Query(
+		`SELECT id, feedback_id, from_status, to_status, changed_by, note, created_at FROM feedback_status_history WHERE feedback_id = ? ORDER BY created_at ASC, id ASC`,
+		feedbackID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []StatusChange
+	for rows.Next() {
+		var s StatusChange
+		var createdAt int64
+		if err := rows.Scan(&s.ID, &s.FeedbackID, &s.FromStatus, &s.ToStatus, &s.ChangedBy, &s.Note, &createdAt); err != nil {
+			return nil, err
+		}
+		s.CreatedAt = time.Unix(createdAt, 0)
+		out = append(out, s)
+	}
+	if out == nil {
+		out = []StatusChange{}
+	}
+	return out, nil
+}
+
 // DeleteFeedback removes a feedback record by ID.
 func (d *Database) DeleteFeedback(id int64) error {
 	d.mu.Lock()
@@ -542,6 +594,35 @@ func (d *Database) FindExactDuplicates(projectID, hash string, excludeID int64, 
 			return nil, err
 		}
 		f.IsDuplicate = isDuplicate == 1
+		list = append(list, f)
+	}
+	return list, nil
+}
+
+// ListFeedbackByContactEmail returns a lightweight summary of feedbacks
+// submitted with the given contact email. Used by the submitter email portal
+// on the public tracking page. Tracking tokens are unguessable secrets, so
+// returning them to the email owner is safe; each item still requires its own
+// token to open.
+func (d *Database) ListFeedbackByContactEmail(email string, limit int) ([]Feedback, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	rows, err := d.db.Query(
+		`SELECT id, project_id, title, status, tracking_token, updated_at
+		 FROM feedbacks WHERE contact_email = ? ORDER BY updated_at DESC LIMIT ?`, email, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []Feedback
+	for rows.Next() {
+		var f Feedback
+		if err := rows.Scan(&f.ID, &f.ProjectID, &f.Title, &f.Status, &f.TrackingToken, &f.UpdatedAt); err != nil {
+			return nil, err
+		}
 		list = append(list, f)
 	}
 	return list, nil

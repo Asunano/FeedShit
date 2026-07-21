@@ -30,8 +30,6 @@ type App struct {
 	// ReplyLimiter caps submitter replies per tracking token to blunt
 	// reply-spam (the global IP rate limit is bypassable via proxy pools).
 	ReplyLimiter *anonVoteLimiter
-	// RegisterHTML is the invitation registration page HTML, loaded from embedded FS.
-	RegisterHTML string
 
 	// M7: per-token rate limiting (in-memory, single-instance)
 	tokenMu       sync.Mutex

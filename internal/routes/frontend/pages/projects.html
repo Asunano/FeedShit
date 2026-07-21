@@ -1,0 +1,170 @@
+{{template "chrometop" .}}
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6}
+a{color:var(--link);text-decoration:none}
+a:hover{text-decoration:underline}
+
+.container{max-width:960px;margin:0 auto;padding:32px 20px 56px}
+.page-head{margin-bottom:8px}
+.page-head h2{font-size:1.8rem;font-weight:700}
+.page-head p{color:var(--muted);font-size:.95rem;margin-top:4px}
+
+/* Announcement banner */
+.announcement-bar{display:flex;align-items:flex-start;gap:10px;border-radius:8px;padding:12px 14px;margin:20px 0;font-size:.9rem;border:1px solid transparent}
+.announcement-bar .ann-icon{font-size:1.05rem;line-height:1.4}
+.announcement-bar .ann-body{flex:1;min-width:0}
+.announcement-bar .ann-body *{max-width:100%}
+.announcement-bar .ann-close{background:none;border:none;color:inherit;cursor:pointer;font-size:1.1rem;opacity:.6;padding:0 2px;line-height:1}
+.announcement-bar .ann-close:hover{opacity:1}
+.ann-info{background:var(--accent-soft,rgba(37,99,235,.1));border-color:var(--accent-border,rgba(37,99,235,.35));color:var(--fg)}
+.ann-warning{background:rgba(217,119,6,.12);border-color:rgba(217,119,6,.4);color:var(--fg)}
+.ann-success{background:rgba(22,163,74,.12);border-color:rgba(22,163,74,.4);color:var(--fg)}
+.ann-danger{background:rgba(220,38,38,.12);border-color:rgba(220,38,38,.4);color:var(--fg)}
+
+/* Toolbar */
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0 20px}
+.toolbar .search{flex:1;min-width:200px;position:relative}
+.toolbar .search input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--fg);font-size:.9rem}
+.toolbar .search input:focus{outline:none;border-color:var(--accent)}
+.toolbar .sort select{padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--panel);color:var(--fg);font-size:.9rem}
+.toolbar .count{font-size:.82rem;color:var(--muted);white-space:nowrap}
+
+/* Project grid */
+.project-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.project-card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;display:flex;flex-direction:column;gap:10px;transition:border-color .15s,transform .15s}
+.project-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.project-card h3{font-size:1.05rem;font-weight:600}
+.project-card h3 a{color:var(--fg)}
+.project-card .meta{font-size:.78rem;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap}
+.project-card .desc{color:var(--field-label);font-size:.88rem;line-height:1.55}
+.project-card .desc.clamped{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.project-card .expand-btn{align-self:flex-start;background:none;border:none;color:var(--accent);cursor:pointer;font-size:.82rem;padding:0}
+.project-card .go{margin-top:auto;font-size:.85rem;color:var(--accent);font-weight:500}
+.empty-state{text-align:center;color:var(--muted);padding:48px 0;font-size:.95rem}
+@media (max-width:560px){ .project-grid{grid-template-columns:1fr} }
+</style>
+
+<div class="container">
+  <div class="page-head">
+    <h2>反馈项目</h2>
+    <p>选择一个项目，提交你的反馈、建议或问题</p>
+  </div>
+
+  <div id="announcementBar"></div>
+
+  <div class="toolbar">
+    <div class="search">
+      <input type="text" id="searchInput" placeholder="搜索项目名称或描述…" autocomplete="off">
+    </div>
+    <div class="sort">
+      <select id="sortSelect">
+        <option value="recent">最近添加</option>
+        <option value="popular">反馈最多</option>
+        <option value="name">名称 A→Z</option>
+      </select>
+    </div>
+    <div class="count" id="projectCount"></div>
+  </div>
+
+  <div class="project-grid" id="projectGrid"></div>
+  <div class="empty-state" id="emptyState" style="display:none">没有匹配的项目</div>
+</div>
+
+<script nonce="{{.Nonce}}">
+(function(){
+  function escHtml(s){ var d=document.createElement('div'); d.textContent=s||''; return d.innerHTML; }
+
+  // ---- Announcement banner ----
+  function renderAnnouncementBar(el, data, dismissKey){
+    if (!el || !data || !data.enabled || !data.content) { if (el) el.innerHTML=''; return; }
+    if (dismissKey) {
+      try { if (localStorage.getItem(dismissKey) === '1') { el.innerHTML=''; return; } } catch(e){}
+    }
+    var level = data.level || 'info';
+    var bar = document.createElement('div');
+    bar.className = 'announcement-bar ann-' + level;
+    var icons = {info:'ℹ️',warning:'⚠️',success:'✅',danger:'🚫'};
+    var icon = document.createElement('span');
+    icon.className = 'ann-icon'; icon.textContent = icons[level] || 'ℹ️';
+    var body = document.createElement('div');
+    body.className = 'ann-body';
+    if (data.content_type === 'html') { body.innerHTML = data.content; }
+    else { body.textContent = data.content; }
+    bar.appendChild(icon);
+    bar.appendChild(body);
+    if (dismissKey && data.dismissible) {
+      var close = document.createElement('button');
+      close.className = 'ann-close'; close.setAttribute('aria-label','关闭公告'); close.textContent = '×';
+      close.addEventListener('click', function(){ bar.style.display='none'; try{ localStorage.setItem(dismissKey,'1'); }catch(e){} });
+      bar.appendChild(close);
+    }
+    el.innerHTML = '';
+    el.appendChild(bar);
+  }
+
+  fetch('/api/v1/announcement').then(function(r){return r.json();}).then(function(d){
+    renderAnnouncementBar(document.getElementById('announcementBar'), d, 'fs_ann_' + (d.updated_at||'home'));
+  }).catch(function(){});
+
+  // ---- Project list ----
+  var allProjects = [];
+  var grid = document.getElementById('projectGrid');
+  var emptyState = document.getElementById('emptyState');
+  var countEl = document.getElementById('projectCount');
+  var searchEl = document.getElementById('searchInput');
+  var sortEl = document.getElementById('sortSelect');
+
+  function sortProjects(list, mode){
+    var arr = list.slice();
+    if (mode === 'popular') arr.sort(function(a,b){ return (b.feedback_count||0)-(a.feedback_count||0); });
+    else if (mode === 'name') arr.sort(function(a,b){ return (a.name||'').localeCompare(b.name||''); });
+    else arr.sort(function(a,b){ return (b.created_at||0)-(a.created_at||0); });
+    return arr;
+  }
+
+  function render(){
+    var q = (searchEl.value || '').trim().toLowerCase();
+    var filtered = allProjects.filter(function(p){
+      if (!q) return true;
+      return ((p.name||'').toLowerCase().indexOf(q) >= 0) || ((p.description||'').toLowerCase().indexOf(q) >= 0);
+    });
+    filtered = sortProjects(filtered, sortEl.value);
+    grid.innerHTML = '';
+    countEl.textContent = '共 ' + filtered.length + ' 个项目';
+    if (filtered.length === 0) { emptyState.style.display=''; return; }
+    emptyState.style.display = 'none';
+    filtered.forEach(function(p){
+      var card = document.createElement('div');
+      card.className = 'project-card';
+      var h = '<h3><a href="/fb/'+encodeURIComponent(p.slug)+'">'+escHtml(p.name)+'</a></h3>';
+      var meta = '<div class="meta"><span>📋 反馈 '+(p.feedback_count||0)+'</span></div>';
+      var desc = '<div class="desc clamped">'+escHtml(p.description||'')+'</div>';
+      var go = '<div class="go">前往反馈 →</div>';
+      card.innerHTML = h + meta + desc + go;
+      grid.appendChild(card);
+      // Expand/collapse only if description overflows
+      var descEl = card.querySelector('.desc');
+      if (descEl.scrollHeight > descEl.clientHeight + 2) {
+        var btn = document.createElement('button');
+        btn.className = 'expand-btn'; btn.textContent = '展开';
+        btn.addEventListener('click', function(){
+          var clamped = descEl.classList.toggle('clamped');
+          btn.textContent = clamped ? '展开' : '收起';
+        });
+        card.insertBefore(btn, card.querySelector('.go'));
+      }
+    });
+  }
+
+  fetch('/api/v1/projects').then(function(r){return r.json();}).then(function(d){
+    allProjects = d.projects || [];
+    render();
+  }).catch(function(){ emptyState.style.display=''; emptyState.textContent='加载项目失败'; });
+
+  var t;
+  searchEl.addEventListener('input', function(){ clearTimeout(t); t=setTimeout(render, 250); });
+  sortEl.addEventListener('change', render);
+})();
+</script>
+{{template "chromebot" .}}

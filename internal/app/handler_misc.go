@@ -307,6 +307,7 @@ func (a *App) SetupStatus(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"setup_complete": val == "true",
 		"pow_difficulty": a.Cfg.PoWDifficulty,
+		"max_upload_mb":  a.Cfg.MaxUploadSize / 1024 / 1024,
 	})
 }
 
@@ -492,10 +493,21 @@ func (a *App) checkProjectWritePerm(c *gin.Context, projectSlug string) bool {
 // formSchemaField represents a single field definition in the form_schema JSON.
 type formSchemaField struct {
 	Key      string   `json:"key"`
+	Name     string   `json:"name"`
 	Label    string   `json:"label"`
 	Type     string   `json:"type"`
 	Required bool     `json:"required"`
 	Options  []string `json:"options,omitempty"`
+	Sys      string   `json:"sys,omitempty"`
+}
+
+// fieldKey returns the data key used for this field, preferring the
+// JSON-friendly `name` attribute and falling back to the legacy `key`.
+func (f formSchemaField) fieldKey() string {
+	if f.Name != "" {
+		return f.Name
+	}
+	return f.Key
 }
 
 // validateFormSchema validates custom_data JSON against the project's form_schema.
@@ -521,7 +533,13 @@ func validateFormSchema(schemaJSON, customDataJSON string) error {
 	}
 
 	for _, field := range schema {
-		val, exists := data[field.Key]
+		// System fields (title/description/category/notify/uploads) are sent as
+		// dedicated POST params, not inside custom_data — skip them here so they
+		// aren't wrongly flagged as missing required custom fields.
+		if field.Sys != "" {
+			continue
+		}
+		val, exists := data[field.fieldKey()]
 		if field.Required {
 			if !exists || val == nil || val == "" {
 				return fmt.Errorf("字段 %q 为必填", field.Label)

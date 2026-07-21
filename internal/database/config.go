@@ -85,10 +85,10 @@ func (d *Database) GetAllConfig() ([]DBConfig, error) {
 }
 
 // InitDefaultConfig seeds default config values if they don't exist.
+// Note: do NOT hold d.mu here — SetConfig (called below) acquires its own
+// lock, and sync.RWMutex is not reentrant. The seeding runs once at startup
+// (single goroutine), so the per-key COUNT check + SetConfig needs no external lock.
 func (d *Database) InitDefaultConfig(cfg *config.Config) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
 	defaults := []DBConfig{
 		{Key: "smtp_host", Value: cfg.SMTPHost, Description: "SMTP 服务器地址"},
 		{Key: "smtp_port", Value: fmt.Sprintf("%d", cfg.SMTPPort), Description: "SMTP 端口"},

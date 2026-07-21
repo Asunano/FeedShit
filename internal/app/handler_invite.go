@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -113,28 +112,6 @@ func (a *App) AdminListInvitations(c *gin.Context) {
 		resp = []respItem{}
 	}
 	c.JSON(http.StatusOK, gin.H{"invitations": resp})
-}
-
-// PublicRegisterPage renders the registration form for an invitation.
-func (a *App) PublicRegisterPage(c *gin.Context) {
-	token := c.Param("token")
-
-	// Validate the token
-	_, err := a.DB.ValidateInvitation(token)
-	if err != nil {
-		c.String(http.StatusOK, `<html><body style="font-family:sans-serif;padding:40px;text-align:center"><h2>邀请链接无效或已过期</h2><p>请联系管理员获取新的邀请链接。</p></body></html>`)
-		return
-	}
-
-	html := a.RegisterHTML
-	html = strings.ReplaceAll(html, "INVITE_TOKEN_PLACEHOLDER", token)
-	// Apply CSP nonce if available
-	if nonce, exists := c.Get("csp_nonce"); exists {
-		if n, ok := nonce.(string); ok {
-			html = strings.ReplaceAll(html, "__NONCE__", n)
-		}
-	}
-	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
 // PublicRegister handles the registration form submission.

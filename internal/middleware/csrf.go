@@ -12,6 +12,14 @@ import (
 // Uses double-submit cookie pattern: csrf_token cookie must match X-CSRF-Token header.
 func CSRFMiddleware(sm *SessionManager) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// The CSRF-token bootstrap endpoint must be reachable without a token
+		// (the client fetches its first token there). It still requires an
+		// authenticated session via AuthMiddleware, so this is safe.
+		if c.Request.URL.Path == "/api/v1/admin/csrf-token" {
+			c.Next()
+			return
+		}
+
 		// Only check state-changing methods
 		if c.Request.Method == "GET" || c.Request.Method == "HEAD" || c.Request.Method == "OPTIONS" {
 			c.Next()

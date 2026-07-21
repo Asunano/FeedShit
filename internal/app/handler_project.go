@@ -91,6 +91,7 @@ func (a *App) AdminCreateProject(c *gin.Context) {
 		Slug        string `json:"slug"`
 		Description string `json:"description"`
 		FormSchema  string `json:"form_schema"`
+		Announcement string `json:"announcement"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -117,11 +118,12 @@ func (a *App) AdminCreateProject(c *gin.Context) {
 		formSchema = "[]"
 	}
 	p := &database.Project{
-		Name:        req.Name,
-		Slug:        req.Slug,
-		Description: req.Description,
-		IsActive:    true,
-		FormSchema:  formSchema,
+		Name:         req.Name,
+		Slug:         req.Slug,
+		Description:  req.Description,
+		IsActive:     true,
+		FormSchema:   formSchema,
+		Announcement: req.Announcement,
 	}
 	id, err := a.DB.CreateProject(p)
 	if err != nil {
@@ -153,6 +155,7 @@ func (a *App) AdminUpdateProject(c *gin.Context) {
 		IsActive    bool   `json:"is_active"`
 		IsArchived  bool   `json:"is_archived"`
 		FormSchema  string `json:"form_schema"`
+		Announcement string `json:"announcement"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -209,13 +212,14 @@ func (a *App) AdminUpdateProject(c *gin.Context) {
 	}
 
 	p := &database.Project{
-		ID:          id,
-		Name:        req.Name,
-		Slug:        req.Slug,
-		Description: req.Description,
-		IsActive:    req.IsActive,
-		IsArchived:  req.IsArchived,
-		FormSchema:  formSchema,
+		ID:           id,
+		Name:         req.Name,
+		Slug:         req.Slug,
+		Description:  req.Description,
+		IsActive:     req.IsActive,
+		IsArchived:   req.IsArchived,
+		FormSchema:   formSchema,
+		Announcement: req.Announcement,
 	}
 	if err := a.DB.UpdateProject(p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败: " + err.Error()})
@@ -335,13 +339,26 @@ func (a *App) AdminArchiveProject(c *gin.Context) {
 // ========== Category Management ==========
 
 func (a *App) AdminListCategories(c *gin.Context) {
-	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
-		return
+	// Accept either a numeric project ID or a project slug in :id (the admin
+	// feedback list only knows project slugs, so the category filter can call
+	// this endpoint with the slug). Backward compatible with numeric IDs.
+	var proj *database.Project
+	var projErr error
+	idStr := c.Param("id")
+	if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
+		proj, projErr = a.DB.GetProject(id)
+		if projErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+			return
+		}
+	} else {
+		proj, projErr = a.DB.GetProjectBySlug(idStr)
+		if projErr != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+			return
+		}
 	}
-	proj, projErr := a.DB.GetProject(id)
-	if projErr != nil || proj == nil {
+	if proj == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
 		return
 	}

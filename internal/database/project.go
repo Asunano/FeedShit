@@ -20,8 +20,8 @@ func (d *Database) CreateProject(p *Project) (int64, error) {
 		archived = 1
 	}
 	res, err := d.db.Exec(
-		`INSERT INTO projects (name, slug, description, is_active, is_archived, form_schema) VALUES (?, ?, ?, ?, ?, ?)`,
-		p.Name, p.Slug, p.Description, active, archived, p.FormSchema,
+		`INSERT INTO projects (name, slug, description, is_active, is_archived, form_schema, announcement) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		p.Name, p.Slug, p.Description, active, archived, p.FormSchema, p.Announcement,
 	)
 	if err != nil {
 		return 0, err
@@ -49,8 +49,8 @@ func (d *Database) UpdateProject(p *Project) error {
 		archived = 1
 	}
 	_, err := d.db.Exec(
-		`UPDATE projects SET name = ?, slug = ?, description = ?, is_active = ?, is_archived = ?, form_schema = ? WHERE id = ?`,
-		p.Name, p.Slug, p.Description, active, archived, p.FormSchema, p.ID,
+		`UPDATE projects SET name = ?, slug = ?, description = ?, is_active = ?, is_archived = ?, form_schema = ?, announcement = ? WHERE id = ?`,
+		p.Name, p.Slug, p.Description, active, archived, p.FormSchema, p.Announcement, p.ID,
 	)
 	return err
 }
@@ -86,8 +86,8 @@ func (d *Database) GetProject(id int64) (*Project, error) {
 	var createdAt int64
 	var isActive, isArchived int
 	err := d.db.QueryRow(
-		`SELECT id, name, slug, description, is_active, is_archived, form_schema, created_at FROM projects WHERE id = ?`, id,
-	).Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &createdAt)
+		`SELECT id, name, slug, description, is_active, is_archived, form_schema, announcement, created_at FROM projects WHERE id = ?`, id,
+	).Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &p.Announcement, &createdAt)
 	if err != nil {
 		return nil, err
 	}
@@ -106,8 +106,8 @@ func (d *Database) GetProjectBySlug(slug string) (*Project, error) {
 	var createdAt int64
 	var isActive, isArchived int
 	err := d.db.QueryRow(
-		`SELECT id, name, slug, description, is_active, is_archived, form_schema, created_at FROM projects WHERE slug = ?`, slug,
-	).Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &createdAt)
+		`SELECT id, name, slug, description, is_active, is_archived, form_schema, announcement, created_at FROM projects WHERE slug = ?`, slug,
+	).Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &p.Announcement, &createdAt)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (d *Database) listProjectsWithArchive(archived *bool) ([]Project, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	query := `SELECT id, name, slug, description, is_active, is_archived, form_schema, created_at FROM projects`
+	query := `SELECT id, name, slug, description, is_active, is_archived, form_schema, announcement, created_at FROM projects`
 	args := []interface{}{}
 	if archived != nil {
 		v := 0
@@ -148,7 +148,7 @@ func (d *Database) listProjectsWithArchive(archived *bool) ([]Project, error) {
 		var p Project
 		var createdAt int64
 		var isActive, isArchived int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &createdAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &p.Announcement, &createdAt); err != nil {
 			return nil, err
 		}
 		p.IsActive = isActive == 1
@@ -204,6 +204,30 @@ func (d *Database) GetProjects() ([]string, error) {
 		projects = append(projects, p)
 	}
 	return projects, nil
+}
+
+// GetProjectNameMap returns a slug -> display name map for all projects.
+// Used by the admin feedback list to show human-readable names instead of
+// raw slugs in the UI.
+func (d *Database) GetProjectNameMap() (map[string]string, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	rows, err := d.db.Query(`SELECT slug, name FROM projects`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	m := make(map[string]string)
+	for rows.Next() {
+		var slug, name string
+		if err := rows.Scan(&slug, &name); err != nil {
+			return nil, err
+		}
+		m[slug] = name
+	}
+	return m, nil
 }
 
 // IsProjectActive checks if a project slug exists and is active.

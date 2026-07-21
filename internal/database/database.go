@@ -63,6 +63,9 @@ type Feedback struct {
 	PublicOnRoadmap bool      `json:"public_on_roadmap"`
 	RoadmapStatus   string    `json:"roadmap_status"`
 	Votes           int       `json:"votes"`
+	UsefulVotes     int       `json:"useful_votes"`
+	EncounteredVotes int      `json:"encountered_votes"`
+	RatingOpen      bool      `json:"rating_open"`
 	// Export-only: populated by ExportFeedbacks for CSV/JSON/XLSX output.
 	NotesContent string `json:"notes_content,omitempty"`
 	RatingScore  int    `json:"rating_score,omitempty"`
@@ -100,6 +103,7 @@ type Project struct {
 	IsActive      bool      `json:"is_active"`
 	IsArchived    bool      `json:"is_archived"`
 	FormSchema    string    `json:"form_schema"`
+	Announcement  string    `json:"announcement"`
 	FeedbackCount int       `json:"feedback_count"`
 	CreatedAt     time.Time `json:"created_at"`
 }
@@ -152,6 +156,17 @@ type FeedbackRating struct {
 	FeedbackID int64     `json:"feedback_id"`
 	Score      int       `json:"score"`
 	Comment    string    `json:"comment"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+// StatusChange is one entry in a feedback's status-transition history.
+type StatusChange struct {
+	ID         int64     `json:"id"`
+	FeedbackID int64     `json:"feedback_id"`
+	FromStatus string    `json:"from_status"`
+	ToStatus   string    `json:"to_status"`
+	ChangedBy  string    `json:"changed_by"`
+	Note       string    `json:"note"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -290,10 +305,11 @@ func (d *Database) GetFeedbackByTrackingToken(token string) (*Feedback, error) {
 	var f Feedback
 	var createdAt int64
 	var isDuplicate int
+	var ratingOpen int
 	err := d.db.QueryRow(
-		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash
+		`SELECT id, project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, is_duplicate, duplicate_of, category, created_at, updated_at, content_hash, rating_open
 		 FROM feedbacks WHERE tracking_token = ?`, token,
-	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash)
+	).Scan(&f.ID, &f.ProjectID, &f.Title, &f.Description, &f.CustomData, &f.FilePaths, &f.ClientIP, &f.Status, &f.Tags, &f.Assignee, &f.ContactName, &f.ContactEmail, &f.TrackingToken, &f.Priority, &isDuplicate, &f.DuplicateOf, &f.Category, &createdAt, &f.UpdatedAt, &f.ContentHash, &ratingOpen)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -301,6 +317,7 @@ func (d *Database) GetFeedbackByTrackingToken(token string) (*Feedback, error) {
 		return nil, err
 	}
 	f.IsDuplicate = isDuplicate == 1
+	f.RatingOpen = ratingOpen == 1
 	f.CreatedAt = time.Unix(createdAt, 0)
 	return &f, nil
 }

@@ -134,6 +134,86 @@ func (m *Mailer) SendFeedbackNotification(fb *database.Feedback) {
 	}
 }
 
+// SendSubmitterConfirmation sends a confirmation email with the self-service
+// tracking link to the feedback submitter who opted in to notifications.
+// It is a no-op when the submitter left no email, notifications are disabled,
+// or SMTP is not configured.
+func (m *Mailer) SendSubmitterConfirmation(fb *database.Feedback, trackURL string) {
+	if fb.ContactEmail == "" {
+		return
+	}
+	cfg := getEmailSMTPConfig(m.db)
+	if cfg["notify_enable"] != "true" {
+		return
+	}
+	host := cfg["smtp_host"]
+	port := cfg["smtp_port"]
+	user := cfg["smtp_user"]
+	pass := cfg["smtp_pass"]
+	from := cfg["smtp_from"]
+	if host == "" {
+		log.Printf("[MAIL] SMTP not configured, skipping submitter confirmation for feedback #%d", fb.ID)
+		return
+	}
+	if port == "" {
+		port = "587"
+	}
+	if from == "" {
+		from = user
+	}
+	portNum, err := strconv.Atoi(port)
+	if err != nil {
+		portNum = 587
+	}
+
+	vars := map[string]string{
+		"id":        fmt.Sprintf("%d", fb.ID),
+		"title":     fb.Title,
+		"track_url": trackURL,
+	}
+	subject := BuildConfirmationSubject(m.db, vars)
+	body := BuildConfirmationBody(m.db, vars)
+
+	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
+		from, fb.ContactEmail, subject, body)
+
+	addr := fmt.Sprintf("%s:%d", host, portNum)
+	auth := smtp.PlainAuth("", user, pass, host)
+	if err := smtpSend(addr, auth, from, []string{fb.ContactEmail}, []byte(msg)); err != nil {
+		log.Printf("[MAIL] Failed to send submitter confirmation for feedback #%d: %v", fb.ID, err)
+	} else {
+		log.Printf("[MAIL] Submitter confirmation sent for feedback #%d to %s", fb.ID, fb.ContactEmail)
+	}
+}
+
+// BuildConfirmationSubject builds the subject for the submitter confirmation email.
+func BuildConfirmationSubject(db *database.Database, vars map[string]string) string {
+	tpl := db.GetConfig("email_template_subject")
+	if tpl != "" {
+		return renderTemplate(tpl, vars)
+	}
+	return fmt.Sprintf("[FeedShit] 我们已收到您的反馈 #%s", vars["id"])
+}
+
+// BuildConfirmationBody builds the HTML body for the submitter confirmation email,
+// including the self-service tracking link promised by the opt-in block.
+func BuildConfirmationBody(db *database.Database, vars map[string]string) string {
+	tpl := db.GetConfig("email_template_body")
+	if tpl != "" {
+		return renderTemplate(tpl, vars)
+	}
+	safeTitle := html.EscapeString(vars["title"])
+	trackURL := vars["track_url"]
+	return fmt.Sprintf(`<html><body style="font-family:-apple-system,sans-serif;color:#333;max-width:600px;margin:0 auto">
+<h2>我们已收到您的反馈</h2>
+<p><strong>编号：</strong>#%s</p>
+<p><strong>标题：</strong>%s</p>
+<p>感谢您的反馈，我们会尽快处理。您可以通过以下链接随时查看处理进度和回复：</p>
+<p><a href="%s" style="display:inline-block;padding:10px 20px;background:#e53e3e;color:white;text-decoration:none;border-radius:4px">查看反馈进度</a></p>
+<p style="color:#999;font-size:12px;margin-top:24px">此邮件由 FeedShit 自动发送</p>
+</body></html>`, vars["id"], safeTitle, trackURL)
+}
+
 // renderTemplate applies placeholder substitution to a template string.
 // User-controlled values are HTML-escaped to prevent injection; URL fields are excluded.
 func renderTemplate(tpl string, vars map[string]string) string {
@@ -210,13 +290,15 @@ func BuildStatusChangeBody(db *database.Database, vars map[string]string) string
 	}
 	safeTitle := html.EscapeString(vars["title"])
 	safeStatus := html.EscapeString(vars["status"])
+	trackURL := vars["track_url"]
 	return fmt.Sprintf(`<html><body style="font-family:-apple-system,sans-serif;color:#333;max-width:600px;margin:0 auto">
 <h2>您的反馈状态已更新</h2>
 <p><strong>编号：</strong>#%s</p>
 <p><strong>标题：</strong>%s</p>
 <p><strong>新状态：</strong>%s</p>
+<p><a href="%s" style="display:inline-block;padding:10px 20px;background:#e53e3e;color:white;text-decoration:none;border-radius:4px">查看反馈进度</a></p>
 <p style="color:#999;font-size:12px;margin-top:24px">此邮件由 FeedShit 自动发送</p>
-</body></html>`, vars["id"], safeTitle, safeStatus)
+</body></html>`, vars["id"], safeTitle, safeStatus, trackURL)
 }
 
 // BuildReplySubject builds subject for public reply notifications.

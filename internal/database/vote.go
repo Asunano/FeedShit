@@ -4,12 +4,16 @@ import (
 	"strings"
 )
 
-// InsertVote records a vote, deduplicated by (feedback_id, voter_key).
-// Returns (alreadyVoted bool, err). If already voted, no new row is inserted.
-func (d *Database) InsertVote(feedbackID int64, voterKey string) (bool, error) {
+// InsertVote records a vote, deduplicated by (feedback_id, voter_key, vote_type).
+// voteType is "useful" (👍 有用) or "encountered" (🤝 也遇到). Empty defaults to "useful".
+// Returns (alreadyVoted bool, err). If already voted this type, no new row is inserted.
+func (d *Database) InsertVote(feedbackID int64, voterKey, voteType string) (bool, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	res, err := d.db.Exec(`INSERT OR IGNORE INTO feedback_votes (feedback_id, voter_key) VALUES (?, ?)`, feedbackID, voterKey)
+	if voteType == "" {
+		voteType = "useful"
+	}
+	res, err := d.db.Exec(`INSERT OR IGNORE INTO feedback_votes (feedback_id, voter_key, vote_type) VALUES (?, ?, ?)`, feedbackID, voterKey, voteType)
 	if err != nil {
 		return false, err
 	}
@@ -17,12 +21,24 @@ func (d *Database) InsertVote(feedbackID int64, voterKey string) (bool, error) {
 	return affected == 0, nil
 }
 
-// CountVotes returns the number of votes for a feedback.
+// CountVotes returns the total number of votes for a feedback (all types).
 func (d *Database) CountVotes(feedbackID int64) (int, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	var n int
 	err := d.db.QueryRow(`SELECT COUNT(*) FROM feedback_votes WHERE feedback_id = ?`, feedbackID).Scan(&n)
+	return n, err
+}
+
+// CountVotesByType returns the number of votes of a specific type for a feedback.
+func (d *Database) CountVotesByType(feedbackID int64, voteType string) (int, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if voteType == "" {
+		voteType = "useful"
+	}
+	var n int
+	err := d.db.QueryRow(`SELECT COUNT(*) FROM feedback_votes WHERE feedback_id = ? AND vote_type = ?`, feedbackID, voteType).Scan(&n)
 	return n, err
 }
 

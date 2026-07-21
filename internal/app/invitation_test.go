@@ -102,49 +102,6 @@ func TestInvitationExpired(t *testing.T) {
 	}
 }
 
-func TestPublicRegisterPage(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	app := newTestApp(t)
-
-	inv, err := app.DB.CreateInvitation("editor", nil, 1, "admin", 7)
-	if err != nil {
-		t.Fatalf("CreateInvitation failed: %v", err)
-	}
-
-	app.RegisterHTML = `<!DOCTYPE html><html lang="zh-CN"><body><h1>加入团队</h1><script nonce="__NONCE__">var TOKEN = 'INVITE_TOKEN_PLACEHOLDER';</script></body></html>`
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Params = []gin.Param{{Key: "token", Value: inv.Token}}
-	app.PublicRegisterPage(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, "加入团队") {
-		t.Fatal("expected registration page content")
-	}
-}
-
-func TestPublicRegisterPageInvalidToken(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	app := newTestApp(t)
-
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Params = []gin.Param{{Key: "token", Value: "invalidtoken123"}}
-	app.PublicRegisterPage(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, "无效") {
-		t.Fatal("expected 'invalid' message for bad token")
-	}
-}
-
 func TestPublicRegisterSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	app := newTestApp(t)

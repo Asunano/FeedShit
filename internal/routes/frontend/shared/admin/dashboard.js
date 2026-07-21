@@ -1,492 +1,13 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FeedShit - 管理后台</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;color:#333;font-size:.9rem}
-a{color:#2563eb;text-decoration:none}
-a:hover{text-decoration:underline}
 
-/* Layout */
-.header{background:#fff;border-bottom:1px solid #e2e2e2;padding:0 24px;display:flex;align-items:center;height:48px;position:sticky;top:0;z-index:100}
-.header h1{font-size:1rem;font-weight:600;margin-right:32px}
-.header h1 span{color:#e53e3e}
-.nav{display:flex;gap:4px}
-.nav button{background:none;border:none;padding:6px 14px;cursor:pointer;font-size:.85rem;color:#666;border-radius:4px}
-.nav button:hover{background:#f0f0f0}
-.nav button.active{background:#333;color:#fff}
-.header-right{margin-left:auto;display:flex;align-items:center;gap:12px}
-.header-right button{background:none;border:1px solid #ddd;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:.8rem;color:#666}
-.header-right button:hover{background:#f0f0f0}
-.header-link{font-size:.8rem;color:#666;text-decoration:none;padding:4px 10px;border-radius:4px;transition:background .15s}
-.header-link:hover{background:#f0f0f0;text-decoration:none}
-
-.main{max-width:1100px;margin:20px auto;padding:0 16px}
-
-/* Stats */
-.stats{display:flex;gap:12px;margin-bottom:20px}
-.stat-card{flex:1;background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:16px}
-.stat-card .num{font-size:1.6rem;font-weight:700;color:#333}
-.stat-card .lbl{font-size:.75rem;color:#888;margin-top:2px}
-
-/* Filter bar */
-.filter-bar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
-.filter-bar select,.filter-bar input[type=text]{padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem;background:#fff}
-.filter-bar input[type=text]{width:180px}
-.filter-bar .count{color:#888;font-size:.8rem}
-.filter-bar .spacer{flex:1}
-.btn-sm{padding:5px 14px;border:1px solid #d0d0d0;border-radius:4px;cursor:pointer;font-size:.8rem;background:#fff;color:#555}
-.btn-sm:hover{background:#f0f0f0}
-.btn-danger{color:#c00;border-color:#f5c6c6}
-.btn-danger:hover{background:#fde8e8}
-
-/* Table */
-.table-wrap{background:#fff;border:1px solid #e2e2e2;border-radius:6px;overflow:hidden}
-table{width:100%;border-collapse:collapse}
-th{text-align:left;padding:10px 14px;font-size:.75rem;font-weight:600;color:#888;text-transform:uppercase;border-bottom:1px solid #e2e2e2;background:#fafafa}
-td{padding:10px 14px;border-bottom:1px solid #f0f0f0;font-size:.85rem}
-tr:hover{background:#f9f9f9}
-tr:last-child td{border-bottom:none}
-.tag{display:inline-block;padding:1px 6px;background:#eee;border-radius:3px;font-size:.75rem;color:#666;font-family:monospace}
-.clickable{cursor:pointer}
-
-/* Status badges */
-.status-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:500}
-.status-pending{background:#fff3cd;color:#856404}
-.status-processing{background:#cce5ff;color:#004085}
-.status-resolved{background:#d4edda;color:#155724}
-.status-closed{background:#e2e3e5;color:#383d41}
-
-/* Toggle switch */
-.toggle-switch{position:relative;display:inline-block;width:36px;height:20px;vertical-align:middle}
-.toggle-switch input{opacity:0;width:0;height:0}
-.toggle-slider{position:absolute;cursor:pointer;inset:0;background:#ccc;border-radius:20px;transition:.2s}
-.toggle-slider:before{content:"";position:absolute;height:14px;width:14px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s}
-.toggle-switch input:checked+.toggle-slider{background:#333}
-.toggle-switch input:checked+.toggle-slider:before{transform:translateX(16px)}
-
-/* Detail panel */
-.detail-panel{display:none}
-.detail-panel.active{display:block}
-.detail-back{display:inline-flex;align-items:center;gap:4px;margin-bottom:16px;cursor:pointer;color:#666;font-size:.85rem}
-.detail-back:hover{color:#333}
-.detail-card{background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:24px}
-.detail-card h2{font-size:1.1rem;margin-bottom:12px}
-.detail-meta{display:flex;gap:16px;margin-bottom:16px;font-size:.8rem;color:#888;flex-wrap:wrap}
-.detail-meta span{display:flex;align-items:center;gap:4px}
-.detail-desc{margin-bottom:20px;line-height:1.7;white-space:pre-wrap;color:#444}
-.detail-files h3{font-size:.85rem;font-weight:600;margin-bottom:8px;color:#666}
-.file-preview{margin-bottom:12px}
-.file-preview img{max-width:100%;max-height:400px;border:1px solid #e2e2e2;border-radius:4px}
-.file-preview .log-view{background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:4px;font-family:'Cascadia Code',Consolas,monospace;font-size:.8rem;max-height:300px;overflow:auto;white-space:pre-wrap;word-break:break-all}
-.file-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-.file-header .fname{font-size:.8rem;color:#666}
-.file-header a{font-size:.75rem}
-
-/* Custom data display */
-.custom-data-section{margin-top:16px;padding-top:16px;border-top:1px solid #f0f0f0}
-.custom-data-section h3{font-size:.85rem;font-weight:600;margin-bottom:8px;color:#666}
-.custom-data-item{display:flex;gap:8px;margin-bottom:6px;font-size:.85rem}
-.custom-data-item .cd-label{color:#888;min-width:100px;flex-shrink:0}
-.custom-data-item .cd-value{color:#333;word-break:break-word}
-
-/* Status selector in detail */
-.status-selector{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid #f0f0f0}
-.status-selector label{font-size:.8rem;color:#666}
-.status-selector select{padding:4px 8px;border:1px solid #d0d0d0;border-radius:4px;font-size:.8rem}
-.status-selector button{padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:.8rem;background:#333;color:#fff}
-
-/* Settings */
-.settings-layout{display:flex;gap:20px}
-.settings-nav{width:160px;flex-shrink:0}
-.settings-nav button{display:block;width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;font-size:.85rem;color:#666;border-radius:4px;margin-bottom:2px}
-.settings-nav button:hover{background:#f0f0f0}
-.settings-nav button.active{background:#333;color:#fff}
-.settings-content{flex:1;min-width:0}
-.settings-card{background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:24px}
-.settings-card h2{font-size:1rem;margin-bottom:16px}
-.settings-field{margin-bottom:14px}
-.settings-field label{display:block;font-size:.8rem;color:#666;margin-bottom:3px}
-.settings-field input,.settings-field select,.settings-field textarea{width:100%;padding:7px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem;font-family:inherit}
-.settings-field textarea{resize:vertical;min-height:60px}
-.settings-field .toggle{display:flex;align-items:center;gap:8px}
-.settings-field .toggle input{width:auto}
-.settings-field .hint{font-size:.75rem;color:#999;margin-top:2px}
-.settings-actions{margin-top:20px;display:flex;gap:8px}
-.settings-actions button{padding:8px 20px;border:none;border-radius:4px;cursor:pointer;font-size:.85rem}
-.btn-save{background:#333;color:#fff}
-.btn-save:hover{background:#555}
-
-/* Modal */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:300;align-items:center;justify-content:center}
-.modal-overlay.active{display:flex}
-.modal{background:#fff;border-radius:8px;padding:24px;width:560px;max-width:90vw;max-height:85vh;overflow-y:auto}
-.modal h3{font-size:1rem;font-weight:600;margin-bottom:16px}
-.modal .row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.modal-actions{margin-top:20px;display:flex;gap:8px;justify-content:flex-end}
-.modal-actions button{padding:8px 20px;border:none;border-radius:4px;cursor:pointer;font-size:.85rem}
-
-/* Donut chart */
-.donut-container{display:flex;align-items:center;gap:24px;margin-top:12px}
-.donut-svg{width:160px;height:160px;flex-shrink:0}
-.donut-legend{flex:1}
-.donut-legend-item{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.8rem}
-.donut-legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.donut-legend-label{flex:1;color:#555}
-.donut-legend-count{color:#888;font-size:.75rem}
-
-/* Project detail */
-.project-detail-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
-.project-detail-header h2{margin-bottom:0}
-.project-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
-.project-info-card{background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:14px}
-.project-info-card .label{font-size:.75rem;color:#888;margin-bottom:2px}
-.project-info-card .value{font-size:.9rem;color:#333;word-break:break-all}
-
-/* Form builder */
-.form-builder{margin-top:16px}
-.form-builder h3{font-size:.9rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.fb-field{background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:12px;margin-bottom:8px;display:flex;align-items:flex-start;gap:8px}
-.fb-field-info{flex:1;min-width:0}
-.fb-field-title{font-size:.85rem;font-weight:500;color:#333}
-.fb-field-meta{font-size:.75rem;color:#888;margin-top:2px}
-.fb-field-actions{display:flex;gap:4px;flex-shrink:0}
-.fb-field-actions button{background:none;border:1px solid #ddd;border-radius:3px;cursor:pointer;font-size:.75rem;padding:2px 6px;color:#666}
-.fb-field-actions button:hover{background:#f0f0f0}
-.fb-field-actions button.del:hover{background:#fde8e8;color:#c00}
-.fb-add-btn{display:inline-block;padding:6px 14px;border:1px dashed #ccc;border-radius:4px;cursor:pointer;font-size:.8rem;color:#888;background:none;margin-top:4px}
-.fb-add-btn:hover{border-color:#888;color:#555}
-
-/* Field editor */
-.field-editor{background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:16px;margin-bottom:12px}
-.field-editor h4{font-size:.85rem;font-weight:600;margin-bottom:12px}
-.field-editor .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
-.field-editor .field-row.full{grid-template-columns:1fr}
-.field-editor label{font-size:.75rem;color:#666;display:block;margin-bottom:2px}
-.field-editor input,.field-editor select,.field-editor textarea{width:100%;padding:6px 8px;border:1px solid #d0d0d0;border-radius:4px;font-size:.8rem;font-family:inherit}
-.field-editor textarea{resize:vertical;min-height:40px}
-.field-editor .toggle{display:flex;align-items:center;gap:6px}
-.field-editor .toggle input{width:auto}
-.options-editor{margin-top:6px}
-.options-editor .opt-row{display:flex;gap:6px;margin-bottom:4px;align-items:center}
-.options-editor .opt-row input{flex:1;padding:5px 8px;border:1px solid #d0d0d0;border-radius:3px;font-size:.8rem}
-.options-editor .opt-row button{background:none;border:none;cursor:pointer;color:#c00;font-size:.8rem;padding:2px 4px}
-.options-editor .add-opt{font-size:.75rem;color:#888;cursor:pointer;border:none;background:none;padding:2px 0}
-.options-editor .add-opt:hover{color:#555}
-
-/* Audit log */
-.audit-table td:first-child{font-family:monospace;font-size:.8rem;color:#888;white-space:nowrap}
-
-/* Toast */
-.toast{position:fixed;top:60px;right:20px;padding:10px 18px;border-radius:4px;font-size:.85rem;z-index:400;display:none}
-.toast.success{display:block;background:#e6f9e6;color:#1a7a1a;border:1px solid #b2e0b2}
-.toast.error{display:block;background:#fde8e8;color:#c00;border:1px solid #f5c6c6}
-
-.empty{text-align:center;padding:40px;color:#999}
-
-/* Bulk actions */
-.bulk-bar{display:none;align-items:center;gap:10px;padding:8px 14px;background:#f0f4ff;border:1px solid #c3d4f7;border-radius:4px;margin-bottom:10px;font-size:.85rem}
-.bulk-bar.active{display:flex}
-.bulk-bar select{padding:4px 8px;border:1px solid #d0d0d0;border-radius:4px;font-size:.8rem}
-.bulk-bar button{padding:4px 12px;border:none;border-radius:4px;cursor:pointer;font-size:.8rem}
-.cb-col{width:30px;text-align:center}
-
-/* Notes section */
-.notes-section{margin-top:16px;padding-top:16px;border-top:1px solid #f0f0f0}
-.notes-section h3{font-size:.85rem;font-weight:600;margin-bottom:10px;color:#666}
-.note-item{background:#fafafa;border:1px solid #e8e8e8;border-radius:6px;padding:10px 12px;margin-bottom:8px}
-.note-item.public{border-left:3px solid #2563eb}
-.note-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
-.note-author{font-size:.8rem;font-weight:500;color:#333}
-.note-time{font-size:.75rem;color:#999}
-.note-badge{font-size:.7rem;padding:1px 5px;border-radius:3px;margin-left:6px}
-.note-badge.pub{background:#cce5ff;color:#004085}
-.note-badge.priv{background:#eee;color:#666}
-.note-content{font-size:.85rem;color:#444;line-height:1.5;white-space:pre-wrap}
-.note-delete{font-size:.75rem;color:#c00;cursor:pointer;background:none;border:none}
-.note-form{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-.note-form textarea{width:100%;padding:8px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem;font-family:inherit;resize:vertical;min-height:60px}
-.note-form-actions{display:flex;align-items:center;gap:8px}
-.note-form-actions label{font-size:.8rem;color:#666;display:flex;align-items:center;gap:4px}
-.note-form-actions button{padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:.8rem;background:#333;color:#fff}
-
-/* Contact info in detail */
-.contact-info{display:flex;gap:16px;margin-top:8px;font-size:.8rem;color:#666}
-.contact-info span{display:flex;align-items:center;gap:4px}
-
-/* Chart */
-.chart-container{background:#fff;border:1px solid #e2e2e2;border-radius:6px;padding:20px;margin-top:16px}
-.chart-container h2{font-size:1rem;margin-bottom:12px}
-.bar-chart{display:flex;align-items:flex-end;gap:2px;height:120px;padding-top:10px}
-.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px}
-.bar-col .bar{width:100%;background:#333;border-radius:2px 2px 0 0;min-height:1px;transition:height .3s}
-.bar-col .bar-label{font-size:.6rem;color:#999;writing-mode:vertical-rl;text-orientation:mixed;max-height:40px;overflow:hidden}
-.bar-col .bar-count{font-size:.65rem;color:#666}
-.chart-empty{text-align:center;padding:40px;color:#999;font-size:.85rem}
-
-/* Assignee in detail */
-.assignee-row{display:flex;align-items:center;gap:8px;margin-top:8px}
-.assignee-row label{font-size:.8rem;color:#666}
-.assignee-row input{padding:4px 8px;border:1px solid #d0d0d0;border-radius:4px;font-size:.8rem;width:140px}
-.assignee-row button{padding:4px 10px;border:none;border-radius:4px;cursor:pointer;font-size:.8rem;background:#333;color:#fff}
-
-/* Priority badges */
-.priority-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:.7rem;font-weight:600;text-transform:uppercase}
-.priority-urgent{background:#fde8e8;color:#c00}
-.priority-high{background:#fff3cd;color:#856404}
-.priority-medium{background:#cce5ff;color:#004085}
-.priority-low{background:#e2e3e5;color:#383d41}
-
-/* Duplicate indicator */
-.dup-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:.7rem;background:#fff3cd;color:#856404;margin-left:4px}
-
-/* Priority selector in detail */
-.priority-selector{display:inline-block;padding:2px 6px;border:1px solid #d0d0d0;border-radius:3px;font-size:.75rem;cursor:pointer;background:#fff}
-
-/* Field editor rows */
-.field-row.three-col{display:flex;gap:8px}
-.field-row.three-col > div{flex:1}
-.field-row.half{display:flex;gap:8px}
-.field-row.half > div{flex:1}
-</style>
-<style id="theme-vars">
-/* ===== Theme tokens (M14) ===== */
-:root{
-  --bg:#f5f5f5;
-  --fg:#333;
-  --panel:#fff;
-  --border:#e2e2e2;
-  --muted:#888;
-  --primary:#333;
-  --primary-fg:#fff;
-  --danger:#c00;
-  --subtle:#fafafa;
-  --hover:#f0f0f0;
-  --tag-bg:#eee;
-  --tag-fg:#666;
-  --link:#2563eb;
-  --status-pending-bg:#fff3cd; --status-pending-fg:#856404;
-  --status-processing-bg:#cce5ff; --status-processing-fg:#004085;
-  --status-resolved-bg:#d4edda; --status-resolved-fg:#155724;
-  --status-closed-bg:#e2e3e5; --status-closed-fg:#383d41;
-  --priority-urgent-bg:#fde8e8; --priority-urgent-fg:#c00;
-  --priority-high-bg:#fff3cd; --priority-high-fg:#856404;
-  --priority-medium-bg:#cce5ff; --priority-medium-fg:#004085;
-  --priority-low-bg:#e2e3e5; --priority-low-fg:#383d41;
-}
-[data-theme="dark"]{
-  --bg:#1a1a1a;
-  --fg:#e2e2e2;
-  --panel:#242424;
-  --border:#383838;
-  --muted:#9a9a9a;
-  --primary:#2d2d2d;
-  --primary-fg:#fff;
-  --danger:#ff6b6b;
-  --subtle:#2c2c2c;
-  --hover:#333;
-  --tag-bg:#333;
-  --tag-fg:#bbb;
-  --link:#6ea8fe;
-  --status-pending-bg:#4a4318; --status-pending-fg:#f1d56e;
-  --status-processing-bg:#1f3a56; --status-processing-fg:#7fb6eb;
-  --status-resolved-bg:#1c3a28; --status-resolved-fg:#7ac99a;
-  --status-closed-bg:#3a3a3a; --status-closed-fg:#bbb;
-  --priority-urgent-bg:#4a2222; --priority-urgent-fg:#ff8a8a;
-  --priority-high-bg:#4a4318; --priority-high-fg:#f1d56e;
-  --priority-medium-bg:#1f3a56; --priority-medium-fg:#7fb6eb;
-  --priority-low-bg:#3a3a3a; --priority-low-fg:#bbb;
-}
-
-/* ===== Dark mode surface repaint (overrides hard-coded light colors) ===== */
-[data-theme="dark"] body{background:var(--bg);color:var(--fg)}
-[data-theme="dark"] a{color:var(--link)}
-[data-theme="dark"] .header{background:var(--panel);border-bottom-color:var(--border)}
-[data-theme="dark"] .nav button{color:var(--muted)}
-[data-theme="dark"] .nav button:hover{background:var(--hover)}
-[data-theme="dark"] .nav button.active{background:#3a3a3a;color:#fff}
-[data-theme="dark"] .header-right button{color:var(--muted);border-color:var(--border)}
-[data-theme="dark"] .header-right button:hover{background:var(--hover)}
-[data-theme="dark"] .header-link{color:var(--muted)}
-[data-theme="dark"] .header-link:hover{background:var(--hover)}
-[data-theme="dark"] .stat-card,
-[data-theme="dark"] .table-wrap,
-[data-theme="dark"] .settings-card,
-[data-theme="dark"] .detail-card,
-[data-theme="dark"] .chart-container,
-[data-theme="dark"] .modal,
-[data-theme="dark"] .project-info-card,
-[data-theme="dark"] .fb-field,
-[data-theme="dark"] .field-editor,
-[data-theme="dark"] .note-item,
-[data-theme="dark"] .bulk-bar{background:var(--panel);border-color:var(--border)}
-[data-theme="dark"] .stat-card .num{color:var(--fg)}
-[data-theme="dark"] .stat-card .lbl{color:var(--muted)}
-[data-theme="dark"] th{background:var(--subtle);color:var(--muted);border-bottom-color:var(--border)}
-[data-theme="dark"] td{border-bottom-color:var(--border);color:var(--fg)}
-[data-theme="dark"] tr:hover{background:var(--hover)}
-[data-theme="dark"] .tag{background:var(--tag-bg);color:var(--tag-fg)}
-[data-theme="dark"] .detail-meta{color:var(--muted)}
-[data-theme="dark"] .detail-desc{color:#cfcfcf}
-[data-theme="dark"] .detail-back{color:var(--muted)}
-[data-theme="dark"] .detail-back:hover{color:var(--fg)}
-[data-theme="dark"] .custom-data-item .cd-label{color:var(--muted)}
-[data-theme="dark"] .custom-data-item .cd-value{color:var(--fg)}
-[data-theme="dark"] .custom-data-section h3,
-[data-theme="dark"] .notes-section h3{color:var(--muted)}
-[data-theme="dark"] .note-content{color:#cfcfcf}
-[data-theme="dark"] .file-header .fname{color:var(--muted)}
-[data-theme="dark"] .project-info-card .label{color:var(--muted)}
-[data-theme="dark"] .project-info-card .value{color:var(--fg)}
-[data-theme="dark"] .donut-legend-label{color:#bbb}
-[data-theme="dark"] .donut-legend-count{color:var(--muted)}
-[data-theme="dark"] .settings-field label{color:var(--muted)}
-[data-theme="dark"] .settings-field .hint{color:var(--muted)}
-[data-theme="dark"] .form-builder h3{color:var(--fg)}
-[data-theme="dark"] .fb-field-title{color:var(--fg)}
-[data-theme="dark"] .fb-field-meta{color:var(--muted)}
-[data-theme="dark"] .empty,.chart-empty{color:var(--muted)}
-[data-theme="dark"] .assignee-row label,
-[data-theme="dark"] .status-selector label{color:var(--muted)}
-[data-theme="dark"] .fb-field-actions button{border-color:var(--border);color:var(--muted)}
-[data-theme="dark"] .fb-field-actions button:hover{background:var(--hover)}
-[data-theme="dark"] .fb-field-actions button.del:hover{background:#3a1f1f;color:var(--danger)}
-[data-theme="dark"] .fb-add-btn{border-color:var(--border);color:var(--muted)}
-[data-theme="dark"] .fb-add-btn:hover{border-color:var(--muted);color:var(--fg)}
-
-/* Status & priority badges */
-[data-theme="dark"] .status-badge.status-pending{background:var(--status-pending-bg);color:var(--status-pending-fg)}
-[data-theme="dark"] .status-badge.status-processing{background:var(--status-processing-bg);color:var(--status-processing-fg)}
-[data-theme="dark"] .status-badge.status-resolved{background:var(--status-resolved-bg);color:var(--status-resolved-fg)}
-[data-theme="dark"] .status-badge.status-closed{background:var(--status-closed-bg);color:var(--status-closed-fg)}
-[data-theme="dark"] .priority-badge.priority-urgent{background:var(--priority-urgent-bg);color:var(--priority-urgent-fg)}
-[data-theme="dark"] .priority-badge.priority-high{background:var(--priority-high-bg);color:var(--priority-high-fg)}
-[data-theme="dark"] .priority-badge.priority-medium{background:var(--priority-medium-bg);color:var(--priority-medium-fg)}
-[data-theme="dark"] .priority-badge.priority-low{background:var(--priority-low-bg);color:var(--priority-low-fg)}
-[data-theme="dark"] .dup-badge{color:var(--status-pending-fg)}
-[data-theme="dark"] .note-badge.pub{background:var(--status-processing-bg);color:var(--status-processing-fg)}
-[data-theme="dark"] .note-badge.priv{background:var(--tag-bg);color:var(--tag-fg)}
-
-/* Inputs & controls */
-[data-theme="dark"] .filter-bar select,
-[data-theme="dark"] .filter-bar input[type=text],
-[data-theme="dark"] .settings-field input,
-[data-theme="dark"] .settings-field select,
-[data-theme="dark"] .settings-field textarea,
-[data-theme="dark"] .field-editor input,
-[data-theme="dark"] .field-editor select,
-[data-theme="dark"] .field-editor textarea,
-[data-theme="dark"] .note-form textarea,
-[data-theme="dark"] .assignee-row input,
-[data-theme="dark"] .priority-selector,
-[data-theme="dark"] .status-selector select{background:var(--panel);border-color:var(--border);color:var(--fg)}
-[data-theme="dark"] .btn-sm{background:var(--panel);border-color:var(--border);color:var(--fg)}
-[data-theme="dark"] .btn-sm:hover{background:var(--hover)}
-[data-theme="dark"] .btn-danger{color:var(--danger);border-color:#5a2a2a}
-[data-theme="dark"] .btn-danger:hover{background:#3a1f1f}
-[data-theme="dark"] .toggle-slider{background:#555}
-[data-theme="dark"] .toggle-switch input:checked+.toggle-slider{background:#5b9bff}
-[data-theme="dark"] .bar-col .bar{background:#5b9bff}
-[data-theme="dark"] .bar-col .bar-label{color:#888}
-[data-theme="dark"] .bar-col .bar-count{color:#aaa}
-[data-theme="dark"] .modal-overlay{background:rgba(0,0,0,.6)}
-
-/* Action buttons (dark) */
-[data-theme="dark"] .btn-save,
-[data-theme="dark"] .status-selector button,
-[data-theme="dark"] .assignee-row button,
-[data-theme="dark"] .note-form-actions button{background:#5b9bff;color:#06243f}
-[data-theme="dark"] .btn-save:hover,
-[data-theme="dark"] .status-selector button:hover,
-[data-theme="dark"] .assignee-row button:hover,
-[data-theme="dark"] .note-form-actions button:hover{background:#6ea8fe}
-[data-theme="dark"] .bulk-bar button{background:#4a4a4a !important;color:#fff !important;border:1px solid var(--border) !important}
-[data-theme="dark"] .bulk-bar button[onclick^="bulkDelete"]{background:#8a3030 !important;color:#ffd6d6 !important}
-
-/* ===== Keyboard shortcut hint (M14) ===== */
-.kbd-hint{position:fixed;right:16px;bottom:16px;z-index:250;font-size:.75rem;max-width:210px;text-align:left}
-.kbd-hint-toggle{padding:5px 12px;border:1px solid var(--border);background:var(--panel);color:var(--muted);border-radius:4px;cursor:pointer;font-size:.75rem}
-.kbd-hint-toggle:hover{background:var(--hover)}
-.kbd-hint-body{margin-top:6px;padding:10px 12px;background:var(--panel);border:1px solid var(--border);border-radius:6px;color:var(--fg);line-height:1.9;box-shadow:0 4px 14px rgba(0,0,0,.25)}
-.kbd-hint-body div{white-space:nowrap}
-.kbd-hint-body kbd{display:inline-block;min-width:16px;text-align:center;padding:1px 5px;border:1px solid var(--border);border-radius:3px;background:var(--subtle);font-family:monospace;font-size:.7rem;color:var(--fg);margin-right:4px}
-.kb-selected{outline:2px solid #2563eb;outline-offset:-2px}
-[data-theme="dark"] .kb-selected{outline-color:#5b9bff}
-
-/* ===== Responsive (M14) ===== */
-@media (max-width:768px){
-  .header{padding:8px 12px;height:auto;flex-wrap:wrap}
-  .header h1{margin-right:12px}
-  .nav{order:3;width:100%;overflow-x:auto;padding-bottom:4px}
-  .main{margin:12px auto;padding:0 10px}
-  .stats{flex-direction:column;gap:8px}
-  .stat-card{padding:12px}
-  .filter-bar{gap:8px}
-  .filter-bar select,.filter-bar input[type=text]{flex:1 1 auto;min-height:40px}
-  .filter-bar input[type=text]{width:100%}
-  .filter-bar .btn-sm{min-height:40px}
-  .table-wrap{overflow-x:auto}
-  table{min-width:680px}
-  th,td{padding:10px 10px}
-  .settings-layout{flex-direction:column}
-  .settings-nav{width:100%;display:flex;gap:4px;overflow-x:auto}
-  .settings-nav button{width:auto;white-space:nowrap}
-  .settings-field input,.settings-field select,.settings-field textarea,.note-form textarea{min-height:40px}
-  .modal{width:94vw;padding:16px}
-  .modal .row{grid-template-columns:1fr}
-  .donut-container{flex-direction:column;align-items:flex-start;gap:12px}
-  .project-info-grid{grid-template-columns:1fr}
-  .btn-sm,.btn-danger,.filter-bar .btn-sm,.detail-back{min-height:40px}
-  .detail-back{display:inline-flex;align-items:center}
-  .kbd-hint{right:10px;bottom:10px}
-}
-</style>
-<script nonce="__NONCE__">
 // ===== 主题（暗黑模式）+ 键盘快捷键（M14） =====
 (function(){
   "use strict";
-  var THEME_KEY = 'feedshit-theme';
+  // 主题（亮 / 暗 / 跟随系统）由 /shared/theme.js 统一管理
 
-  function prefersDark(){
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  }
-  function applyTheme(t){
-    document.documentElement.setAttribute('data-theme', t);
-    var btn = document.getElementById('themeToggle');
-    if (btn) btn.textContent = (t === 'dark') ? '☀' : '🌙';
-  }
-  function initTheme(){
-    var saved = null;
-    try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
-    applyTheme(saved || (prefersDark() ? 'dark' : 'light'));
-  }
-  window.toggleTheme = function(){
-    var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', cur);
-    try { localStorage.setItem(THEME_KEY, cur); } catch (e) {}
-    applyTheme(cur);
-  };
   window.toggleKbdHint = function(){
     var b = document.getElementById('kbdHintBody');
     if (b) b.style.display = (b.style.display === 'none' ? 'block' : 'none');
   };
-
-  initTheme();
-
-  // 未手动设定时跟随系统配色
-  if (window.matchMedia){
-    var mq = window.matchMedia('(prefers-color-scheme: dark)');
-    var onChange = function(e){
-      var saved = null;
-      try { saved = localStorage.getItem(THEME_KEY); } catch (err) {}
-      if (!saved) applyTheme(e.matches ? 'dark' : 'light');
-    };
-    if (mq.addEventListener) mq.addEventListener('change', onChange);
-    else if (mq.addListener) mq.addListener(onChange);
-  }
 
   // 列表键盘快捷键（仅管理端仪表盘列表生效）
   var selectedRowId = null;
@@ -549,559 +70,15 @@ tr:last-child td{border-bottom:none}
 
   // 列表重新渲染后清除高亮态
   document.addEventListener('DOMContentLoaded', function(){
-    applyTheme(document.documentElement.getAttribute('data-theme'));
     var tbody = document.getElementById('feedbackTable');
     if (tbody && window.MutationObserver){
       new MutationObserver(function(){ selectedRowId = null; }).observe(tbody, { childList: true });
     }
   });
 })();
-</script>
-</head>
-<body>
 
-<div class="header">
-  <h1><span>Feed</span>Shit</h1>
-  <div class="nav">
-    <button class="active" data-tab="dashboard" onclick="switchTab('dashboard')">概览</button>
-    <button data-tab="projects" onclick="switchTab('projects')">项目</button>
-    <button data-tab="team" onclick="switchTab('team')" id="navTeam" style="display:none">团队</button>
-    <button data-tab="audit" onclick="switchTab('audit')">审计</button>
-    <button data-tab="settings" onclick="switchTab('settings')">设置</button>
-    <button data-tab="kb" onclick="switchTab('kb')" id="navKb" style="display:none">知识库</button>
-    <a href="/track" class="header-link" target="_blank" title="反馈跟踪">跟踪</a>
-  </div>
-  <div class="header-right">
-    <button id="themeToggle" onclick="toggleTheme()" title="切换暗黑 / 明亮模式">🌙</button>
-    <span id="currentUserLabel" style="font-size:.8rem;color:#888"></span>
-    <button onclick="logout()">退出登录</button>
-  </div>
-</div>
 
-<div class="main">
-  <!-- ===== Dashboard Tab ===== -->
-  <div id="tab-dashboard">
-    <div class="stats" id="statsRow">
-      <div class="stat-card"><div class="num" id="statTotal">-</div><div class="lbl">总反馈数</div></div>
-      <div class="stat-card"><div class="num" id="statProjects">-</div><div class="lbl">项目数</div></div>
-      <div class="stat-card"><div class="num" id="statToday">-</div><div class="lbl">今日新增</div></div>
-    </div>
 
-    <div id="listView">
-      <div class="filter-bar">
-        <select id="projectFilter" onchange="loadFeedbacks()">
-          <option value="">全部项目</option>
-        </select>
-        <select id="statusFilter" onchange="loadFeedbacks()">
-          <option value="">全部状态</option>
-          <option value="pending">待处理</option>
-          <option value="processing">处理中</option>
-          <option value="resolved">已解决</option>
-          <option value="closed">已关闭</option>
-        </select>
-        <select id="priorityFilter" onchange="loadFeedbacks()">
-          <option value="">全部优先级</option>
-          <option value="urgent">紧急</option>
-          <option value="high">高</option>
-          <option value="medium">中</option>
-          <option value="low">低</option>
-        </select>
-        <select id="assigneeFilter" onchange="loadFeedbacks()">
-          <option value="">全部指派</option>
-        </select>
-        <select id="categoryFilter" onchange="loadFeedbacks()">
-          <option value="">全部分类</option>
-        </select>
-        <input type="text" id="keywordSearch" placeholder="搜索标题/描述/标签/联系人/备注..." onkeyup="debounceSearch()">
-        <span class="count" id="feedbackCount"></span>
-        <span class="spacer"></span>
-        <button class="btn-sm" onclick="exportFeedback('csv')">导出 CSV</button>
-        <button class="btn-sm" onclick="exportFeedback('json')">导出 JSON</button>
-        <button class="btn-sm" onclick="exportFeedback('xlsx')">导出 XLSX</button>
-      </div>
-      <div class="bulk-bar" id="bulkBar">
-        <span id="bulkCount">0 条已选</span>
-        <select id="bulkStatusSelect">
-          <option value="">批量改状态...</option>
-          <option value="pending">待处理</option>
-          <option value="processing">处理中</option>
-          <option value="resolved">已解决</option>
-          <option value="closed">已关闭</option>
-        </select>
-        <select id="bulkPrioritySelect">
-          <option value="">批量改优先级...</option>
-          <option value="urgent">紧急</option>
-          <option value="high">高</option>
-          <option value="medium">中</option>
-          <option value="low">低</option>
-        </select>
-        <input type="text" id="bulkAssigneeInput" placeholder="批量指派..." style="padding:4px 8px;border:1px solid #d0d0d0;border-radius:4px;font-size:.8rem;width:100px">
-        <input type="text" id="bulkTagsInput" placeholder="批量标签..." style="padding:4px 8px;border:1px solid #d0d0d0;border-radius:4px;font-size:.8rem;width:100px">
-        <button onclick="bulkUpdateStatus()" style="background:#333;color:#fff">应用</button>
-        <button onclick="bulkUpdatePriority()" style="background:#555;color:#fff">优先级</button>
-        <button onclick="bulkUpdateAssignee()" style="background:#555;color:#fff">指派</button>
-        <button onclick="bulkUpdateTags()" style="background:#555;color:#fff">标签</button>
-        <button onclick="bulkDelete()" style="background:#c00;color:#fff">批量删除</button>
-        <span class="spacer" style="flex:1"></span>
-        <button class="btn-sm" onclick="clearSelection()">取消选择</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th class="cb-col"><input type="checkbox" id="selectAllCb" onchange="toggleSelectAll(this.checked)"></th><th>ID</th><th>项目</th><th>标题</th><th>优先级</th><th>状态</th><th>投票</th><th>指派</th><th>IP</th><th>时间</th></tr></thead>
-          <tbody id="feedbackTable"><tr><td colspan="10" class="empty">加载中...</td></tr></tbody>
-        </table>
-      </div>
-      <div class="chart-container" id="trendChart">
-        <h2>反馈趋势（近 30 天）</h2>
-        <div id="chartInner"><p class="chart-empty">加载中...</p></div>
-      </div>
-      <div class="kbd-hint" id="kbdHint">
-        <button class="kbd-hint-toggle" onclick="toggleKbdHint()" title="键盘快捷键">快捷键 ⌨</button>
-        <div class="kbd-hint-body" id="kbdHintBody" style="display:none">
-          <div><kbd>j</kbd>/<kbd>k</kbd> 上 / 下移动选中</div>
-          <div><kbd>e</kbd> 打开详情</div>
-          <div><kbd>/</kbd> 聚焦搜索</div>
-          <div><kbd>Esc</kbd> 关闭弹层</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="detail-panel" id="detailView">
-      <div class="detail-back" onclick="showList()">&#8592; 返回列表</div>
-      <div class="detail-card" id="detailContent"></div>
-    </div>
-  </div>
-
-  <!-- ===== Projects Tab ===== -->
-  <div id="tab-projects" style="display:none">
-    <div id="projectListView">
-      <div class="filter-bar">
-        <strong style="font-size:.95rem">反馈项目</strong>
-        <span class="spacer"></span>
-        <button class="btn-sm" onclick="openProjectModal()">+ 新建项目</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>项目名称</th><th>标识</th><th>状态</th><th>反馈数</th><th>反馈链接</th><th>操作</th></tr></thead>
-          <tbody id="projectTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
-        </table>
-      </div>
-      <div style="margin-top:20px">
-        <div class="settings-card">
-          <h2>项目反馈统计</h2>
-          <div id="projectStatsChart"><p class="empty">加载中...</p></div>
-        </div>
-      </div>
-    </div>
-    <div id="projectDetailView" style="display:none">
-      <div class="detail-back" onclick="showProjectList()">&#8592; 返回项目列表</div>
-      <div id="projectDetailContent"></div>
-    </div>
-  </div>
-
-  <!-- ===== Audit Tab ===== -->
-  <div id="tab-audit" style="display:none">
-    <div class="filter-bar">
-      <strong style="font-size:.95rem">操作审计日志</strong>
-      <span class="count" id="auditCount"></span>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>时间</th><th>操作</th><th>详情</th><th>用户</th><th>IP</th></tr></thead>
-        <tbody id="auditTable"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- ===== Team Tab ===== -->
-  <div id="tab-team" style="display:none">
-    <div class="filter-bar">
-      <strong style="font-size:.95rem">团队成员</strong>
-      <span class="spacer"></span>
-      <button class="btn-sm" onclick="openAdminModal()">+ 新建成员</button>
-      <button class="btn-sm" onclick="openInviteModal()" style="margin-left:4px">+ 邀请链接</button>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>用户名</th><th>邮箱</th><th>角色</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
-        <tbody id="adminTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
-      </table>
-    </div>
-    <div id="invitationList" style="margin-top:16px"></div>
-    </div>
-  </div>
-
-  <!-- ===== Settings Tab ===== -->
-  <div id="tab-settings" style="display:none">
-    <div class="settings-layout">
-      <div class="settings-nav">
-        <button class="active" onclick="switchSettings('email',this)">邮件通知</button>
-        <button onclick="switchSettings('account',this)">账户安全</button>
-        <button onclick="switchSettings('system',this)">系统设置</button>
-        <button onclick="switchSettings('tokens',this)" id="navSettingsTokens" style="display:none">API Token</button>
-        <button onclick="switchSettings('emailtpl',this)" id="navSettingsEmailTpl" style="display:none">邮件模板</button>
-        <button onclick="switchSettings('dataops',this)" id="navSettingsDataOps" style="display:none">数据管理</button>
-        <button onclick="switchSettings('webhooks',this)" id="navSettingsWebhooks" style="display:none">Webhook</button>
-      </div>
-      <div class="settings-content">
-        <div class="settings-card" id="settings-email">
-          <h2>邮件通知设置</h2>
-          <div id="emailForm"></div>
-          <div class="settings-actions">
-            <button class="btn-save" onclick="saveEmailSettings()">保存设置</button>
-          </div>
-        </div>
-        <div class="settings-card" id="settings-account" style="display:none">
-          <h2>账户安全</h2>
-          <div id="accountForm"></div>
-          <div class="settings-actions">
-            <button class="btn-save" onclick="saveAccount()">保存修改</button>
-          </div>
-        </div>
-        <div class="settings-card" id="settings-system" style="display:none">
-          <h2>系统设置</h2>
-          <div id="systemForm"></div>
-          <div class="settings-actions">
-            <button class="btn-save" onclick="saveSystemSettings()">保存设置</button>
-          </div>
-          <div style="margin-top:24px;padding-top:20px;border-top:1px solid #eee">
-            <h2 style="font-size:.95rem">数据备份</h2>
-            <p style="font-size:.8rem;color:#888;margin:8px 0">手动创建数据库备份文件，存储在服务端 backups 目录。系统每日凌晨 3 点自动备份。</p>
-            <button class="btn-save" onclick="doBackup()">立即备份</button>
-            <span id="backupResult" style="margin-left:12px;font-size:.8rem;color:#888"></span>
-          </div>
-        </div>
-        <div class="settings-card" id="settings-tokens" style="display:none">
-          <h2>API Token 管理</h2>
-          <p style="font-size:.8rem;color:#888;margin-bottom:12px">API Token 允许外部系统（CI、监控等）通过 <code>POST /api/v1/external/feedback</code> 提交反馈。请求头需携带 <code>Authorization: Bearer &lt;token&gt;</code>。</p>
-          <div id="tokenList"></div>
-          <div style="margin-top:12px">
-            <button class="btn-sm" onclick="openTokenModal()">+ 创建 Token</button>
-          </div>
-        </div>
-        <div class="settings-card" id="settings-emailtpl" style="display:none">
-          <h2>邮件通知模板</h2>
-          <p style="font-size:.8rem;color:#888;margin-bottom:12px">自定义邮件通知的标题和正文模板。支持占位符：<code>{{project}}</code> <code>{{title}}</code> <code>{{description}}</code> <code>{{status}}</code> <code>{{admin_url}}</code></p>
-          <div class="settings-field"><label>标题模板</label><input type="text" id="tplSubject" placeholder="例：[FeedShit] 新反馈：{{title}}"></div>
-          <div class="settings-field"><label>正文模板</label><textarea id="tplBody" rows="8" placeholder="例：项目：{{project}}&#10;标题：{{title}}&#10;描述：{{description}}&#10;查看详情：{{admin_url}}"></textarea></div>
-          <div class="settings-actions">
-            <button class="btn-save" onclick="saveEmailTemplate()">保存模板</button>
-          </div>
-        </div>
-        <div class="settings-card" id="settings-dataops" style="display:none">
-          <h2>数据管理</h2>
-          <div style="margin-bottom:20px">
-            <h3 style="font-size:.9rem;margin-bottom:8px">CSV 导入</h3>
-            <p style="font-size:.8rem;color:#888;margin-bottom:8px">从 CSV 文件批量导入历史反馈数据。CSV 须包含 <code>title</code> 列，可选列：<code>description</code>, <code>status</code>, <code>tags</code>, <code>assignee</code>, <code>contact_name</code>, <code>contact_email</code>, <code>priority</code>, <code>created_at</code>（Unix 时间戳）。</p>
-            <div style="display:flex;align-items:center;gap:8px">
-              <select id="importProjectId" style="padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem"></select>
-              <input type="file" id="csvFileInput" accept=".csv" style="font-size:.85rem">
-              <button class="btn-save" onclick="doCSVImport()">导入</button>
-              <span id="importResult" style="font-size:.8rem;color:#888"></span>
-            </div>
-          </div>
-          <div style="padding-top:16px;border-top:1px solid #eee">
-            <h3 style="font-size:.9rem;margin-bottom:8px">自动归档</h3>
-            <p style="font-size:.8rem;color:#888;margin-bottom:8px">将超过指定天数的待处理/处理中反馈自动标记为已关闭。设为 0 表示禁用。</p>
-            <div style="display:flex;align-items:center;gap:8px">
-              <input type="number" id="archiveDaysInput" min="0" value="0" style="width:80px;padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem">
-              <span style="font-size:.8rem;color:#666">天</span>
-              <button class="btn-save" onclick="doArchive()">立即归档</button>
-              <span id="archiveResult" style="font-size:.8rem;color:#888"></span>
-            </div>
-          </div>
-          <div style="padding-top:16px;border-top:1px solid #eee;margin-top:16px">
-            <h3 style="font-size:.9rem;margin-bottom:8px">数据库备份</h3>
-            <div id="backupListContainer">
-              <p style="font-size:.8rem;color:#888;margin-bottom:8px">加载中...</p>
-            </div>
-            <div style="display:flex;gap:8px;margin-top:8px">
-              <button class="btn-save" onclick="triggerBackup()">创建备份</button>
-            </div>
-            <h3 style="font-size:.9rem;margin:16px 0 8px 0">清理旧备份</h3>
-            <p style="font-size:.8rem;color:#888;margin-bottom:8px">删除超过指定天数的备份文件。设为 0 表示不自动清理。</p>
-            <div style="display:flex;align-items:center;gap:8px">
-              <input type="number" id="pruneDaysInput" min="0" value="0" style="width:80px;padding:6px 10px;border:1px solid #d0d0d0;border-radius:4px;font-size:.85rem">
-              <span style="font-size:.8rem;color:#666">天</span>
-              <button class="btn-save" onclick="doPruneBackups()">立即清理</button>
-              <span id="pruneResult" style="font-size:.8rem;color:#888"></span>
-            </div>
-          </div>
-        </div>
-        <div class="settings-card" id="settings-webhooks" style="display:none">
-          <h2>Webhook 订阅</h2>
-          <p style="font-size:.8rem;color:#888;margin-bottom:12px">配置外部系统接收新反馈/状态变更事件。设置签名密钥后，请求头携带 <code>X-FeedShit-Signature: sha256=HMAC</code>。失败自动重试（最多 8 次，指数退避）。</p>
-          <div id="webhookList"></div>
-          <div style="margin-top:12px"><button class="btn-sm" onclick="openWebhookModal()">+ 新建订阅</button></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Project Modal -->
-<div class="modal-overlay" id="projectModal">
-  <div class="modal">
-    <h3 id="projectModalTitle">新建项目</h3>
-    <input type="hidden" id="pfId">
-    <div class="row">
-      <div class="settings-field"><label>项目名称 *</label><input type="text" id="pfName" placeholder="例：官网、App"></div>
-      <div class="settings-field"><label>项目标识 *</label><input type="text" id="pfSlug" placeholder="例：website、app"></div>
-    </div>
-    <div class="row">
-      <div class="settings-field" style="flex:1">
-        <label>表单模板</label>
-        <select id="pfTemplate" onchange="onProjectTemplateChange()">
-          <option value="empty">空模板（无自定义字段）</option>
-          <option value="bug_report">🐛 Bug 反馈</option>
-          <option value="feature_request">💡 功能建议</option>
-          <option value="contact">📞 联系我们</option>
-          <option value="support">🎫 工单支持</option>
-          <option value="product_review">⭐ 产品评价</option>
-        </select>
-      </div>
-    </div>
-    <div class="settings-field"><label>项目描述</label><input type="text" id="pfDesc" placeholder="可选"></div>
-    <div class="settings-field"><div class="toggle"><input type="checkbox" id="pfActive" checked><span>启用（关闭后该项目无法提交新反馈）</span></div></div>
-    <div class="settings-field"><div class="toggle"><input type="checkbox" id="pfArchived"><span>归档（归档后项目隐藏且不接受反馈，数据保留）</span></div></div>
-    <div class="modal-actions">
-      <button class="btn-sm" onclick="closeProjectModal()">取消</button>
-      <button class="btn-save" onclick="saveProject()">保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- Field Editor Modal -->
-<div class="modal-overlay" id="fieldEditorModal">
-  <div class="modal">
-    <h3 id="fieldEditorTitle">添加字段</h3>
-    <div class="field-editor">
-      <div class="field-row">
-        <div><label>字段类型</label><select id="feType" onchange="onFieldTypeChange()">
-          <option value="text">单行文本</option>
-          <option value="textarea">多行文本</option>
-          <option value="number">数字</option>
-          <option value="email">邮箱</option>
-          <option value="url">网址</option>
-          <option value="tel">电话</option>
-          <option value="date">日期</option>
-          <option value="time">时间</option>
-          <option value="color">颜色</option>
-          <option value="select">下拉选择</option>
-          <option value="checkbox">复选框</option>
-          <option value="radio">单选</option>
-          <option value="rating">评分</option>
-          <option value="toggle">开关</option>
-          <option value="slider">滑块</option>
-          <option value="tags">标签</option>
-          <option value="markdown">Markdown</option>
-          <option value="file">文件上传</option>
-          <option value="image">图片上传</option>
-          <option value="hidden">隐藏字段</option>
-          <option value="section">分区标题</option>
-          <option value="html">HTML</option>
-        </select></div>
-        <div><label>字段名称（英文标识）</label><input type="text" id="feName" placeholder="例：priority"></div>
-      </div>
-      <div class="field-row full"><div><label>显示标签</label><input type="text" id="feLabel" placeholder="例：优先级"></div></div>
-      <div class="field-row full" id="fePlaceholderRow"><div><label>占位提示</label><input type="text" id="fePlaceholder" placeholder="可选"></div></div>
-      <div class="field-row half" id="feDefaultRow" style="display:none"><div><label>默认值</label><input type="text" id="feDefault" placeholder="可选"></div></div>
-      <div class="field-row three-col" id="feMinMaxStepRow" style="display:none">
-        <div><label>最小值</label><input type="number" id="feMin" placeholder="无"></div>
-        <div><label>最大值</label><input type="number" id="feMax" placeholder="无"></div>
-        <div><label>步长</label><input type="number" id="feStep" placeholder="1"></div>
-      </div>
-      <div class="field-row half" id="feMinMaxLenRow" style="display:none">
-        <div><label>最小长度</label><input type="number" id="feMinLength" placeholder="无"></div>
-        <div><label>最大长度</label><input type="number" id="feMaxLength" placeholder="无"></div>
-      </div>
-      <div class="field-row half" id="fePatternRow" style="display:none"><div><label>正则校验</label><input type="text" id="fePattern" placeholder="如 \d{11}"></div></div>
-      <div class="field-row half" id="feRowsRow" style="display:none"><div><label>行数</label><input type="number" id="feRows" placeholder="4"></div></div>
-      <div class="field-row half" id="feAcceptRow" style="display:none"><div><label>允许类型</label><input type="text" id="feAccept" placeholder="如 .pdf,.docx"></div>
-        <div class="toggle" style="margin-left:12px"><input type="checkbox" id="feMultiple"><span>多文件</span></div>
-      </div>
-      <div class="field-row half" id="feIconRow" style="display:none">
-        <div><label>图标</label><select id="feIcon">
-          <option value="star">★ 星星</option>
-          <option value="heart">❤ 心</option>
-          <option value="thumb">👍 拇指</option>
-        </select></div>
-      </div>
-      <div class="field-row half" id="feToggleLabelRow" style="display:none">
-        <div><label>开启时标签</label><input type="text" id="feLabelOn" placeholder="已启用"></div>
-        <div><label>关闭时标签</label><input type="text" id="feLabelOff" placeholder="已禁用"></div>
-      </div>
-      <div class="field-row full" id="feCollapsibleRow" style="display:none">
-        <div class="toggle"><input type="checkbox" id="feCollapsible"><span>可折叠</span></div>
-      </div>
-      <div class="field-row full" id="feContentRow" style="display:none">
-        <div><label>HTML 内容</label><textarea id="feContent" placeholder="输入 HTML" style="min-height:80px;font-family:monospace"></textarea></div>
-      </div>
-      <div class="field-row full" id="feWidthRow">
-        <div><label>宽度</label><select id="feWidth">
-          <option value="full">整行</option>
-          <option value="half">半行</option>
-          <option value="third">三分之一</option>
-        </select></div>
-      </div>
-      <div class="field-row full" id="feHelpRow"><div><label>帮助文本</label><input type="text" id="feHelpText" placeholder="字段下方显示的提示信息（可选）"></div></div>
-      <div class="field-row full" id="feOptionsRow" style="display:none">
-        <div><label>选项（每行一个）</label><div class="options-editor"><div id="feOptionsList"></div><button class="add-opt" onclick="addOptionRow()">+ 添加选项</button></div></div>
-      </div>
-      <div class="field-row"><div class="toggle"><input type="checkbox" id="feRequired"><span>必填</span></div></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-sm" onclick="closeFieldEditor()">取消</button>
-      <button class="btn-save" onclick="saveFieldEditor()">确定</button>
-    </div>
-  </div>
-</div>
-
-<!-- Admin Modal -->
-<div class="modal-overlay" id="adminModal">
-  <div class="modal">
-    <h3 id="adminModalTitle">新建成员</h3>
-    <input type="hidden" id="adminEditId">
-    <div class="settings-field"><label>用户名 *</label><input type="text" id="adminUsername" placeholder="3-32 位"></div>
-    <div class="settings-field"><label>邮箱</label><input type="email" id="adminEmail" placeholder="用于邮件通知"></div>
-    <div class="settings-field"><label>密码 <span id="adminPwdHint">*</span></label><input type="password" id="adminPassword" placeholder="至少 8 位，含大小写和数字"><div class="hint" id="adminPwdHelp">留空则不修改密码</div></div>
-    <div class="settings-field"><label>角色</label><select id="adminRole">
-      <option value="admin">管理员（全部权限）</option>
-      <option value="manager">经理（项目内全部权限）</option>
-      <option value="editor" selected>编辑（管理反馈+项目）</option>
-      <option value="viewer">只读（仅查看）</option>
-    </select></div>
-    <div class="settings-field" id="adminActiveField"><div class="toggle"><input type="checkbox" id="adminActive" checked><span>启用</span></div></div>
-    <div class="settings-field" id="adminGrantsSection" style="display:none">
-      <label>初始授权 <span style="font-weight:400;color:#888">（可选，限定该项目访问范围）</span></label>
-      <div id="createGrantsArea" style="max-height:240px;overflow-y:auto;border:1px solid #eee;border-radius:4px;padding:8px"></div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-sm" onclick="closeAdminModal()">取消</button>
-      <button class="btn-save" onclick="saveAdmin()">保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- Invitation Modal -->
-<div class="modal-overlay" id="inviteModal">
-  <div class="modal" style="max-width:500px">
-    <h3>创建邀请链接</h3>
-    <p style="font-size:.8rem;color:#888;margin-bottom:16px">生成一个邀请链接，分享给他人即可注册成为团队成员。邀请链接达到使用次数后自动失效。</p>
-    <div class="settings-field"><label>角色</label><select id="inviteRole" onchange="onInviteRoleChange()">
-      <option value="manager">经理（项目内全部权限）</option>
-      <option value="editor" selected>编辑（管理反馈+项目）</option>
-      <option value="viewer">只读（仅查看）</option>
-    </select></div>
-    <div class="settings-field" id="inviteProjectsField"><label>授权项目 <span style="font-weight:400;color:#888">（勾选可访问的项目）</span></label>
-      <div id="inviteProjectsArea" style="max-height:200px;overflow-y:auto;border:1px solid #eee;border-radius:4px;padding:8px"></div>
-    </div>
-    <div class="settings-field"><label>使用次数</label><input type="number" id="inviteMaxUses" value="1" min="1" style="width:100px;padding:8px 10px;border:1px solid #ddd;border-radius:4px"></div>
-    <div class="settings-field"><label>有效期（天，0 表示不过期）</label><input type="number" id="inviteExpireDays" value="7" min="0" style="width:100px;padding:8px 10px;border:1px solid #ddd;border-radius:4px"></div>
-    <div id="inviteResultArea" style="display:none;margin-bottom:12px">
-      <label>邀请链接</label>
-      <div style="display:flex;gap:8px">
-        <input type="text" id="inviteURL" readonly style="flex:1;padding:8px 10px;border:1px solid #ddd;border-radius:4px;font-size:.8rem;background:#f9f9f9">
-        <button class="btn-sm" onclick="copyInviteURL()">复制</button>
-      </div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-sm" onclick="closeInviteModal()">取消</button>
-      <button class="btn-save" onclick="createInvitation()">生成链接</button>
-    </div>
-  </div>
-</div>
-
-<!-- Token Modal -->
-<div class="modal-overlay" id="tokenModal">
-  <div class="modal">
-    <h3 id="tokenModalTitle">创建 API Token</h3>
-    <input type="hidden" id="tokenEditId">
-    <div class="settings-field"><label>名称 *</label><input type="text" id="tokenName" placeholder="例：CI 流水线、监控告警"></div>
-    <div class="settings-field"><label>绑定项目</label><input type="text" id="tokenProject" placeholder="留空表示所有项目"></div>
-    <div class="settings-field"><label>每小时限速</label><input type="number" id="tokenRateLimit" value="60" min="0"><div class="hint">每 Token 每小时最大请求数，0 表示不限制</div></div>
-    <div class="settings-field"><label>每日配额</label><input type="number" id="tokenQuotaPerDay" value="1000" min="0"><div class="hint">每 Token 每日最大请求数，0 表示不限制</div></div>
-    <div id="tokenResult" style="display:none;margin-top:12px;padding:12px;background:#f0f9f0;border:1px solid #b2e0b2;border-radius:4px">
-      <div style="font-size:.8rem;color:#1a7a1a;margin-bottom:4px">Token 已创建，请立即复制保存（只显示一次）：</div>
-      <code id="tokenValue" style="font-size:.85rem;word-break:all;user-select:all"></code>
-    </div>
-    <div class="modal-actions">
-      <button class="btn-sm" onclick="closeTokenModal()">关闭</button>
-      <button class="btn-save" id="tokenSaveBtn" onclick="saveToken()">创建</button>
-    </div>
-  </div>
-</div>
-
-<!-- Webhook Modal -->
-<div class="modal-overlay" id="webhookModal">
-  <div class="modal">
-    <h3 id="webhookModalTitle">新建 Webhook 订阅</h3>
-    <input type="hidden" id="webhookEditId">
-    <div class="settings-field"><label>绑定项目（可选）</label><input type="text" id="whProject" placeholder="留空表示所有项目"></div>
-    <div class="settings-field"><label>URL *</label><input type="text" id="whUrl" placeholder="https://..."></div>
-    <div class="settings-field"><label>签名密钥（可选）</label><input type="text" id="whSecret" placeholder="留空不签名"><div class="hint">设置后请求头携带 X-FeedShit-Signature: sha256=HMAC</div></div>
-    <div class="settings-field"><label>事件</label><input type="text" id="whEvents" placeholder="* 或 feedback.created,feedback.resolved"></div>
-    <div class="settings-field"><div class="toggle"><input type="checkbox" id="whActive" checked><span>启用</span></div></div>
-    <div class="modal-actions">
-      <button class="btn-sm" onclick="closeWebhookModal()">取消</button>
-      <button class="btn-save" id="whSaveBtn" onclick="saveWebhook()">保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===== Knowledge Base (FAQ) Tab ===== -->
-<div id="tab-kb" style="display:none">
-  <div class="filter-bar">
-    <select id="kbProject" onchange="loadFaqs()">
-      <option value="">选择项目</option>
-    </select>
-    <button class="btn-sm" onclick="openFaqModal(0)">+ 新增 FAQ</button>
-  </div>
-  <div id="kbEmpty" style="display:none;padding:30px;text-align:center;color:#888;font-size:.9rem"></div>
-  <div class="table-wrap" id="kbTableWrap" style="display:none">
-    <table>
-      <thead><tr><th>问题</th><th>答案</th><th>排序</th><th>状态</th><th>操作</th></tr></thead>
-      <tbody id="kbBody"></tbody>
-    </table>
-  </div>
-</div>
-
-<!-- FAQ Edit Modal -->
-<div class="modal-overlay" id="faqModal">
-  <div class="modal">
-    <h3 id="faqModalTitle">新增 FAQ</h3>
-    <input type="hidden" id="faqEditId">
-    <div class="settings-field"><label>问题 *</label><textarea id="faqQuestion" rows="2" placeholder="用户常问的问题"></textarea></div>
-    <div class="settings-field"><label>答案</label><textarea id="faqAnswer" rows="5" placeholder="解答内容（纯文本，将按原样展示）"></textarea></div>
-    <div class="settings-field"><label>排序</label><input type="number" id="faqSort" value="0"></div>
-    <div class="settings-field"><div class="toggle"><input type="checkbox" id="faqActive" checked><span>启用（启用后将在提交页检索中展示）</span></div></div>
-    <div class="modal-actions">
-      <button class="btn-sm" onclick="closeFaqModal()">取消</button>
-      <button class="btn-save" id="faqSaveBtn" onclick="saveFaq()">保存</button>
-    </div>
-  </div>
-</div>
-
-<!-- M5 Duplicate-candidates Modal (mark as duplicate merge assist) -->
-<div class="modal-overlay" id="dupSimilarModal">
-  <div class="modal">
-    <h3>标记为重复</h3>
-    <p id="dupSimilarMsg" style="color:var(--muted);font-size:.82rem;margin:-8px 0 12px"></p>
-    <div id="dupSimilarList" style="max-height:46vh;overflow-y:auto"></div>
-    <div class="settings-field" style="margin-top:12px">
-      <label>或手动输入主反馈 ID</label>
-      <input type="number" id="dupSimilarManual" placeholder="例如 128" style="width:100%">
-    </div>
-    <div class="modal-actions">
-      <button class="btn-sm" onclick="closeDupSimilar()">取消</button>
-      <button class="btn-save" onclick="confirmMarkDuplicate()">确认标记</button>
-    </div>
-  </div>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<script nonce="__NONCE__">
 (function(){
   var currentTab = 'dashboard';
   var feedbacks = [];
@@ -1118,6 +95,13 @@ tr:last-child td{border-bottom:none}
   // Filter memory (in-memory, persists during session)
   var filterMemory = {};
 
+  // slug -> display name map (from list API), used to render project names
+  var projectNames = {};
+  // Pagination state for the feedback list
+  var feedbackOffset = 0;
+  var feedbackLimit = 100;
+  var lastFilterSig = '';
+
   var statusLabels = {pending:'待处理',processing:'处理中',resolved:'已解决',closed:'已关闭'};
   var priorityLabels = {'':'无',urgent:'紧急',high:'高',medium:'中',low:'低'};
 
@@ -1125,6 +109,16 @@ tr:last-child td{border-bottom:none}
   function getCsrfHeaders() {
     var h = {'X-CSRF-Token': csrfToken};
     return h;
+  }
+
+  // The server rotates the CSRF token after every successful mutating request.
+  // Keep the in-memory token in sync with the (non-HttpOnly) csrf_token cookie
+  // so the next request always carries the current token.
+  function syncCsrfFromCookie() {
+    try {
+      var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+      if (m && m[1]) csrfToken = decodeURIComponent(m[1]);
+    } catch (e) {}
   }
 
   // Fetch CSRF token after login
@@ -1135,6 +129,7 @@ tr:last-child td{border-bottom:none}
         var d = await resp.json();
         csrfToken = d.csrf_token || '';
       }
+      syncCsrfFromCookie();
     } catch(e) {}
   }
 
@@ -1157,9 +152,17 @@ tr:last-child td{border-bottom:none}
     if (tab === 'kb') { renderKbProjects(); loadFaqs(); }
   };
 
+  // 分页大小切换（CSP 合规：由 data-change 委托调用）
+  function onPageSizeChange(v) {
+    feedbackLimit = parseInt(v, 10);
+    feedbackOffset = 0;
+    loadFeedbacks();
+  }
+
   // --- API helpers ---
   async function api(url, opts) {
     var resp = await fetch(url, opts);
+    syncCsrfFromCookie(); // keep in sync with server-side CSRF rotation
     if (resp.status === 401) { window.location.href = '/admin/login'; return null; }
     return resp;
   }
@@ -1220,12 +223,12 @@ tr:last-child td{border-bottom:none}
       var preview = ans.length > 60 ? ans.substring(0, 60) + '…' : ans;
       html += '<tr>'
         + '<td>' + esc(f.question) + '</td>'
-        + '<td style="color:#666;max-width:360px;white-space:pre-wrap;word-break:break-word">' + esc(preview) + '</td>'
+        + '<td style="color:var(--tag-fg);max-width:360px;white-space:pre-wrap;word-break:break-word">' + esc(preview) + '</td>'
         + '<td>' + (f.sort_order || 0) + '</td>'
-        + '<td>' + (f.is_active ? '<span style="color:#1a7a1a">启用</span>' : '<span style="color:#999">停用</span>') + '</td>'
+        + '<td>' + (f.is_active ? '<span style="color:var(--success-fg)">启用</span>' : '<span style="color:var(--hint)">停用</span>') + '</td>'
         + '<td>'
-        + '<button class="btn-sm" onclick="openFaqModal(' + f.id + ')">编辑</button> '
-        + '<button class="btn-sm btn-danger" onclick="deleteFaq(' + f.id + ')">删除</button>'
+        + '<button class="btn-sm" data-click="openFaqModal" data-args="' + f.id + '">编辑</button> '
+        + '<button class="btn-sm btn-danger" data-click="deleteFaq" data-args="' + f.id + '">删除</button>'
         + '</td>'
         + '</tr>';
     });
@@ -1317,10 +320,14 @@ tr:last-child td{border-bottom:none}
     var category = document.getElementById('categoryFilter').value;
     var keyword = document.getElementById('keywordSearch').value.trim();
 
+    // Reset pagination when the filter combination changes
+    var sig = [project, status, priority, assignee, category, keyword].join('|');
+    if (sig !== lastFilterSig) { feedbackOffset = 0; lastFilterSig = sig; }
+
     // Save filter state to memory
     filterMemory = {project:project, status:status, priority:priority, assignee:assignee, category:category, keyword:keyword};
 
-    var url = '/api/v1/admin/feedbacks?limit=100';
+    var url = '/api/v1/admin/feedbacks?limit=' + feedbackLimit + '&offset=' + feedbackOffset;
     if (project) url += '&project=' + encodeURIComponent(project);
     if (status) url += '&status=' + encodeURIComponent(status);
     if (priority) url += '&priority=' + encodeURIComponent(priority);
@@ -1331,8 +338,10 @@ tr:last-child td{border-bottom:none}
     if (!resp) return;
     var d = await resp.json();
     feedbacks = d.feedbacks || [];
+    projectNames = d.project_names || {};
     var projects = d.projects || [];
     var assignees = d.assignees || [];
+    var total = d.total || 0;
 
     var sel = document.getElementById('projectFilter');
     var cur = sel.value;
@@ -1355,8 +364,9 @@ tr:last-child td{border-bottom:none}
       aSel.appendChild(opt);
     });
 
-    document.getElementById('feedbackCount').textContent = '共 ' + (d.total || 0) + ' 条';
+    document.getElementById('feedbackCount').textContent = '共 ' + total + ' 条';
     renderTable();
+    renderPagination(total);
   };
 
   // Restore filters from memory
@@ -1374,6 +384,54 @@ tr:last-child td{border-bottom:none}
     searchTimer = setTimeout(function(){ loadFeedbacks(); }, 300);
   };
 
+  // Populate the category filter from the selected project's categories.
+  // Categories are project-scoped, so when no project is selected the list is
+  // reset to "全部分类" only.
+  window.populateCategoryFilter = async function() {
+    var cSel = document.getElementById('categoryFilter');
+    var project = document.getElementById('projectFilter').value;
+    cSel.innerHTML = '<option value="">全部分类</option>';
+    if (!project) return;
+    try {
+      var resp = await api('/api/v1/admin/projects/' + encodeURIComponent(project) + '/categories');
+      if (!resp) return;
+      var d = await resp.json();
+      (d.categories || []).forEach(function(cat){
+        if (cat.is_active === false) return;
+        var opt = document.createElement('option');
+        opt.value = cat.key; opt.textContent = cat.name || cat.key;
+        cSel.appendChild(opt);
+      });
+    } catch (e) { /* ignore network errors */ }
+  };
+
+  // When the project changes, clear the category selection and reload both the
+  // category options and the feedback list.
+  window.onProjectChange = function() {
+    document.getElementById('categoryFilter').value = '';
+    populateCategoryFilter();
+    loadFeedbacks();
+  };
+
+  // --- Pagination ---
+  function renderPagination(total) {
+    var bar = document.getElementById('paginationBar');
+    if (!bar) return;
+    var start = total === 0 ? 0 : feedbackOffset + 1;
+    var end = Math.min(feedbackOffset + feedbackLimit, total);
+    bar.innerHTML =
+      '<span class="count">显示 ' + start + '-' + end + ' / 共 ' + total + ' 条</span>' +
+      '<button class="btn-sm" data-click="prevPage" data-args="" ' + (feedbackOffset <= 0 ? 'disabled' : '') + '>上一页</button>' +
+      '<button class="btn-sm" data-click="nextPage" data-args="" ' + (end >= total ? 'disabled' : '') + '>下一页</button>';
+  }
+
+  window.prevPage = function() {
+    if (feedbackOffset >= feedbackLimit) { feedbackOffset -= feedbackLimit; loadFeedbacks(); }
+  };
+  window.nextPage = function() {
+    feedbackOffset += feedbackLimit; loadFeedbacks();
+  };
+
   function statusBadge(status) {
     var cls = 'status-badge status-' + (status || 'pending');
     var label = statusLabels[status] || status || '待处理';
@@ -1381,7 +439,7 @@ tr:last-child td{border-bottom:none}
   }
 
   function priorityBadge(p) {
-    if (!p) return '<span style="color:#ccc">-</span>';
+    if (!p) return '<span style="color:var(--border-muted)">-</span>';
     var cls = 'priority-badge priority-' + p;
     var label = priorityLabels[p] || p;
     return '<span class="'+cls+'">'+esc(label)+'</span>';
@@ -1399,16 +457,16 @@ tr:last-child td{border-bottom:none}
       var checked = selectedIds.has(f.id) ? ' checked' : '';
       var dupBadge = f.is_duplicate ? '<span class="dup-badge" title="重复 #'+f.duplicate_of+'">重复</span>' : '';
       return '<tr data-id="'+f.id+'">' +
-        '<td class="cb-col"><input type="checkbox" data-id="'+f.id+'"'+checked+' onchange="toggleSelect('+f.id+',this.checked)"></td>' +
-        '<td><a href="#" onclick="showDetail('+f.id+');return false;" style="color:#333">#'+f.id+'</a></td>' +
-        '<td><span class="tag">'+esc(f.project_id)+'</span></td>' +
-        '<td><a href="#" onclick="showDetail('+f.id+');return false;">'+esc(f.title)+'</a>'+dupBadge+'</td>' +
+        '<td class="cb-col"><input type="checkbox" data-id="'+f.id+'"'+checked+' data-change="toggleSelect" data-args="'+f.id+',this.checked"></td>' +
+        '<td><a href="#" data-click="showDetail" data-args="'+f.id+'" style="color:var(--fg)">#'+f.id+'</a></td>' +
+        '<td><span class="tag">'+esc(projectNames[f.project_id] || f.project_id)+'</span></td>' +
+        '<td><a href="#" data-click="showDetail" data-args="'+f.id+'">'+esc(f.title)+'</a>'+dupBadge+'</td>' +
         '<td>'+priorityBadge(f.priority)+'</td>' +
         '<td>'+statusBadge(f.status)+'</td>' +
-        '<td style="text-align:center;color:#666;font-size:.85rem">'+(f.votes||0)+'</td>' +
-        '<td style="font-size:.8rem;color:#666">'+(f.assignee ? esc(f.assignee) : '-')+'</td>' +
-        '<td style="font-family:monospace;font-size:.8rem;color:#888">'+esc(f.client_ip)+'</td>' +
-        '<td style="color:#888;font-size:.8rem">'+dt+'</td>' +
+        '<td style="text-align:center;color:var(--tag-fg);font-size:.85rem">'+(f.votes||0)+'</td>' +
+        '<td style="font-size:.8rem;color:var(--tag-fg)">'+(f.assignee ? esc(f.assignee) : '-')+'</td>' +
+        '<td style="font-family:monospace;font-size:.8rem;color:var(--muted)">'+esc(f.client_ip)+'</td>' +
+        '<td style="color:var(--muted);font-size:.8rem">'+dt+'</td>' +
         '</tr>';
     }).join('');
     updateBulkBar();
@@ -1485,7 +543,7 @@ tr:last-child td{border-bottom:none}
         '<span>项目：<span class="tag">'+esc(f.project_id)+'</span></span>' +
         '<span>IP：'+esc(f.client_ip)+'</span>' +
         '<span>时间：'+dt+'</span>' +
-        '<span><a href="#" onclick="deleteFeedback('+f.id+');return false;" style="color:#c00">删除</a></span>' +
+        '<span><a href="#" data-click="deleteFeedback" data-args="'+f.id+'" style="color:var(--priority-urgent-fg)">删除</a></span>' +
       '</div>';
 
     // Contact info
@@ -1522,26 +580,26 @@ tr:last-child td{border-bottom:none}
       '<option value="resolved"' + (curStatus==='resolved'?' selected':'') + '>已解决</option>' +
       '<option value="closed"' + (curStatus==='closed'?' selected':'') + '>已关闭</option>' +
       '</select>' +
-      '<button onclick="updateFeedbackStatus('+f.id+')">更新</button>' +
+      '<button data-click="updateFeedbackStatus" data-args="'+f.id+'">更新</button>' +
       '</div>';
 
     // Tags
     if (f.tags) {
-      html += '<div style="margin-top:8px;font-size:.8rem;color:#888">标签：' + esc(f.tags) + '</div>';
+      html += '<div style="margin-top:8px;font-size:.8rem;color:var(--muted)">标签：' + esc(f.tags) + '</div>';
     }
 
     // Assignee
     html += '<div class="assignee-row">' +
       '<label>指派给：</label>' +
       '<input type="text" id="assigneeInput" value="'+esc(f.assignee||'')+'" placeholder="处理人">' +
-      '<button onclick="updateAssignee('+f.id+')">保存</button>' +
+      '<button data-click="updateAssignee" data-args="'+f.id+'">保存</button>' +
       '</div>';
 
     // Priority & Duplicate
     var curPriority = f.priority || '';
     html += '<div style="display:flex;align-items:center;gap:12px;margin-top:8px">' +
-      '<label style="font-size:.8rem;color:#666">优先级：</label>' +
-      '<select class="priority-selector" onchange="updatePriority('+f.id+',this.value)">' +
+      '<label style="font-size:.8rem;color:var(--tag-fg)">优先级：</label>' +
+      '<select class="priority-selector" data-change="updatePriority" data-args="'+f.id+',this.value">' +
       '<option value=""' + (curPriority===''?' selected':'') + '>无</option>' +
       '<option value="low"' + (curPriority==='low'?' selected':'') + '>低</option>' +
       '<option value="medium"' + (curPriority==='medium'?' selected':'') + '>中</option>' +
@@ -1550,9 +608,9 @@ tr:last-child td{border-bottom:none}
       '</select>';
     if (f.is_duplicate) {
       html += '<span class="dup-badge">重复 #'+f.duplicate_of+'</span>' +
-        '<button class="btn-sm" onclick="unmarkDuplicate('+f.id+')" style="font-size:.75rem">取消标记</button>';
+        '<button class="btn-sm" data-click="unmarkDuplicate" data-args="'+f.id+'" style="font-size:.75rem">取消标记</button>';
     } else {
-      html += '<button class="btn-sm" onclick="markDuplicate('+f.id+')" style="font-size:.75rem">标记重复</button>';
+      html += '<button class="btn-sm" data-click="markDuplicate" data-args="'+f.id+'" style="font-size:.75rem">标记重复</button>';
     }
     html += '</div>';
 
@@ -1560,11 +618,11 @@ tr:last-child td{border-bottom:none}
     var rmStatusOpts = [['planning','规划中'],['in_progress','进行中'],['released','已发布']];
     var rmOptHtml = rmStatusOpts.map(function(o){ return '<option value="'+o[0]+'"'+(f.roadmap_status===o[0]?' selected':'')+'>'+o[1]+'</option>'; }).join('');
     html += '<div class="roadmap-row" style="display:flex;align-items:center;gap:12px;margin-top:8px;flex-wrap:wrap">' +
-      '<label style="font-size:.8rem;color:#666">公开到路线图：</label>' +
+      '<label style="font-size:.8rem;color:var(--tag-fg)">公开到路线图：</label>' +
       '<label class="toggle"><input type="checkbox" id="roadmapPublic"'+(f.public_on_roadmap?' checked':'')+'><span>'+(f.public_on_roadmap?'是':'否')+'</span></label>' +
-      '<label style="font-size:.8rem;color:#666">看板状态：</label>' +
+      '<label style="font-size:.8rem;color:var(--tag-fg)">看板状态：</label>' +
       '<select id="roadmapStatus">'+rmOptHtml+'</select>' +
-      '<button onclick="saveRoadmap('+f.id+')">保存路线图</button>' +
+      '<button data-click="saveRoadmap" data-args="'+f.id+'">保存路线图</button>' +
       '</div>';
 
     // Files
@@ -1599,7 +657,7 @@ tr:last-child td{border-bottom:none}
       '<textarea id="noteContent" placeholder="添加内部备注或公开回复..."></textarea>' +
       '<div class="note-form-actions">' +
       '<label><input type="checkbox" id="notePublic"> 公开回复（提交者可见）</label>' +
-      '<button onclick="addNote('+f.id+')">提交</button>' +
+      '<button data-click="addNote" data-args="'+f.id+'">提交</button>' +
       '</div></div></div>';
 
     document.getElementById('detailContent').innerHTML = html;
@@ -1644,7 +702,7 @@ tr:last-child td{border-bottom:none}
     var container = document.getElementById('notesList');
     if (!container) return;
     if (notes.length === 0) {
-      container.innerHTML = '<p style="color:#999;font-size:.8rem">暂无备注</p>';
+      container.innerHTML = '<p style="color:var(--hint);font-size:.8rem">暂无备注</p>';
       return;
     }
     container.innerHTML = notes.map(function(n){
@@ -1654,7 +712,7 @@ tr:last-child td{border-bottom:none}
       return '<div class="note-item'+pubClass+'">' +
         '<div class="note-header"><span class="note-author">'+esc(n.author)+badge+'</span>' +
         '<span><span class="note-time">'+dt+'</span> ' +
-        '<button class="note-delete" onclick="deleteNote('+n.id+','+feedbackId+')">删除</button></span></div>' +
+        '<button class="note-delete" data-click="deleteNote" data-args="'+n.id+','+feedbackId+'">删除</button></span></div>' +
         '<div class="note-content">'+esc(n.content)+'</div></div>';
     }).join('');
   }
@@ -1782,20 +840,20 @@ tr:last-child td{border-bottom:none}
     }
     tbody.innerHTML = allProjects.map(function(p){
       var checked = p.is_active ? ' checked' : '';
-      var toggleHtml = '<label class="toggle-switch" onclick="event.stopPropagation()"><input type="checkbox"' + checked + ' onchange="toggleProjectActive(' + p.id + ',this.checked)"><span class="toggle-slider"></span></label>';
+      var toggleHtml = '<label class="toggle-switch" ><input type="checkbox"' + checked + ' data-change="toggleProjectActive" data-args="' + p.id + ',this.checked"><span class="toggle-slider"></span></label>';
       var fbUrl = window.location.origin + '/fb/' + encodeURIComponent(p.slug);
       var fbCount = (typeof p.feedback_count === 'number') ? p.feedback_count : 0;
-      var archivedBadge = p.is_archived ? ' <span style="background:#e2e3e5;color:#383d41;padding:1px 6px;border-radius:3px;font-size:.7rem;margin-left:4px">已归档</span>' : '';
+      var archivedBadge = p.is_archived ? ' <span style="background:var(--priority-low-bg);color:var(--priority-low-fg);padding:1px 6px;border-radius:3px;font-size:.7rem;margin-left:4px">已归档</span>' : '';
       return '<tr>' +
-        '<td><strong>'+esc(p.name)+'</strong>'+archivedBadge + (p.description ? '<br><span style="font-size:.75rem;color:#888">'+esc(p.description)+'</span>' : '') + '</td>' +
+        '<td><strong>'+esc(p.name)+'</strong>'+archivedBadge + (p.description ? '<br><span style="font-size:.75rem;color:var(--muted)">'+esc(p.description)+'</span>' : '') + '</td>' +
         '<td><span class="tag">'+esc(p.slug)+'</span></td>' +
         '<td>'+toggleHtml+'</td>' +
         '<td>'+fbCount+'</td>' +
-        '<td style="font-size:.75rem"><code>'+esc(fbUrl)+'</code> <a href="#" onclick="copyUrl(\''+fbUrl+'\');return false;">复制</a></td>' +
-        '<td><a href="#" onclick="viewProjectDetail('+p.id+');return false;">详情</a> ' +
-        '<a href="#" onclick="editProject('+p.id+');return false;">编辑</a> ' +
-        '<a href="#" onclick="toggleArchive('+p.id+','+!p.is_archived+');return false;">'+(p.is_archived?'取消归档':'归档')+'</a> ' +
-        '<a href="#" onclick="deleteProject('+p.id+',\''+esc(p.name).replace(/'/g,"\\'")+'\');return false;" style="color:#c00">删除</a></td>' +
+        '<td style="font-size:.75rem"><code>'+esc(fbUrl)+'</code> <a href="#" data-click="copyUrl" data-args="\''+fbUrl+'\'">复制</a></td>' +
+        '<td><a href="#" data-click="viewProjectDetail" data-args="'+p.id+'">详情</a> ' +
+        '<a href="#" data-click="editProject" data-args="'+p.id+'">编辑</a> ' +
+        '<a href="#" data-click="toggleArchive" data-args="'+p.id+','+!p.is_archived+'">'+(p.is_archived?'取消归档':'归档')+'</a> ' +
+        '<a href="#" data-click="deleteProject" data-args="'+p.id+'" style="color:var(--priority-urgent-fg)">删除</a></td>' +
         '</tr>';
     }).join('');
   };
@@ -1827,6 +885,9 @@ tr:last-child td{border-bottom:none}
     document.getElementById('pfDesc').value = '';
     document.getElementById('pfActive').checked = true;
     document.getElementById('pfArchived').checked = false;
+    document.getElementById('pfAnnounceLevel').value = 'info';
+    document.getElementById('pfAnnounceType').value = 'text';
+    document.getElementById('pfAnnouncement').value = '';
     document.getElementById('projectModal').classList.add('active');
   };
   window.closeProjectModal = function() {
@@ -1844,47 +905,79 @@ tr:last-child td{border-bottom:none}
     document.getElementById('pfDesc').value = project.description || '';
     document.getElementById('pfActive').checked = project.is_active;
     document.getElementById('pfArchived').checked = project.is_archived || false;
+    // Project announcement
+    var pa = {level:'info', content_type:'text', content:''};
+    if (project.announcement) {
+      try { var parsed = JSON.parse(project.announcement); if (parsed && typeof parsed === 'object') pa = parsed; } catch(e){}
+    }
+    document.getElementById('pfAnnounceLevel').value = pa.level || 'info';
+    document.getElementById('pfAnnounceType').value = pa.content_type || 'text';
+    document.getElementById('pfAnnouncement').value = pa.content || '';
     document.getElementById('projectModal').classList.add('active');
   };
 
   // ========== Project form templates ==========
+  // Each template is now a COMPLETE dynamic form. System-mapped fields (sys:)
+  // drive the backend's title/description/category/notify/uploads so the page
+  // shows no hardcoded defaults — everything is controlled from here.
   var FORM_TEMPLATES = {
+    empty: [
+      {sys:'title', type:'text', name:'title', label:'反馈标题', required:true, placeholder:'请输入反馈标题'},
+      {sys:'description', type:'textarea', name:'description', label:'详细描述', placeholder:'请描述您遇到的问题或建议', rows:5},
+      {sys:'category', type:'select', name:'category', label:'分类'},
+      {sys:'notify', type:'checkbox', name:'notify', label:'接收反馈处理通知'},
+      {sys:'images', type:'image', name:'images', label:'截图上传', multiple:true},
+      {sys:'files', type:'file', name:'files', label:'日志 / 附件', multiple:true}
+    ],
     bug_report: [
+      {sys:'title', type:'text', name:'bug_title', label:'问题标题', required:true, placeholder:'简要描述问题'},
+      {sys:'description', type:'textarea', name:'bug_desc', label:'详细描述', placeholder:'请详细描述遇到的问题、复现步骤等信息', rows:5},
       {type:'select', name:'severity', label:'严重程度', required:true, options:['严重','较高','一般','较低'], width:'half', help_text:'该 Bug 对用户的影响程度'},
       {type:'select', name:'browser', label:'浏览器', options:['Chrome','Firefox','Safari','Edge','其他'], width:'half'},
       {type:'text', name:'os', label:'操作系统', placeholder:'如 Windows 11 / macOS 14', width:'half'},
-      {type:'text', name:'url', label:'问题页面 URL', placeholder:'https://', width:'half'},
+      {type:'url', name:'url', label:'问题页面 URL', placeholder:'https://', width:'half'},
       {type:'textarea', name:'steps', label:'复现步骤', required:true, placeholder:'1. 打开...\n2. 点击...\n3. 出现...', rows:5},
       {type:'textarea', name:'expected', label:'预期行为', placeholder:'应该发生什么？', rows:3},
       {type:'textarea', name:'actual', label:'实际行为', placeholder:'实际发生了什么？', rows:3},
-      {type:'file', name:'screenshot', label:'截图', accept:'.png,.jpg,.gif', multiple:true}
+      {sys:'images', type:'image', name:'screenshots', label:'截图上传', multiple:true},
+      {sys:'notify', type:'checkbox', name:'notify', label:'接收反馈处理通知'}
     ],
     feature_request: [
+      {sys:'title', type:'text', name:'fr_title', label:'功能标题', required:true, placeholder:'一句话概括你的建议'},
+      {sys:'description', type:'textarea', name:'fr_desc', label:'背景与动机', placeholder:'为什么需要这个功能？', rows:4},
       {type:'select', name:'category', label:'分类', required:true, options:['新功能','改进','性能','UI/UX','其他'], width:'half'},
       {type:'select', name:'priority', label:'优先级', options:['急需','重要','可以考虑','低优先级'], width:'half'},
       {type:'textarea', name:'problem', label:'当前问题', placeholder:'目前在使用中遇到了什么不便？', rows:3},
       {type:'textarea', name:'solution', label:'期望方案', required:true, placeholder:'你希望如何解决？', rows:4},
-      {type:'textarea', name:'alternatives', label:'替代方案', placeholder:'是否考虑过其他解决方式？', rows:3}
+      {type:'textarea', name:'alternatives', label:'替代方案', placeholder:'是否考虑过其他解决方式？', rows:3},
+      {sys:'notify', type:'checkbox', name:'notify', label:'接收反馈处理通知'}
     ],
     contact: [
+      {sys:'title', type:'text', name:'contact_title', label:'咨询主题', required:true},
       {type:'text', name:'company', label:'公司/组织', placeholder:'可选', width:'half'},
       {type:'select', name:'department', label:'部门', options:['销售','市场','技术','客服','管理','其他'], width:'half'},
       {type:'select', name:'subject', label:'咨询类型', required:true, options:['商务合作','技术支持','投诉建议','其他']},
-      {type:'textarea', name:'message', label:'留言内容', required:true, placeholder:'请详细描述...', rows:5}
+      {sys:'description', type:'textarea', name:'contact_msg', label:'留言内容', required:true, placeholder:'请详细描述...', rows:5},
+      {sys:'notify', type:'checkbox', name:'notify', label:'接收反馈处理通知'}
     ],
     support: [
+      {sys:'title', type:'text', name:'ticket_title', label:'工单标题', required:true},
       {type:'select', name:'tier', label:'优先级', required:true, options:['P0: 紧急','P1: 高','P2: 中','P3: 低'], width:'half'},
       {type:'select', name:'type', label:'工单类型', required:true, options:['故障报修','使用咨询','账号问题','数据修复','其他'], width:'half'},
       {type:'url', name:'related_url', label:'相关链接', placeholder:'https://', help_text:'问题相关的页面或文档链接'},
-      {type:'textarea', name:'detail', label:'问题描述', required:true, placeholder:'请详细描述您遇到的问题...', rows:6},
-      {type:'file', name:'attachment', label:'附件', multiple:true, help_text:'支持截图、日志文件等'}
+      {sys:'description', type:'textarea', name:'ticket_detail', label:'问题描述', required:true, placeholder:'请详细描述您遇到的问题...', rows:6},
+      {sys:'files', type:'file', name:'attachments', label:'附件', multiple:true, help_text:'支持截图、日志文件等'},
+      {sys:'notify', type:'checkbox', name:'notify', label:'接收反馈处理通知'}
     ],
     product_review: [
+      {sys:'title', type:'text', name:'review_title', label:'评价标题', required:true, placeholder:'一句话总结你的体验'},
       {type:'rating', name:'rating', label:'总体评分', required:true, max:5, icon:'star'},
       {type:'select', name:'recommend', label:'推荐给朋友', options:['肯定会','可能会','不确定','可能不会','肯定不会'], width:'half'},
       {type:'textarea', name:'pros', label:'优点', placeholder:'你最喜欢哪些方面？', rows:3},
       {type:'textarea', name:'cons', label:'不足', placeholder:'哪些方面需要改进？', rows:3},
-      {type:'tags', name:'tags', label:'标签', placeholder:'输入标签后回车'}
+      {type:'tags', name:'tags', label:'标签', placeholder:'输入标签后回车'},
+      {sys:'description', type:'textarea', name:'review_detail', label:'详细评价', rows:4},
+      {sys:'notify', type:'checkbox', name:'notify', label:'接收反馈处理通知'}
     ]
   };
 
@@ -1892,12 +985,12 @@ tr:last-child td{border-bottom:none}
     // Preview the template description
     var tpl = document.getElementById('pfTemplate').value;
     var desc = {
-      empty: '无自定义字段，只包含标题和描述。',
-      bug_report: '收集 Bug 严重程度、浏览器/OS、复现步骤、截图等。',
-      feature_request: '收集功能分类、优先级、当前问题和期望方案。',
-      contact: '收集公司信息、咨询类型和留言内容。',
-      support: '工单式的优先级、类型、问题描述、附件。',
-      product_review: '星级评分、推荐意愿、优缺点标签。'
+      empty: '通用反馈表单：标题、描述、分类、通知订阅、截图与文件上传，全部由后台控制。',
+      bug_report: '收集 Bug 标题、严重程度、浏览器/OS、复现步骤、截图与通知。',
+      feature_request: '收集功能标题、分类、优先级、当前问题与期望方案。',
+      contact: '收集咨询主题、部门、类型与留言内容。',
+      support: '工单式的标题、优先级、类型、问题描述、附件与通知。',
+      product_review: '评价标题、星级评分、推荐意愿、优缺点标签与详细评价。'
     };
     var el = document.getElementById('pfTemplateDesc');
     if (!el) {
@@ -1910,19 +1003,31 @@ tr:last-child td{border-bottom:none}
   };
 
   function getFormTemplate(name) {
-    if (name === 'empty' || !FORM_TEMPLATES[name]) return '[]';
+    if (!FORM_TEMPLATES[name]) return '[]';
     return JSON.stringify(FORM_TEMPLATES[name]);
   }
 
   window.saveProject = async function() {
     var id = document.getElementById('pfId').value;
     var project = id ? allProjects.find(function(p){ return p.id === parseInt(id); }) : null;
+    // Project announcement payload
+    var annContent = document.getElementById('pfAnnouncement').value.trim();
+    var announcement = { enabled: false };
+    if (annContent) {
+      announcement = {
+        enabled: true,
+        level: document.getElementById('pfAnnounceLevel').value,
+        content_type: document.getElementById('pfAnnounceType').value,
+        content: annContent
+      };
+    }
     var body = {
       name: document.getElementById('pfName').value.trim(),
       slug: document.getElementById('pfSlug').value.trim(),
       description: document.getElementById('pfDesc').value.trim(),
       is_active: document.getElementById('pfActive').checked,
       is_archived: document.getElementById('pfArchived').checked,
+      announcement: JSON.stringify(announcement),
       form_schema: project ? (function(){
         var ps = project.form_schema;
         if (typeof ps === 'string') { try { var p = JSON.parse(ps); if (Array.isArray(p)) ps = p; } catch(e){} }
@@ -1940,7 +1045,9 @@ tr:last-child td{border-bottom:none}
     loadProjects(); loadStats();
   };
 
-  window.deleteProject = async function(id, name) {
+  window.deleteProject = async function(id) {
+    var project = (typeof allProjects !== 'undefined') ? allProjects.find(function(p){ return p.id === id; }) : null;
+    var name = project ? project.name : ('#' + id);
     if (!confirm('确认删除项目 "'+name+'"？关联的反馈数据和文件将被一并删除。')) return;
     var d = await apiJSON('/api/v1/admin/projects/' + id + '?confirm=true', {method: 'DELETE'});
     if (!d) return;
@@ -2004,6 +1111,12 @@ tr:last-child td{border-bottom:none}
       if (typeof _ps === 'string') { _ps = JSON.parse(_ps); } // 处理双重编码
       currentFormSchema = Array.isArray(_ps) ? _ps : [];
     } catch(e) { currentFormSchema = []; }
+    // When a project has no configured schema yet, seed the builder with the
+    // default template so admins can see and edit exactly what the public page
+    // will render (instead of an empty editor that hides the default fields).
+    if (currentFormSchema.length === 0) {
+      try { currentFormSchema = JSON.parse(getFormTemplate('empty')); } catch(e) { currentFormSchema = []; }
+    }
     document.getElementById('projectListView').style.display = 'none';
     var dv = document.getElementById('projectDetailView');
     dv.style.display = '';
@@ -2014,35 +1127,37 @@ tr:last-child td{border-bottom:none}
       '<span class="tag">' + esc(project.slug) + '</span>' +
       '<span style="color:'+statusColor+';font-size:.8rem">' + statusText + '</span>' +
       '<span style="flex:1"></span>' +
-      '<button class="btn-sm" onclick="editProject('+project.id+')">编辑基本信息</button></div>';
-    if (project.description) html += '<p style="color:#666;font-size:.85rem;margin-bottom:16px">' + esc(project.description) + '</p>';
+      '<button class="btn-sm" data-click="editProject" data-args="'+project.id+'">编辑基本信息</button></div>';
+    if (project.description) html += '<p style="color:var(--tag-fg);font-size:.85rem;margin-bottom:16px">' + esc(project.description) + '</p>';
     html += '<div class="project-info-grid">' +
-      '<div class="project-info-card"><div class="label">反馈链接</div><div class="value"><code>' + esc(fbUrl) + '</code> <a href="#" onclick="copyUrl(\''+fbUrl+'\');return false;" style="font-size:.75rem">复制</a></div></div>' +
+      '<div class="project-info-card"><div class="label">反馈链接</div><div class="value"><code>' + esc(fbUrl) + '</code> <a href="#" data-click="copyUrl" data-args="\''+fbUrl+'\'" style="font-size:.75rem">复制</a></div></div>' +
       '<div class="project-info-card"><div class="label">反馈数量</div><div class="value" style="font-size:1.2rem;font-weight:700">' + (project.feedback_count || 0) + '</div></div></div>';
     // Form schema builder
     html += '<div class="settings-card" style="margin-bottom:20px"><h2>自定义表单字段</h2>' +
-      '<p style="font-size:.8rem;color:#888;margin-bottom:12px">配置反馈页面除标题和描述外的额外收集字段。</p>' +
+      '<p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">配置反馈页面除标题和描述外的额外收集字段。</p>' +
       '<div class="form-builder" id="formBuilder"><div id="formSchemaListContainer">';
     if (currentFormSchema.length === 0) {
-      html += '<p style="color:#999;font-size:.8rem;margin-bottom:8px">暂无自定义字段。</p>';
+      html += '<p style="color:var(--hint);font-size:.8rem;margin-bottom:8px">暂无自定义字段。</p>';
     } else {
-      var typeLabels = {text:'单行文本',textarea:'多行文本',number:'数字',email:'邮箱',url:'网址',tel:'电话',date:'日期',time:'时间',color:'颜色',select:'下拉选择',checkbox:'复选框',radio:'单选',rating:'评分',toggle:'开关',slider:'滑块',tags:'标签',markdown:'Markdown',file:'文件',image:'图片',hidden:'隐藏',section:'分区',html:'HTML'};
+      var typeLabels = {text:'单行文本',textarea:'多行文本',number:'数字',email:'邮箱',url:'网址',tel:'电话',date:'日期',time:'时间',datetime:'日期时间',month:'月份',color:'颜色',select:'下拉选择',checkbox:'复选框',radio:'单选',rating:'评分',toggle:'开关',slider:'滑块',scale:'量表',tags:'标签',markdown:'Markdown',file:'文件',image:'图片',hidden:'隐藏',section:'分区',html:'HTML',paragraph:'说明文字',divider:'分割线'};
+      var sysLabels = {title:'标题',description:'描述',category:'分类',notify:'通知',images:'图片',files:'文件'};
       currentFormSchema.forEach(function(f, i){
         var typeLabel = typeLabels[f.type] || f.type;
-        var reqMark = f.required ? ' <span style="color:#c00">*</span>' : '';
+        var reqMark = f.required ? ' <span style="color:var(--priority-urgent-fg)">*</span>' : '';
+        var sysBadge = f.sys ? ' <span style="color:#fff;background:#3182ce;border-radius:3px;padding:0 4px;font-size:.7rem;margin-left:4px">系统:' + (sysLabels[f.sys]||f.sys) + '</span>' : '';
         var optInfo = (f.options && f.options.length > 0) ? ' &mdash; ' + f.options.length + ' 个选项' : '';
-        html += '<div class="fb-field"><div class="fb-field-info"><div class="fb-field-title">' + esc(f.label) + reqMark + '</div>' +
+        html += '<div class="fb-field"><div class="fb-field-info"><div class="fb-field-title">' + esc(f.label) + reqMark + sysBadge + '</div>' +
           '<div class="fb-field-meta">' + typeLabel + ' &middot; <code>' + esc(f.name) + '</code>' + optInfo + '</div></div>' +
           '<div class="fb-field-actions">' +
-          (i > 0 ? '<button onclick="moveField('+i+',-1)">&uarr;</button>' : '') +
-          (i < currentFormSchema.length - 1 ? '<button onclick="moveField('+i+',1)">&darr;</button>' : '') +
-          '<button onclick="editField('+i+')">编辑</button>' +
-          '<button class="del" onclick="removeField('+i+')">删除</button></div></div>';
+          (i > 0 ? '<button data-click="moveField" data-args="'+i+',-1">&uarr;</button>' : '') +
+          (i < currentFormSchema.length - 1 ? '<button data-click="moveField" data-args="'+i+',1">&darr;</button>' : '') +
+          '<button data-click="editField" data-args="'+i+'">编辑</button>' +
+          '<button class="del" data-click="removeField" data-args="'+i+'">删除</button></div></div>';
       });
     }
     html += '</div>'; // close formSchemaListContainer
-    html += '<button class="fb-add-btn" onclick="addField()">+ 添加字段</button></div>';
-    html += '<div class="settings-actions"><button class="btn-save" onclick="saveFormSchema()">保存表单配置</button></div></div>';
+    html += '<button class="fb-add-btn" data-click="addField" data-args="">+ 添加字段</button></div>';
+    html += '<div class="settings-actions"><button class="btn-save" data-click="saveFormSchema" data-args="">保存表单配置</button></div></div>';
     html += '<div class="settings-card"><h2>最近反馈</h2><div id="projectFeedbacks"><p class="empty">加载中...</p></div></div>';
     document.getElementById('projectDetailContent').innerHTML = html;
     loadProjectFeedbacks(project.slug);
@@ -2059,7 +1174,7 @@ tr:last-child td{border-bottom:none}
     var html = '<div class="table-wrap"><table><thead><tr><th>ID</th><th>标题</th><th>状态</th><th>IP</th><th>时间</th></tr></thead><tbody>';
     fbs.forEach(function(f){
       var dt = f.created_at ? f.created_at.replace('T',' ').substring(0,16) : '-';
-      html += '<tr class="clickable" onclick="showDetail('+f.id+')"><td>#'+f.id+'</td><td>'+esc(f.title)+'</td><td>'+statusBadge(f.status)+'</td><td style="font-family:monospace;font-size:.8rem;color:#888">'+esc(f.client_ip)+'</td><td style="color:#888;font-size:.8rem">'+dt+'</td></tr>';
+      html += '<tr class="clickable" data-click="showDetail" data-args="'+f.id+'"><td>#'+f.id+'</td><td>'+esc(f.title)+'</td><td>'+statusBadge(f.status)+'</td><td style="font-family:monospace;font-size:.8rem;color:var(--muted)">'+esc(f.client_ip)+'</td><td style="color:var(--muted);font-size:.8rem">'+dt+'</td></tr>';
     });
     html += '</tbody></table></div>';
     container.innerHTML = html;
@@ -2074,7 +1189,15 @@ tr:last-child td{border-bottom:none}
     currentFormSchema[newIndex] = tmp;
     renderFormSchemaList();
   };
-  window.removeField = function(index) { currentFormSchema.splice(index, 1); renderFormSchemaList(); };
+  window.removeField = function(index) {
+    var f = currentFormSchema[index];
+    if (f && f.sys === 'title') {
+      showToast('“标题”为必填系统字段，不能删除（后端提交依赖它）', 'error');
+      return;
+    }
+    currentFormSchema.splice(index, 1);
+    renderFormSchemaList();
+  };
   window.addField = function() {
     editingFieldIndex = -1;
     document.getElementById('fieldEditorTitle').textContent = '添加字段';
@@ -2100,8 +1223,10 @@ tr:last-child td{border-bottom:none}
     document.getElementById('feContent').value = '';
     document.getElementById('feWidth').value = 'full';
     document.getElementById('feHelpText').value = '';
+    document.getElementById('feSys').value = '';
     document.getElementById('feOptionsList').innerHTML = '';
     onFieldTypeChange();
+    onSysChange();
     document.getElementById('fieldEditorModal').classList.add('active');
   };
   window.editField = function(index) {
@@ -2130,7 +1255,9 @@ tr:last-child td{border-bottom:none}
     document.getElementById('feContent').value = field.content || '';
     document.getElementById('feWidth').value = field.width || 'full';
     document.getElementById('feHelpText').value = field.help_text || '';
+    document.getElementById('feSys').value = field.sys || '';
     onFieldTypeChange();
+    onSysChange();
     var optList = document.getElementById('feOptionsList');
     optList.innerHTML = '';
     if (field.options) field.options.forEach(function(opt){ addOptionRow(opt); });
@@ -2139,11 +1266,29 @@ tr:last-child td{border-bottom:none}
   window.closeFieldEditor = function() { document.getElementById('fieldEditorModal').classList.remove('active'); editingFieldIndex = -1; };
   window.onFieldTypeChange = function() {
     var type = document.getElementById('feType').value;
+    var sys = document.getElementById('feSys').value;
+    // When a system mapping is selected, only a constrained set of options apply.
+    if (sys) {
+      document.getElementById('feOptionsRow').style.display = 'none';
+      document.getElementById('fePlaceholderRow').style.display = (sys === 'title' || sys === 'description') ? '' : 'none';
+      document.getElementById('feDefaultRow').style.display = 'none';
+      document.getElementById('feMinMaxStepRow').style.display = 'none';
+      document.getElementById('feMinMaxLenRow').style.display = (sys === 'title') ? '' : 'none';
+      document.getElementById('fePatternRow').style.display = 'none';
+      document.getElementById('feRowsRow').style.display = (sys === 'description') ? '' : 'none';
+      document.getElementById('feAcceptRow').style.display = (sys === 'images' || sys === 'files') ? '' : 'none';
+      document.getElementById('feIconRow').style.display = 'none';
+      document.getElementById('feToggleLabelRow').style.display = 'none';
+      document.getElementById('feCollapsibleRow').style.display = 'none';
+      document.getElementById('feContentRow').style.display = 'none';
+      document.getElementById('feName').parentNode.style.display = '';
+      return;
+    }
     var needsOptions = (type === 'select' || type === 'radio' || type === 'checkbox');
     document.getElementById('feOptionsRow').style.display = needsOptions ? '' : 'none';
     document.getElementById('fePlaceholderRow').style.display = (type === 'text' || type === 'textarea' || type === 'number' || type === 'email' || type === 'url' || type === 'tel') ? '' : 'none';
     document.getElementById('feDefaultRow').style.display = (type !== 'section' && type !== 'html' && type !== 'textarea' && type !== 'markdown') ? '' : 'none';
-    document.getElementById('feMinMaxStepRow').style.display = (type === 'number' || type === 'slider') ? '' : 'none';
+    document.getElementById('feMinMaxStepRow').style.display = (type === 'number' || type === 'slider' || type === 'scale') ? '' : 'none';
     document.getElementById('feMinMaxLenRow').style.display = (type === 'text' || type === 'textarea') ? '' : 'none';
     document.getElementById('fePatternRow').style.display = (type === 'text' || type === 'tel') ? '' : 'none';
     document.getElementById('feRowsRow').style.display = (type === 'textarea') ? '' : 'none';
@@ -2155,11 +1300,22 @@ tr:last-child td{border-bottom:none}
     var nameRow = document.getElementById('feName').parentNode;
     if (nameRow) nameRow.style.display = (type === 'section' || type === 'html') ? 'none' : '';
   };
+  // When the system-mapping select changes, sync the field type and auto-fill the name.
+  window.onSysChange = function() {
+    var sys = document.getElementById('feSys').value;
+    var typeBySys = { title:'text', description:'textarea', category:'select', notify:'checkbox', images:'image', files:'file' };
+    if (sys) {
+      document.getElementById('feType').value = typeBySys[sys] || 'text';
+      if (!document.getElementById('feName').value.trim()) document.getElementById('feName').value = sys;
+      if (sys === 'title') document.getElementById('feRequired').checked = true;
+    }
+    onFieldTypeChange();
+  };
   window.addOptionRow = function(value) {
     var list = document.getElementById('feOptionsList');
     var div = document.createElement('div');
     div.className = 'opt-row';
-    div.innerHTML = '<input type="text" placeholder="选项值" value="' + esc(value || '') + '"><button onclick="this.parentNode.remove()">&times;</button>';
+    div.innerHTML = '<input type="text" placeholder="选项值" value="' + esc(value || '') + '"><button data-remove-parent>&times;</button>';
     list.appendChild(div);
   };
   window.saveFieldEditor = function() {
@@ -2168,11 +1324,13 @@ tr:last-child td{border-bottom:none}
     var label = document.getElementById('feLabel').value.trim();
     var placeholder = document.getElementById('fePlaceholder').value.trim();
     var required = document.getElementById('feRequired').checked;
+    var sysVal = document.getElementById('feSys').value;
     if ((type !== 'section' && type !== 'html') && (!name || !label)) { showToast('字段名称和标签不能为空', 'error'); return; }
     if (name && !/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) { showToast('字段名称须为英文字母开头', 'error'); return; }
     var isDuplicate = currentFormSchema.some(function(f, i){ return f.name === name && i !== editingFieldIndex; });
     if (isDuplicate) { showToast('字段名称已存在', 'error'); return; }
     var field = { type: type, name: name, label: label, required: required };
+    if (sysVal) field.sys = sysVal;
     if (placeholder) field.placeholder = placeholder;
     var def = document.getElementById('feDefault').value.trim();
     if (def) field.default = def;
@@ -2205,7 +1363,7 @@ tr:last-child td{border-bottom:none}
     field.width = document.getElementById('feWidth').value;
     var helpText = document.getElementById('feHelpText').value.trim();
     if (helpText) field.help_text = helpText;
-    var needsOptions = (type === 'select' || type === 'radio' || type === 'checkbox');
+    var needsOptions = (type === 'select' || type === 'radio' || type === 'checkbox') && !sysVal;
     if (needsOptions) {
       var optInputs = document.getElementById('feOptionsList').querySelectorAll('input');
       var options = [];
@@ -2224,20 +1382,22 @@ tr:last-child td{border-bottom:none}
     if (!container) return;
     var html = '';
     if (!currentFormSchema || currentFormSchema.length === 0) {
-      html = '<p style="color:#999;font-size:.8rem;margin-bottom:8px">暂无自定义字段。</p>';
+      html = '<p style="color:var(--hint);font-size:.8rem;margin-bottom:8px">暂无自定义字段。</p>';
     } else {
-      var typeLabels = {text:'单行文本',textarea:'多行文本',number:'数字',email:'邮箱',url:'网址',tel:'电话',date:'日期',time:'时间',color:'颜色',select:'下拉选择',checkbox:'复选框',radio:'单选',rating:'评分',toggle:'开关',slider:'滑块',tags:'标签',markdown:'Markdown',file:'文件',image:'图片',hidden:'隐藏',section:'分区',html:'HTML'};
+      var typeLabels = {text:'单行文本',textarea:'多行文本',number:'数字',email:'邮箱',url:'网址',tel:'电话',date:'日期',time:'时间',datetime:'日期时间',month:'月份',color:'颜色',select:'下拉选择',checkbox:'复选框',radio:'单选',rating:'评分',toggle:'开关',slider:'滑块',scale:'量表',tags:'标签',markdown:'Markdown',file:'文件',image:'图片',hidden:'隐藏',section:'分区',html:'HTML',paragraph:'说明文字',divider:'分割线'};
+      var sysLabels = {title:'标题',description:'描述',category:'分类',notify:'通知',images:'图片',files:'文件'};
       currentFormSchema.forEach(function(f, i){
         var typeLabel = typeLabels[f.type] || f.type;
-        var reqMark = f.required ? ' <span style="color:#c00">*</span>' : '';
+        var reqMark = f.required ? ' <span style="color:var(--priority-urgent-fg)">*</span>' : '';
+        var sysBadge = f.sys ? ' <span style="color:#fff;background:#3182ce;border-radius:3px;padding:0 4px;font-size:.7rem;margin-left:4px">系统:' + (sysLabels[f.sys]||f.sys) + '</span>' : '';
         var optInfo = (f.options && f.options.length > 0) ? ' &mdash; ' + f.options.length + ' 个选项' : '';
-        html += '<div class="fb-field"><div class="fb-field-info"><div class="fb-field-title">' + esc(f.label) + reqMark + '</div>' +
+        html += '<div class="fb-field"><div class="fb-field-info"><div class="fb-field-title">' + esc(f.label) + reqMark + sysBadge + '</div>' +
           '<div class="fb-field-meta">' + typeLabel + ' &middot; <code>' + esc(f.name) + '</code>' + optInfo + '</div></div>' +
           '<div class="fb-field-actions">' +
-          (i > 0 ? '<button onclick="moveField('+i+',-1)">&uarr;</button>' : '') +
-          (i < currentFormSchema.length - 1 ? '<button onclick="moveField('+i+',1)">&darr;</button>' : '') +
-          '<button onclick="editField('+i+')">编辑</button>' +
-          '<button class="del" onclick="removeField('+i+')">删除</button></div></div>';
+          (i > 0 ? '<button data-click="moveField" data-args="'+i+',-1">&uarr;</button>' : '') +
+          (i < currentFormSchema.length - 1 ? '<button data-click="moveField" data-args="'+i+',1">&darr;</button>' : '') +
+          '<button data-click="editField" data-args="'+i+'">编辑</button>' +
+          '<button class="del" data-click="removeField" data-args="'+i+'">删除</button></div></div>';
       });
     }
     container.innerHTML = html;
@@ -2269,7 +1429,7 @@ tr:last-child td{border-bottom:none}
     }
     tbody.innerHTML = logs.map(function(l){
       var dt = l.created_at ? l.created_at.replace('T',' ').substring(0,19) : '-';
-      return '<tr><td>'+dt+'</td><td>'+esc(l.action)+'</td><td>'+esc(l.detail)+'</td><td>'+esc(l.user)+'</td><td style="font-family:monospace;font-size:.8rem;color:#888">'+esc(l.ip)+'</td></tr>';
+      return '<tr><td>'+dt+'</td><td>'+esc(l.action)+'</td><td>'+esc(l.detail)+'</td><td>'+esc(l.user)+'</td><td style="font-family:monospace;font-size:.8rem;color:var(--muted)">'+esc(l.ip)+'</td></tr>';
     }).join('');
   }
 
@@ -2379,7 +1539,38 @@ tr:last-child td{border-bottom:none}
         '<option value="none"'+(d.cdn_provider==='none'?' selected':'')+'>不使用 CDN（直连模式）</option>' +
       '</select><div class="hint">影响如何从 HTTP Header 中获取真实客户端 IP</div></div>' +
       '<div class="settings-field"><label>可信代理 IP</label><input type="text" id="sysTrustedProxies" value="'+esc(d.trusted_proxies||'')+'" placeholder="例: 10.0.0.1, 172.16.0.0/12 或 *"><div class="hint">逗号分隔，仅当请求来自这些代理时才读取 CDN Header。填 * 表示信任所有来源</div></div>';
+    loadAnnouncementSettings();
   }
+
+  async function loadAnnouncementSettings() {
+    var resp = await api('/api/v1/admin/config/announcement');
+    if (!resp) return;
+    var d = await resp.json();
+    document.getElementById('announcementForm').innerHTML =
+      '<div class="settings-field"><div style="display:flex;gap:8px;margin-bottom:6px">' +
+        '<select id="annEnabled" style="flex:0 0 110px"><option value="1"'+(d.enabled?' selected':'')+'>启用</option><option value="0"'+(!d.enabled?' selected':'')+'>停用</option></select>' +
+        '<select id="annLevel" style="flex:0 0 130px"><option value="info"'+(d.level==='info'?' selected':'')+'>ℹ️ 提示</option><option value="warning"'+(d.level==='warning'?' selected':'')+'>⚠️ 警告</option><option value="success"'+(d.level==='success'?' selected':'')+'>✅ 成功</option><option value="danger"'+(d.level==='danger'?' selected':'')+'>🚫 重要</option></select>' +
+        '<select id="annType" style="flex:1"><option value="text"'+(d.content_type!=='html'?' selected':'')+'>纯文本</option><option value="html"'+(d.content_type==='html'?' selected':'')+'>HTML 代码</option></select>' +
+      '</div>' +
+      '<textarea id="annContent" rows="3" placeholder="公告内容">'+esc(d.content||'')+'</textarea>' +
+      '<div class="field-row" style="margin-top:8px"><label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="annDismiss" '+(d.dismissible?'checked':'')+'> 允许用户关闭（关闭后当天同一浏览器不再显示）</label></div>' +
+      '</div>';
+  }
+
+  window.saveAnnouncementSettings = async function() {
+    if (!document.getElementById('annContent')) { showToast('请先等待公告配置加载', 'error'); return; }
+    var body = {
+      enabled: document.getElementById('annEnabled').value === '1',
+      level: document.getElementById('annLevel').value,
+      content_type: document.getElementById('annType').value,
+      content: document.getElementById('annContent').value,
+      dismissible: document.getElementById('annDismiss').checked
+    };
+    var d = await apiJSON('/api/v1/admin/config/announcement', {method:'PUT', body:JSON.stringify(body)});
+    if (!d) return;
+    if (d.error) { showToast(d.error, 'error'); return; }
+    showToast(d.message, 'success');
+  };
 
   window.saveSystemSettings = async function() {
     var d = await apiJSON('/api/v1/admin/config/system', {
@@ -2432,7 +1623,7 @@ tr:last-child td{border-bottom:none}
     var projs = d.projects || [];
     var area = document.getElementById('inviteProjectsArea');
     if (projs.length === 0) {
-      area.innerHTML = '<p style="font-size:.8rem;color:#888">暂无可选项目</p>';
+      area.innerHTML = '<p style="font-size:.8rem;color:var(--muted)">暂无可选项目</p>';
     } else {
       area.innerHTML = projs.map(function(p){ return '<label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:.85rem"><input type="checkbox" class="invite-project-cb" value="' + esc(p.slug) + '"> ' + esc(p.name) + '</label>'; }).join('');
     }
@@ -2473,7 +1664,7 @@ tr:last-child td{border-bottom:none}
     if (invites.length === 0) { container.innerHTML = ''; return; }
     var html = '<h3 style="font-size:.9rem;margin-bottom:8px">邀请记录</h3><table style="width:100%;font-size:.8rem"><thead><tr><th>链接</th><th>角色</th><th>已用/上限</th><th>创建者</th><th>创建时间</th><th>状态</th></tr></thead>';
     invites.forEach(function(inv){
-      var status = inv.expired ? '<span style="color:#999">已失效</span>' : '<span style="color:#2d6">有效</span>';
+      var status = inv.expired ? '<span style="color:var(--hint)">已失效</span>' : '<span style="color:var(--online)">有效</span>';
       html += '<tr><td style="font-family:monospace;font-size:.7rem;max-width:200px;overflow:hidden;text-overflow:ellipsis">' + esc(inv.url) + '</td>' +
         '<td>' + inv.role + '</td>' +
         '<td>' + inv.used_count + '/' + inv.max_uses + '</td>' +
@@ -2500,21 +1691,21 @@ tr:last-child td{border-bottom:none}
     var roleLabels = {admin:'管理员',manager:'经理',editor:'编辑',viewer:'只读'};
     tbody.innerHTML = admins.map(function(a){
       var dt = a.created_at ? a.created_at.replace('T',' ').substring(0,16) : '-';
-      var statusText = a.is_active ? '<span style="color:#1a7a1a">启用</span>' : '<span style="color:#c00">停用</span>';
+      var statusText = a.is_active ? '<span style="color:var(--success-fg)">启用</span>' : '<span style="color:var(--priority-urgent-fg)">停用</span>';
       var isSelf = a.username === currentUsername;
       var email = a.email || '-';
       var roleBadge = '<span class="tag">'+(roleLabels[a.role] || a.role)+(isSelf ? ' <span style="color:var(--muted);font-size:.7rem">(我)</span>' : '')+'</span>';
-      var actions = '<button class="btn-sm" onclick="editAdmin('+a.id+',\''+esc(a.username)+'\',\''+esc(email)+'\',\''+a.role+'\','+a.is_active+')">编辑</button>' +
-        ' <button class="btn-sm" onclick="editMemberGrants('+a.id+')">授权</button>';
+      var actions = '<button class="btn-sm" data-click="editAdmin" data-args="'+a.id+',\''+esc(a.username)+'\',\''+esc(email)+'\',\''+a.role+'\','+a.is_active+'">编辑</button>' +
+        ' <button class="btn-sm" data-click="editMemberGrants" data-args="'+a.id+'">授权</button>';
       if (!isSelf) {
-        actions += ' <button class="btn-sm btn-danger" onclick="deleteAdmin('+a.id+',\''+esc(a.username)+'\')">删除</button>';
+        actions += ' <button class="btn-sm btn-danger" data-click="deleteAdmin" data-args="'+a.id+',\''+esc(a.username)+'\'">删除</button>';
       }
       return '<tr>' +
-        '<td>'+esc(a.username)+(isSelf ? ' <span style="color:#888;font-size:.75rem">(我)</span>' : '')+'</td>' +
-        '<td style="color:#888;font-size:.8rem">'+esc(email)+'</td>' +
+        '<td>'+esc(a.username)+(isSelf ? ' <span style="color:var(--muted);font-size:.75rem">(我)</span>' : '')+'</td>' +
+        '<td style="color:var(--muted);font-size:.8rem">'+esc(email)+'</td>' +
         '<td>'+roleBadge+'</td>' +
         '<td>'+statusText+'</td>' +
-        '<td style="color:#888;font-size:.8rem">'+dt+'</td>' +
+        '<td style="color:var(--muted);font-size:.8rem">'+dt+'</td>' +
         '<td>'+actions+'</td>' +
         '</tr>';
     }).join('');
@@ -2596,17 +1787,17 @@ tr:last-child td{border-bottom:none}
       if (pResp) { var pd = await pResp.json(); allProjects = pd.projects || []; }
     }
     if (!allProjects || allProjects.length === 0) {
-      area.innerHTML = '<p style="font-size:.8rem;color:#999">暂无可用项目</p>';
+      area.innerHTML = '<p style="font-size:.8rem;color:var(--hint)">暂无可用项目</p>';
       return;
     }
     var html = '';
     allProjects.forEach(function(p){
-      html += '<div class="grant-project-row" style="margin-bottom:8px;padding:6px;border:1px solid #e8e8e8;border-radius:4px">';
+      html += '<div class="grant-project-row" style="margin-bottom:8px;padding:6px;border:1px solid var(--border-soft);border-radius:4px">';
       html += '<label style="display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:500">';
       html += '<input type="checkbox" class="cgrant-proj-cb" data-slug="'+esc(p.slug)+'" style="width:auto"> ';
-      html += esc(p.name)+' <span style="color:#999;font-size:.72rem">('+esc(p.slug)+')</span></label>';
+      html += esc(p.name)+' <span style="color:var(--hint);font-size:.72rem">('+esc(p.slug)+')</span></label>';
       html += '<div class="cgrant-detail" style="display:none;margin-top:6px;padding-left:20px">';
-      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.78rem;color:#666">角色:</span>';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.78rem;color:var(--tag-fg)">角色:</span>';
       html += '<select class="cgrant-role" data-slug="'+esc(p.slug)+'" style="font-size:.78rem;padding:2px 4px">';
       html += '<option value="viewer">只读</option><option value="editor" selected>编辑</option><option value="manager">经理</option></select></div>';
       html += '<div class="cgrant-cats" data-slug="'+esc(p.slug)+'" style="font-size:.78rem;margin-top:4px"></div>';
@@ -2628,8 +1819,8 @@ tr:last-child td{border-bottom:none}
     if (cResp) { var cd = await cResp.json(); cats = (cd.categories||[]).filter(function(c){ return c.is_active; }); }
     var area = document.querySelector('.cgrant-cats[data-slug="'+CSS.escape(slug)+'"]');
     if (!area) return;
-    if (cats.length === 0) { area.innerHTML = '<span style="color:#999">该项目暂无分类</span>'; return; }
-    var h = '<div style="color:#999;font-size:.72rem;margin-bottom:2px">分类(不选=全部):</div>';
+    if (cats.length === 0) { area.innerHTML = '<span style="color:var(--hint)">该项目暂无分类</span>'; return; }
+    var h = '<div style="color:var(--hint);font-size:.72rem;margin-bottom:2px">分类(不选=全部):</div>';
     cats.forEach(function(cat){
       h += '<label style="display:inline-flex;align-items:center;gap:3px;margin-right:6px;font-size:.75rem;cursor:pointer">';
       h += '<input type="checkbox" class="cgrant-cat" data-slug="'+esc(slug)+'" data-cat="'+esc(cat.key)+'" style="width:auto"> '+esc(cat.name)+'</label>';
@@ -2834,6 +2025,7 @@ tr:last-child td{border-bottom:none}
   loadCurrentUser();
   loadStats();
   restoreFilters();
+  populateCategoryFilter();
   loadFeedbacks();
   loadChart();
   fetchCSRFToken();
@@ -2891,7 +2083,7 @@ tr:last-child td{border-bottom:none}
     if (!Array.isArray(tokens)) tokens = [];
     var container = document.getElementById('tokenList');
     if (!tokens || tokens.length === 0) {
-      container.innerHTML = '<p style="font-size:.85rem;color:#999">暂无 API Token</p>';
+      container.innerHTML = '<p style="font-size:.85rem;color:var(--hint)">暂无 API Token</p>';
       return;
     }
     var html = '<table style="width:100%"><thead><tr><th>名称</th><th>Token</th><th>项目</th><th>限速/时</th><th>配额/日</th><th>状态</th><th>最后使用</th><th>操作</th></tr></thead><tbody>';
@@ -2902,13 +2094,13 @@ tr:last-child td{border-bottom:none}
         '<td>' + esc(t.name) + '</td>' +
         '<td><code style="font-size:.8rem">' + esc(masked) + '</code></td>' +
         '<td>' + esc(t.project_id || '全部') + '</td>' +
-        '<td style="font-size:.8rem;color:#666">' + (t.rate_limit ? t.rate_limit : '∞') + '</td>' +
-        '<td style="font-size:.8rem;color:#666">' + (t.quota_per_day ? t.quota_per_day : '∞') + '</td>' +
-        '<td>' + (t.is_active ? '<span style="color:green">启用</span>' : '<span style="color:#999">禁用</span>') + '</td>' +
-        '<td style="font-size:.8rem;color:#888">' + esc(lastUsed) + '</td>' +
+        '<td style="font-size:.8rem;color:var(--tag-fg)">' + (t.rate_limit ? t.rate_limit : '∞') + '</td>' +
+        '<td style="font-size:.8rem;color:var(--tag-fg)">' + (t.quota_per_day ? t.quota_per_day : '∞') + '</td>' +
+        '<td>' + (t.is_active ? '<span style="color:green">启用</span>' : '<span style="color:var(--hint)">禁用</span>') + '</td>' +
+        '<td style="font-size:.8rem;color:var(--muted)">' + esc(lastUsed) + '</td>' +
         '<td>' +
-          '<button class="btn-sm" onclick="toggleToken(' + t.id + ',' + !t.is_active + ')" style="font-size:.75rem">' + (t.is_active ? '禁用' : '启用') + '</button> ' +
-          '<button class="btn-sm btn-danger" onclick="deleteToken(' + t.id + ')" style="font-size:.75rem">删除</button>' +
+          '<button class="btn-sm" data-click="toggleToken" data-args="' + t.id + ',' + !t.is_active + '" style="font-size:.75rem">' + (t.is_active ? '禁用' : '启用') + '</button> ' +
+          '<button class="btn-sm btn-danger" data-click="deleteToken" data-args="' + t.id + '" style="font-size:.75rem">删除</button>' +
         '</td></tr>';
     });
     html += '</tbody></table>';
@@ -2968,17 +2160,17 @@ tr:last-child td{border-bottom:none}
     var subs = d.subscriptions || [];
     var container = document.getElementById('webhookList');
     if (!container) return;
-    if (subs.length === 0) { container.innerHTML = '<p style="font-size:.85rem;color:#999">暂无 Webhook 订阅</p>'; return; }
+    if (subs.length === 0) { container.innerHTML = '<p style="font-size:.85rem;color:var(--hint)">暂无 Webhook 订阅</p>'; return; }
     var html = '<table style="width:100%"><thead><tr><th>ID</th><th>项目</th><th>URL</th><th>事件</th><th>状态</th><th>操作</th></tr></thead><tbody>';
     subs.forEach(function(s){
       html += '<tr>' +
         '<td>'+s.id+'</td>' +
         '<td>'+esc(s.project_slug || '全部')+'</td>' +
         '<td style="font-size:.8rem;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><code>'+esc(s.url)+'</code></td>' +
-        '<td style="font-size:.8rem;color:#666">'+esc(s.events || '*')+'</td>' +
-        '<td>'+(s.is_active ? '<span style="color:green">启用</span>' : '<span style="color:#999">禁用</span>')+'</td>' +
-        '<td><button class="btn-sm" onclick="editWebhook('+s.id+')" style="font-size:.75rem">编辑</button> ' +
-        '<button class="btn-sm btn-danger" onclick="deleteWebhook('+s.id+')" style="font-size:.75rem">删除</button></td>' +
+        '<td style="font-size:.8rem;color:var(--tag-fg)">'+esc(s.events || '*')+'</td>' +
+        '<td>'+(s.is_active ? '<span style="color:green">启用</span>' : '<span style="color:var(--hint)">禁用</span>')+'</td>' +
+        '<td><button class="btn-sm" data-click="editWebhook" data-args="'+s.id+'" style="font-size:.75rem">编辑</button> ' +
+        '<button class="btn-sm btn-danger" data-click="deleteWebhook" data-args="'+s.id+'" style="font-size:.75rem">删除</button></td>' +
         '</tr>';
     });
     html += '</tbody></table>';
@@ -3143,7 +2335,7 @@ tr:last-child td{border-bottom:none}
     var d = await resp.json();
     var bk = d.backups || [];
     if (bk.length === 0) {
-      container.innerHTML = '<p style="font-size:.8rem;color:#888">暂无备份文件。</p>';
+      container.innerHTML = '<p style="font-size:.8rem;color:var(--muted)">暂无备份文件。</p>';
       return;
     }
     var html = '<table style="width:100%;font-size:.8rem"><tr><th>文件名</th><th>大小</th><th>时间</th><th>操作</th></tr>';
@@ -3198,7 +2390,7 @@ tr:last-child td{border-bottom:none}
 
     var html = '<div style="max-height:400px;overflow-y:auto">';
     if (allProjects.length === 0) {
-      html += '<p style="color:#888;font-size:.85rem">暂无可用项目</p>';
+      html += '<p style="color:var(--muted);font-size:.85rem">暂无可用项目</p>';
     }
     allProjects.forEach(function(p){
       var g = grantMap[p.slug] || null;
@@ -3210,25 +2402,25 @@ tr:last-child td{border-bottom:none}
         return '<option value="'+r+'"'+sel+'>'+label+'</option>';
       }).join('');
 
-      html += '<div class="grant-project-row" style="margin-bottom:8px;padding:8px;border:1px solid #e0e0e0;border-radius:4px">';
+      html += '<div class="grant-project-row" style="margin-bottom:8px;padding:8px;border:1px solid var(--border-soft);border-radius:4px">';
       html += '<label style="display:flex;align-items:center;gap:6px;font-size:.85rem;font-weight:500">';
       html += '<input type="checkbox" class="grant-proj-cb" data-slug="'+esc(p.slug)+'"'+checked+' style="width:auto"> ';
-      html += esc(p.name) + ' <span style="color:#999;font-size:.75rem">('+esc(p.slug)+')</span></label>';
+      html += esc(p.name) + ' <span style="color:var(--hint);font-size:.75rem">('+esc(p.slug)+')</span></label>';
       html += '<div class="grant-project-detail" style="margin-top:6px;padding-left:22px;'+(g?'':'display:none')+'">';
-      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.8rem;color:#666">角色:</span>';
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="font-size:.8rem;color:var(--tag-fg)">角色:</span>';
       html += '<select class="grant-role-sel" data-slug="'+esc(p.slug)+'" style="font-size:.8rem;padding:2px 4px">'+roleOptions+'</select></div>';
-      html += '<div class="grant-cats-area" data-slug="'+esc(p.slug)+'" style="font-size:.8rem;margin-top:4px"><span style="color:#888">加载分类中...</span></div>';
+      html += '<div class="grant-cats-area" data-slug="'+esc(p.slug)+'" style="font-size:.8rem;margin-top:4px"><span style="color:var(--muted)">加载分类中...</span></div>';
       html += '</div></div>';
     });
     html += '</div>';
-    html += '<p style="font-size:.75rem;color:#888;margin-top:8px">不勾选 = 无访问权限。勾选后设置角色和可选分类限制（不选分类 = 所有分类）。</p>';
+    html += '<p style="font-size:.75rem;color:var(--muted);margin-top:8px">不勾选 = 无访问权限。勾选后设置角色和可选分类限制（不选分类 = 所有分类）。</p>';
 
     var overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
     overlay.innerHTML = '<div class="modal" style="max-width:520px"><h3>授权管理</h3>' +
       '<div id="grantList">' + html + '</div>' +
-      '<div class="modal-actions"><button class="btn-sm" onclick="this.closest(\'.modal-overlay\').remove()">取消</button>' +
-      '<button class="btn-save" onclick="saveMemberGrants(' + adminId + ',this)">保存</button></div></div>';
+      '<div class="modal-actions"><button class="btn-sm" data-remove-closest=".modal-overlay">取消</button>' +
+      '<button class="btn-save" data-click="saveMemberGrants" data-args="' + adminId + ',this">保存</button></div></div>';
     document.body.appendChild(overlay);
 
     // Load categories for a project and render checkboxes
@@ -3248,10 +2440,10 @@ tr:last-child td{border-bottom:none}
       var area = overlay.querySelector('.grant-cats-area[data-slug="'+CSS.escape(slug)+'"]');
       if (!area) return;
       if (cats.length === 0) {
-        area.innerHTML = '<span style="color:#888">该项目暂无分类，授权覆盖所有反馈</span>';
+        area.innerHTML = '<span style="color:var(--muted)">该项目暂无分类，授权覆盖所有反馈</span>';
         return;
       }
-      var h = '<div style="color:#666;font-size:.75rem;margin-bottom:2px">分类限制（不选 = 全部）:</div>';
+      var h = '<div style="color:var(--tag-fg);font-size:.75rem;margin-bottom:2px">分类限制（不选 = 全部）:</div>';
       cats.forEach(function(cat){
         var checked = selectedCats.indexOf(cat.key) >= 0 ? ' checked' : '';
         h += '<label style="display:inline-flex;align-items:center;gap:3px;margin-right:8px;font-size:.78rem;cursor:pointer">';
@@ -3314,7 +2506,7 @@ tr:last-child td{border-bottom:none}
     showToast(d.message || '授权已更新', 'success');
     overlay.remove();
   };
+
+
+
 })();
-</script>
-</body>
-</html>

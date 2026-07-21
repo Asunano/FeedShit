@@ -47,6 +47,15 @@ FeedShit 是一个用 Go 编写的**单二进制、零外部依赖**的多项目
 - **审计日志** — 记录登录、增删改、导入导出等关键操作
 - **仪表盘与图表** — 总量/今日/项目统计、每日趋势、状态分布、分类分布
 
+**路线图 / 投票 / 满意度（社区互动）**
+- **公开路线图** — 管理员可将反馈标记为「公开到路线图」并设置看板状态（规划中 / 进行中 / 已发布）；公开页 `/p/{slug}/roadmap` 展示，按票数排序
+- **反馈投票** — 公众可对公开反馈投票（`POST /api/v1/feedback/{id}/vote`），匿名投票按 IP+UA 去重并有每 24h 限额，防刷票
+- **CSAT 满意度评分** — 提交者凭跟踪令牌在 `/track` 对处理结果打分（`POST /api/v1/track/{token}/rating`），后台可按整体 / 处理人统计平均分（`database.GetCSATStats`）
+- **后台反馈列表** — 支持按项目 / 状态 / 优先级 / 指派 / 分类多维筛选与分页，项目列显示可读名称（而非 slug）
+
+**邀请与成员管理**
+- **邀请注册** — 管理员生成邀请令牌（`POST /api/v1/admin/invitations`），受邀者访问 `/invite/{token}` 注册为管理员账号；令牌默认 7 天有效期，可显式设为永不过期
+
 **集成与通知**
 - **邮件通知（SMTP）** — 新反馈通知管理员、状态变更/公开回复通知提交者；支持自定义邮件模板（占位符 `{{project}}` `{{title}}` `{{description}}` `{{status}}` `{{admin_url}}` 等，用户内容做 HTML 转义）
 - **Webhook 通知** — 自动适配飞书 / 钉钉 / 企业微信 / Slack / 通用 JSON，事件含新反馈、状态变更、备注回复、优先级变更、指派变更
@@ -109,7 +118,7 @@ flowchart LR
 │   ├── middleware/          # 认证 / CSRF / PoW / 限速 / RBAC
 │   ├── report/              # 每周周报邮件（统计 + 模板 + 分布式锁）
 │   └── routes/              # 路由注册 + 前端 HTML
-│       └── frontend/        # 内嵌前端页面
+│       └── frontend/        # 内嵌前端页面（index/setup/login/feedback/track/admin/register/roadmap）
 ├── test/                    # 本地测试工具（不入库）
 ├── deliverables/            # 设计文档（不入库）
 ├── Dockerfile               # 多阶段 alpine 构建，CGO_ENABLED=0
@@ -134,6 +143,9 @@ SQLite 数据库位于 `./data/feedbacks.db`（WAL 模式，单连接 + 手动 R
 | `audit_logs` | 操作审计日志 |
 | `slug_history` | 项目 slug 改名后的重定向历史 |
 | `job_locks` | 分布式作业锁（key/token/locked_until，用于周报多实例去重） |
+| `feedback_votes` | 反馈投票记录（feedback_id / voter_key 去重；匿名投票按 IP+UA 计数） |
+| `feedback_ratings` | CSAT 满意度评分（feedback_id / tracking_token / score 1–5） |
+| `invitation_tokens` | 邀请注册令牌（token / role / expires_at / used / created_by） |
 
 ## API 参考
 
@@ -152,6 +164,11 @@ SQLite 数据库位于 `./data/feedbacks.db`（WAL 模式，单连接 + 手动 R
 | GET | `/api/v1/track/feedback?token=` | 提交者按令牌查询反馈状态与公开备注 |
 | POST | `/api/v1/track/reply` | 提交者追加回复（限速） |
 | POST | `/api/v1/external/feedback` | 外部系统经 `Bearer` API Token 提交 |
+| GET | `/api/v1/roadmap` | 公开路线图数据（按票数排序的已公开反馈） |
+| POST | `/api/v1/feedback/{id}/vote` | 公众为反馈投票（限速 + 匿名去重） |
+| GET | `/invite/{token}` | 邀请注册页面 |
+| POST | `/api/v1/invite/{token}/register` | 受邀者注册管理员账号 |
+| POST | `/api/v1/track/{token}/rating` | 提交者提交满意度评分（限速） |
 
 ### 管理接口（认证 + CSRF）
 | 分组 | 路径（前缀 `/api/v1/admin`） | 角色要求 |
@@ -159,6 +176,8 @@ SQLite 数据库位于 `./data/feedbacks.db`（WAL 模式，单连接 + 手动 R
 | 会话 | `/login`、`/logout`、`/csrf-token`、`/me` | 登录公开，其余已登录 |
 | 仪表盘 | `/stats`、`/project-stats`、`/chart-data` | 已登录 |
 | 反馈 | `/feedbacks`、`/feedbacks/export`(CSV)、`/feedbacks/:id` 及 `status`/`assignee`/`priority`/`category` 修改、`/feedbacks/:id/notes`、`/feedbacks/bulk-*`、`/feedbacks/:id/similar`(候选相似)、`/feedbacks/:id/duplicate`(标记合并) | 写操作需 editor+ |
+| 路线图 | `/feedbacks/:id/roadmap`(PUT，设置公开到路线图 + 看板状态) | admin |
+| 邀请 | `/invitations`(GET/POST) | admin |
 | 项目 | `/projects`(GET/POST/PUT)、`/projects/:id/archive`、删除 | POST/PUT 需 editor+ |
 | 分类 | `/projects/:id/categories`、`/categories/:id` | 增删改需 editor+ |
 | FAQ 知识库 | `/projects/:slug/faqs`(GET/POST/PUT/DELETE) | editor+ |

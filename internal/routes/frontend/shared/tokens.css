@@ -1,0 +1,169 @@
+/* FeedShit 设计系统 —— 唯一 token 来源（所有内嵌页面统一引入）
+ * 颜色值沿用各页面既有实值，避免视觉回归；新增 --accent/--hint 等语义变量。
+ * 三套主题：亮（:root）/ 暗（[data-theme="dark"] 与 prefers-color-scheme:dark 媒体查询）
+ */
+
+:root {
+  /* 表面与文本 */
+  --bg: #f5f5f5;
+  --fg: #333;
+  --panel: #fff;
+  --card-bg: #fff;
+  --card-border: #e2e2e2;
+  --subtle: #fafafa;
+  --border: #e2e2e2;
+  --input-border: #d0d0d0;
+  --hover: #f0f0f0;
+
+  /* 品牌与主操作 */
+  --primary: #333;
+  --primary-fg: #fff;
+  --primary-hover: #555;
+  --accent: #e53e3e;
+  --accent-hover: #c53030;
+  --link: #2563eb;
+  --muted: #888;
+  --hint: #999;
+  --field-label: #555;
+  --field-fg: #333;
+
+  /* 语义状态 */
+  --danger: #c00;
+  --danger-bg: #fde8e8;
+  --danger-border: #f5c6c6;
+  --success-bg: #e6f9e6;
+  --success-fg: #1a7a1a;
+  --success-border: #b2e0b2;
+
+  /* 备注气泡（track 页） */
+  --note-bg: #f9f9f9;
+  --note-border: #eee;
+  --note-admin-bg: #f0f7ff;
+  --note-admin-border: #d0e3f7;
+
+  /* 标签 / 徽章 */
+  --tag-bg: #eee;
+  --tag-fg: #666;
+
+  /* 反馈状态色 */
+  --status-pending-bg: #fff3cd;   --status-pending-fg: #856404;
+  --status-processing-bg: #cce5ff; --status-processing-fg: #004085;
+  --status-resolved-bg: #d4edda;  --status-resolved-fg: #155724;
+  --status-closed-bg: #e2e3e5;    --status-closed-fg: #383d41;
+
+  /* 优先级色 */
+  --priority-urgent-bg: #fde8e8;  --priority-urgent-fg: #c00;
+  --priority-high-bg: #fff3cd;    --priority-high-fg: #856404;
+  --priority-medium-bg: #cce5ff;  --priority-medium-fg: #004085;
+  --priority-low-bg: #e2e3e5;     --priority-low-fg: #383d41;
+
+  /* 组件专用 */
+  --code-bg: #1e1e1e;  --code-fg: #d4d4d4;   /* 日志/代码预览（明暗同色，刻意保留） */
+  --disabled: #aaa;                              /* 禁用态文本 */
+  --bulk-bg: #f0f4ff;  --bulk-border: #c3d4f7;  /* 批量操作条 */
+
+  /* 页面本地语义色（统一收敛：亮色值=原 hex，零视觉回归；暗色自动主题化） */
+  --border-soft: #e0e0e0;   /* 浅分隔线/边框（#ddd/#e8e8e8/#e0e0e0/#cfcfcf/#e4e4e4） */
+  --border-muted: #ccc;     /* 略深边框（#ccc） */
+  --amber-bg: #fff8e1; --amber-fg: #664d03; --amber-border: #ffeeba;   /* 警示/FAQ 琥珀色 */
+  --online: #22c55e;        /* 在线/成功绿点（#22c55e/#2d6/#2a9d2a） */
+  --brand-blue: #3b82f6; --brand-blue-fg: #fff;   /* 蓝强调（roadmap/admin 激活，#3b82f6/#5b9bff） */
+  --chart-orange: #f0a020;  /* 图表橙（#f0a020） */
+  --notice-bg: #f5f0d0; --notice-fg: #8a6d00; --notice-border: #f0d060; /* setup 提示条 */
+  --silence-fg: #4a4a4a;    /* 静默文本（#4a4a4a） */
+  --danger-strong-fg: #8a3030; --danger-strong-bg: #ffe3e3;  /* 强危险（删除确认 #8a3030/#ffd6d6） */
+  --field-input-bg: #fff;   /* 输入框底色（暗色覆盖为 #3d3d3d） */
+  --muted-2: #8888aa;       /* 次级静默（track 载入圈 #8888aa） */
+
+  /* 间距（4px 栅格） */
+  --space-1: 4px;  --space-2: 8px;  --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px; --space-8: 32px; --space-12: 48px; --space-16: 64px;
+
+  /* 圆角 / 阴影 / 层级 */
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px;
+  --shadow-1: 0 1px 2px rgba(0,0,0,.06);
+  --shadow-2: 0 4px 12px rgba(0,0,0,.10);
+  --z-header: 100; --z-modal: 1000; --z-toast: 1100;
+
+  /* 容器 */
+  --container-sm: 640px; --container-md: 768px;
+  --container-lg: 1024px; --container-xl: 1280px;
+
+  /* 排版比例 */
+  --text-xs: .75rem;  --text-sm: .875rem; --text-base: 1rem;   --text-lg: 1.125rem;
+  --text-xl: 1.25rem; --text-2xl: 1.5rem;  --text-3xl: 1.875rem;
+}
+
+/* 暗色：系统偏好（未手动选定主题时跟随系统） */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1a1a; --fg: #e2e2e2; --panel: #242424; --card-bg: #16213e; --card-border: #2a2a4a;
+    --subtle: #2c2c2c; --border: #383838; --input-border: #3a3a5a; --hover: #333;
+    --primary: #2d2d2d; --primary-fg: #fff; --primary-hover: #444;
+    --accent: #ff6b6b; --accent-hover: #c53030;
+    --link: #7fb6eb; --muted: #9a9a9a; --hint: #6b7280; --field-label: #bbb; --field-fg: #e2e2e2;
+    --danger: #ff6b6b; --danger-bg: #3a1f1f; --danger-border: #5a2a2a;
+    --success-bg: #1c3a28; --success-fg: #7ac99a; --success-border: #2a4a3a;
+    --note-bg: #1e1e3a; --note-border: #2a2a4a; --note-admin-bg: #1a2a4a; --note-admin-border: #2a4a6a;
+    --tag-bg: #333; --tag-fg: #bbb;
+    --status-pending-bg: #4a4318;  --status-pending-fg: #f1d56e;
+    --status-processing-bg: #1f3a56; --status-processing-fg: #7fb6eb;
+    --status-resolved-bg: #1c3a28; --status-resolved-fg: #7ac99a;
+    --status-closed-bg: #3a3a3a;   --status-closed-fg: #bbb;
+    --priority-urgent-bg: #4a2222; --priority-urgent-fg: #ff8a8a;
+    --priority-high-bg: #4a4318;   --priority-high-fg: #f1d56e;
+    --priority-medium-bg: #1f3a56; --priority-medium-fg: #7fb6eb;
+    --priority-low-bg: #3a3a3a;    --priority-low-fg: #bbb;
+    --border-soft: #2a2a4a; --border-muted: #3a3d42;
+    --amber-bg: #3a3418; --amber-fg: #f1d56e; --amber-border: #5a5028;
+    --online: #4ade80;
+    --brand-blue: #5b9bff; --brand-blue-fg: #06243f;
+    --chart-orange: #fbbf24;
+    --notice-bg: #3a3418; --notice-fg: #f1d56e; --notice-border: #5a5028;
+    --silence-fg: #9a9a9a;
+    --danger-strong-fg: #ff9b9b; --danger-strong-bg: #4a2222;
+    --field-input-bg: #3d3d3d;
+    --muted-2: #8888aa;
+    --success-border: #2c5a40;
+    --shadow-1: 0 1px 2px rgba(0,0,0,.4); --shadow-2: 0 4px 12px rgba(0,0,0,.5);
+  }
+}
+
+/* 暗色：显式选定（data-theme="dark"，固定暗色不随系统变化） */
+[data-theme="dark"] {
+  --bg: #1a1a1a; --fg: #e2e2e2; --panel: #242424; --card-bg: #16213e; --card-border: #2a2a4a;
+  --subtle: #2c2c2c; --border: #383838; --input-border: #3a3a5a; --hover: #333;
+  --primary: #2d2d2d; --primary-fg: #fff; --primary-hover: #444;
+  --accent: #ff6b6b; --accent-hover: #c53030;
+  --link: #7fb6eb; --muted: #9a9a9a; --hint: #6b7280; --field-label: #bbb; --field-fg: #e2e2e2;
+  --danger: #ff6b6b; --danger-bg: #3a1f1f; --danger-border: #5a2a2a;
+  --success-bg: #1c3a28; --success-fg: #7ac99a; --success-border: #2a4a3a;
+  --note-bg: #1e1e3a; --note-border: #2a2a4a; --note-admin-bg: #1a2a4a; --note-admin-border: #2a4a6a;
+  --tag-bg: #333; --tag-fg: #bbb;
+  --status-pending-bg: #4a4318;  --status-pending-fg: #f1d56e;
+  --status-processing-bg: #1f3a56; --status-processing-fg: #7fb6eb;
+  --status-resolved-bg: #1c3a28; --status-resolved-fg: #7ac99a;
+  --status-closed-bg: #3a3a3a;   --status-closed-fg: #bbb;
+  --priority-urgent-bg: #4a2222; --priority-urgent-fg: #ff8a8a;
+  --priority-high-bg: #4a4318;   --priority-high-fg: #f1d56e;
+  --priority-medium-bg: #1f3a56; --priority-medium-fg: #7fb6eb;
+  --priority-low-bg: #3a3a3a;    --priority-low-fg: #bbb;
+    --border-soft: #2a2a4a; --border-muted: #3a3d42;
+    --amber-bg: #3a3418; --amber-fg: #f1d56e; --amber-border: #5a5028;
+    --online: #4ade80;
+    --brand-blue: #5b9bff; --brand-blue-fg: #06243f;
+    --chart-orange: #fbbf24;
+    --notice-bg: #3a3418; --notice-fg: #f1d56e; --notice-border: #5a5028;
+    --silence-fg: #9a9a9a;
+    --danger-strong-fg: #ff9b9b; --danger-strong-bg: #4a2222;
+    --field-input-bg: #3d3d3d;
+    --muted-2: #8888aa;
+    --success-border: #2c5a40;
+
+  /* 组件专用（暗色） */
+  --code-bg: #1e1e1e;  --code-fg: #d4d4d4;
+  --disabled: #777;
+  --bulk-bg: #1a2740;  --bulk-border: #2a3f66;
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,.4); --shadow-2: 0 4px 12px rgba(0,0,0,.5);
+}

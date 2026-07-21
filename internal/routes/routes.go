@@ -1,10 +1,12 @@
 package routes
 
 import (
+	"bytes"
 	"crypto/rand"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
+	"html/template"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -44,22 +46,31 @@ func Register(r *gin.Engine, application *app.App) {
 		panic("Failed to get embedded frontend: " + err.Error())
 	}
 
-	// Read HTML files at startup
-	indexHTML := mustReadFS(frontendSub, "index.html")
-	feedbackHTML := mustReadFS(frontendSub, "feedback.html")
-	loginHTML := mustReadFS(frontendSub, "login.html")
-	setupHTML := mustReadFS(frontendSub, "setup.html")
-	adminHTML := mustReadFS(frontendSub, "admin.html")
-	trackHTML := mustReadFS(frontendSub, "track.html")
-	roadmapHTML := mustReadFS(frontendSub, "roadmap.html")
-	registerHTML := mustReadFS(frontendSub, "register.html")
+	// 共享静态资源（设计系统 tokens / 组件 / 统一主题管理），随 frontend/* 一并嵌入，无构建步骤
+	sharedSub, err := fs.Sub(frontendSub, "shared")
+	if err != nil {
+		panic("Failed to get embedded shared assets: " + err.Error())
+	}
+	sharedFS := http.FileServer(http.FS(sharedSub))
+	r.GET("/shared/*filepath", func(c *gin.Context) {
+		// 去掉前缀后交由以 shared/ 为根的文件服务器处理
+		c.Request.URL.Path = strings.TrimPrefix(c.Request.URL.Path, "/shared")
+		sharedFS.ServeHTTP(c.Writer, c.Request)
+	})
 
-	application.RegisterHTML = string(registerHTML)
+	// Parse all HTML page templates once at startup. The shared layout
+	// (frontend/layouts/base.html) defines "chrometop"/"chromebot"; each page under
+	// frontend/pages/*.html references it via {{template "chrometop" .}} /
+	// {{template "chromebot" .}} and gets the per-request CSP nonce via {{.Nonce}}.
+	// This IS the unified container: new pages write only their own content + a thin
+	// <script nonce> block — never the theme button, header, or footer boilerplate.
+	tpl := template.Must(template.ParseFS(frontendFS, "frontend/layouts/base.html", "frontend/pages/*.html"))
 
 	// ========== Pre-setup whitelist ==========
 	setupWhitelist := []string{
 		"/health",
 		"/setup",
+		"/shared",
 		"/api/v1/setup/status",
 		"/api/v1/setup",
 		"/fb/",
@@ -116,12 +127,17 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// Landing page
 	r.GET("/", func(c *gin.Context) {
-		serveHTML(c, indexHTML)
+		serveTemplate(c, tpl, "index.html", PageData{Nav: "", Nonce: nonceOf(c)})
+	})
+
+	// Dedicated public project list page
+	r.GET("/projects", func(c *gin.Context) {
+		serveTemplate(c, tpl, "projects.html", PageData{Nav: "", Nonce: nonceOf(c)})
 	})
 
 	// Setup page (always accessible via whitelist)
 	r.GET("/setup", func(c *gin.Context) {
-		serveHTML(c, setupHTML)
+		serveTemplate(c, tpl, "setup.html", PageData{Nav: "", Nonce: nonceOf(c)})
 	})
 
 	// ========== Per-project feedback pages ==========
@@ -129,8 +145,6 @@ func Register(r *gin.Engine, application *app.App) {
 	r.GET("/fb/:slug", func(c *gin.Context) {
 		slug := c.Param("slug")
 		project, err := application.DB.GetProjectBySlug(slug)
-		nonceVal, _ := c.Get(nonceCtxKey)
-		nonceStr, _ := nonceVal.(string)
 
 		// If not found, check slug history for redirect
 		if err != nil {
@@ -162,16 +176,27 @@ func Register(r *gin.Engine, application *app.App) {
 			}
 		}
 		info, _ := json.Marshal(map[string]interface{}{
-			"name":        project.Name,
-			"slug":        project.Slug,
-			"description": project.Description,
-			"form_schema": json.RawMessage(formSchemaOrDefault(project.FormSchema)),
-			"categories":  activeCats,
+			"name":         project.Name,
+			"slug":         project.Slug,
+			"description":  project.Description,
+			"announcement": json.RawMessage(announcementOrDefault(project.Announcement)),
+			"form_schema":  json.RawMessage(formSchemaOrDefault(project.FormSchema)),
+			"categories":   activeCats,
 		})
-		// Apply nonce and inject project data into feedback HTML
-		html := strings.ReplaceAll(string(feedbackHTML), "__NONCE__", nonceStr)
-		html = strings.Replace(html, "/*__PROJECT_DATA__*/null", string(info), 1)
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+		// Render the unified template (nonce via {{.Nonce}}) and inject project data.
+		rendered, err := executePage(tpl, "feedback.html", PageData{Nav: "", Nonce: nonceOf(c)})
+		if err != nil {
+			c.Data(http.StatusInternalServerError, "text/plain; charset=utf-8", []byte("template render error"))
+			return
+		}
+		// Inject project JSON. Use a plain token placeholder (NOT a /* */ comment):
+		// html/template strips JS block comments, so a comment-based marker would
+		// be removed at render time and this replace would silently no-op.
+		// Escape '<' so a project name/description containing "</script>" cannot
+		// break out of the inline script block.
+		projectJSON := strings.ReplaceAll(string(info), "<", "\\u003c")
+		rendered = strings.Replace(rendered, "__PROJECT_DATA__", projectJSON, 1)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rendered))
 	})
 
 	// Legacy /feedback redirect
@@ -181,7 +206,7 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// Public roadmap board (no login required)
 	r.GET("/p/:slug/roadmap", func(c *gin.Context) {
-		serveHTML(c, roadmapHTML)
+		serveTemplate(c, tpl, "roadmap.html", PageData{Nav: "", Nonce: nonceOf(c)})
 	})
 
 	// ========== Public API routes ==========
@@ -189,6 +214,7 @@ func Register(r *gin.Engine, application *app.App) {
 	r.GET("/api/v1/setup/status", application.SetupStatus)
 	r.POST("/api/v1/setup", application.DoSetup)
 	r.GET("/api/v1/projects", application.PublicListProjects)
+	r.GET("/api/v1/announcement", application.PublicGetAnnouncement)
 	r.GET("/api/v1/roadmap", application.PublicRoadmap)
 
 	submit := r.Group("/api/v1/feedback")
@@ -202,8 +228,22 @@ func Register(r *gin.Engine, application *app.App) {
 	faqPub.Use(middleware.RateLimitMiddleware(application.RL))
 	faqPub.GET("/faq", application.PublicSearchFAQ)
 
-	// Invitation registration
-	r.GET("/invite/:token", application.PublicRegisterPage)
+	// Invitation registration page — rendered by the unified template, with the
+	// invite token injected in place of INVITE_TOKEN_PLACEHOLDER.
+	r.GET("/invite/:token", func(c *gin.Context) {
+		token := c.Param("token")
+		if _, err := application.DB.ValidateInvitation(token); err != nil {
+			c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`<html><body style="font-family:sans-serif;padding:40px;text-align:center"><h2>邀请链接无效或已过期</h2><p>请联系管理员获取新的邀请链接。</p></body></html>`))
+			return
+		}
+		html, err := executePage(tpl, "register.html", PageData{Nav: "", Nonce: nonceOf(c)})
+		if err != nil {
+			c.Data(http.StatusInternalServerError, "text/plain; charset=utf-8", []byte("template render error"))
+			return
+		}
+		html = strings.ReplaceAll(html, "INVITE_TOKEN_PLACEHOLDER", token)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
+	})
 	r.POST("/api/v1/invite/:token/register", application.PublicRegister)
 
 	// API Token feedback submission (external systems like CI, monitoring)
@@ -214,13 +254,15 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// Public tracking routes (submitter self-service)
 	r.GET("/track", func(c *gin.Context) {
-		serveHTML(c, trackHTML)
+		serveTemplate(c, tpl, "track.html", PageData{Nav: "", Nonce: nonceOf(c)})
 	})
 	r.GET("/api/v1/track/feedback", application.PublicTrackFeedback)
 	trackReply := r.Group("/api/v1/track")
 	trackReply.Use(middleware.RateLimitMiddleware(application.RL))
+	trackReply.GET("/by-email", application.PublicListByEmail)
 	trackReply.POST("/reply", application.PublicSubmitReply)
 	trackReply.POST("/:token/rating", application.PublicSubmitRating)
+	trackReply.POST("/:token/need-help", application.PublicNeedHelp)
 
 	// ========== Admin page routes (HTML) ==========
 
@@ -234,14 +276,14 @@ func Register(r *gin.Engine, application *app.App) {
 			c.Redirect(http.StatusFound, "/admin/login")
 			return
 		}
-		serveHTML(c, adminHTML)
+		serveTemplate(c, tpl, "admin.html", PageData{Nav: "admin", Nonce: nonceOf(c)})
 	})
 
 	r.GET("/admin/*path", func(c *gin.Context) {
 		path := c.Param("path")
 
 		if path == "/login" {
-			serveHTML(c, loginHTML)
+			serveTemplate(c, tpl, "login.html", PageData{Nav: "", Nonce: nonceOf(c)})
 			return
 		}
 
@@ -260,7 +302,7 @@ func Register(r *gin.Engine, application *app.App) {
 			return
 		}
 
-		serveHTML(c, adminHTML)
+		serveTemplate(c, tpl, "admin.html", PageData{Nav: "admin", Nonce: nonceOf(c)})
 	})
 
 	// ========== Admin API routes ==========
@@ -287,6 +329,7 @@ func Register(r *gin.Engine, application *app.App) {
 		adminAPI.GET("/feedbacks/export", application.AdminExportCSV)
 		adminAPI.GET("/feedbacks/:id", application.AdminGetFeedback)
 		adminAPI.PUT("/feedbacks/:id/status", application.AdminUpdateFeedbackStatus)
+		adminAPI.POST("/feedbacks/:id/rating-invite", application.AdminTriggerRatingInvite)
 		adminAPI.PUT("/feedbacks/:id/assignee", application.AdminUpdateFeedbackAssignee)
 		adminAPI.PUT("/feedbacks/:id/priority", application.AdminUpdateFeedbackPriority)
 		adminAPI.POST("/feedbacks/:id/duplicate", application.AdminMarkAsDuplicate)
@@ -391,34 +434,89 @@ func Register(r *gin.Engine, application *app.App) {
 		adminAPI.GET("/config/system", middleware.RequireRole("admin"), application.AdminGetSystemConfig)
 		adminAPI.PUT("/config/system", middleware.RequireRole("admin"), application.AdminUpdateSystemConfig)
 
+		// Global announcement (admin only)
+		adminAPI.GET("/config/announcement", middleware.RequireRole("admin"), application.AdminGetAnnouncement)
+		adminAPI.PUT("/config/announcement", middleware.RequireRole("admin"), application.AdminUpdateAnnouncement)
+
 		// Legacy config (backward compat)
 		adminAPI.GET("/config", middleware.RequireRole("admin"), application.AdminGetConfig)
 		adminAPI.PUT("/config", middleware.RequireRole("admin"), application.AdminUpdateConfig)
 	}
 }
 
-func mustReadFS(fsys fs.FS, name string) []byte {
-	data, err := fs.ReadFile(fsys, name)
-	if err != nil {
-		panic("Failed to read embedded file " + name + ": " + err.Error())
-	}
-	return data
-}
+// defaultFormSchemaJSON is the schema used for projects that have no
+// form_schema configured. Every field is schema-driven (system fields are
+// mapped via "sys"), so the public feedback page never falls back to hardcoded
+// template text. Admins can customize these fields (labels, placeholders,
+// required) from the admin "自定义表单字段" editor.
+const defaultFormSchemaJSON = `[
+  {"key":"title","name":"title","label":"反馈标题","type":"text","required":true,"sys":"title","placeholder":"请输入反馈标题"},
+  {"key":"description","name":"description","label":"详细描述","type":"textarea","sys":"description","placeholder":"请描述您遇到的问题或建议","rows":5},
+  {"key":"category","name":"category","label":"分类","type":"select","sys":"category"},
+  {"key":"notify","name":"notify","label":"接收反馈处理通知","type":"checkbox","sys":"notify"},
+  {"key":"images","name":"images","label":"截图上传","type":"image","sys":"images","multiple":true},
+  {"key":"files","name":"files","label":"日志 / 附件","type":"file","sys":"files","multiple":true}
+]`
 
-// formSchemaOrDefault returns a valid JSON array, defaulting to "[]" if s is empty.
+// formSchemaOrDefault returns a valid JSON array. If s is empty (the project has
+// no configured schema), it returns the default schema instead of "[]" so the
+// public page always renders a complete, backend-operated form.
 func formSchemaOrDefault(s string) string {
-	if s == "" || s == "null" {
-		return "[]"
+	t := strings.TrimSpace(s)
+	if t == "" || t == "null" || t == "[]" {
+		return defaultFormSchemaJSON
 	}
 	return s
 }
 
-// serveHTML replaces the __NONCE__ placeholder with the per-request CSP nonce
-// and writes the result as text/html. Use this for all HTML page responses to
-// support nonce-based CSP without exposing 'unsafe-inline' for scripts.
-func serveHTML(c *gin.Context, content []byte) {
-	nonce, _ := c.Get(nonceCtxKey)
-	nonceVal, _ := nonce.(string)
-	html := strings.ReplaceAll(string(content), "__NONCE__", nonceVal)
+// announcementOrDefault returns a valid announcement JSON object. An empty or
+// invalid stored value yields {"enabled":false} so the feedback page renders no
+// project banner. The payload shape matches the public announcement struct
+// (enabled/content_type/content/level/dismissible).
+func announcementOrDefault(s string) string {
+	t := strings.TrimSpace(s)
+	if t == "" || t == "null" {
+		return `{"enabled":false}`
+	}
+	return s
+}
+
+// PageData is the data model passed to every page template. It carries the
+// per-request CSP nonce and an optional Nav flag. Nav == "admin" switches the
+// shared layout (chrometop) from the floating theme toggle to the full admin
+// chrome (header + tab nav + logout button).
+type PageData struct {
+	Title string
+	Nav   string
+	Nonce string
+}
+
+// nonceOf returns the per-request CSP nonce, or "" if unavailable.
+func nonceOf(c *gin.Context) string {
+	if v, ok := c.Get(nonceCtxKey); ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// executePage renders a named page template (which includes the shared
+// chrometop/chromebot layout via {{template}}) to a string.
+func executePage(tpl *template.Template, name string, data PageData) (string, error) {
+	var buf bytes.Buffer
+	if err := tpl.ExecuteTemplate(&buf, name, data); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+// serveTemplate renders a page template and writes it as text/html.
+func serveTemplate(c *gin.Context, tpl *template.Template, name string, data PageData) {
+	html, err := executePage(tpl, name, data)
+	if err != nil {
+		c.Data(http.StatusInternalServerError, "text/plain; charset=utf-8", []byte("template render error: "+err.Error()))
+		return
+	}
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }

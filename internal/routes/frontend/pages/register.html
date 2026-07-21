@@ -1,29 +1,22 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>注册 - FeedShit</title>
+{{template "chrometop" .}}
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,sans-serif;background:#f5f5f5;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
-.card{background:#fff;border-radius:8px;padding:32px;width:100%;max-width:400px;box-shadow:0 2px 12px rgba(0,0,0,.08)}
-h1{font-size:1.2rem;margin-bottom:4px;color:#333}
-p{font-size:.85rem;color:#888;margin-bottom:20px}
+body{font-family:-apple-system,sans-serif;background:var(--bg);color:var(--fg);display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+.card{background:var(--panel);border-radius:8px;padding:32px;width:100%;max-width:400px;box-shadow:0 2px 12px rgba(0,0,0,.08);border:1px solid var(--border)}
+h1{font-size:1.2rem;margin-bottom:4px;color:var(--fg)}
+p{font-size:.85rem;color:var(--muted);margin-bottom:20px}
 .field{margin-bottom:16px}
-label{display:block;font-size:.8rem;font-weight:600;margin-bottom:4px;color:#555}
-input{width:100%;padding:10px 12px;border:1px solid #ddd;border-radius:4px;font-size:.9rem}
-input:focus{outline:none;border-color:#e53e3e;box-shadow:0 0 0 2px rgba(229,62,62,.1)}
-.btn{width:100%;padding:10px;background:#e53e3e;color:#fff;border:none;border-radius:4px;font-size:.9rem;cursor:pointer}
-.btn:hover{background:#c53030}
+label{display:block;font-size:.8rem;font-weight:600;margin-bottom:4px;color:var(--field-label)}
+input{width:100%;padding:10px 12px;border:1px solid var(--input-border);border-radius:4px;font-size:.9rem;background:var(--panel);color:var(--fg)}
+input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(229,62,62,.1)}
+.btn{width:100%;padding:10px;background:var(--accent);color:var(--primary-fg);border:none;border-radius:4px;font-size:.9rem;cursor:pointer}
+.btn:hover{background:var(--accent-hover)}
 .btn:disabled{opacity:.6;cursor:not-allowed}
-.error{color:#c00;font-size:.8rem;margin-top:4px;display:none}
+.error{color:var(--danger);font-size:.8rem;margin-top:4px;display:none}
 .success{text-align:center;padding:20px}
-.success h2{color:#2d6;font-size:1.1rem;margin-bottom:8px}
-.success p{font-size:.85rem;color:#555}
+.success h2{color:var(--success-fg);font-size:1.1rem;margin-bottom:8px}
+.success p{font-size:.85rem;color:var(--muted)}
 </style>
-</head>
-<body>
 <div class="card">
   <h1>加入团队</h1>
   <p>您已被邀请成为团队成员，请设置您的账号信息。</p>
@@ -37,18 +30,18 @@ input:focus{outline:none;border-color:#e53e3e;box-shadow:0 0 0 2px rgba(229,62,6
     <input type="password" id="password" placeholder="至少 8 位，包含大小写字母和数字" autocomplete="new-password">
     <div class="error" id="passwordError"></div>
   </div>
-  <button class="btn" id="registerBtn" onclick="doRegister()">注册</button>
+  <button class="btn" id="registerBtn" data-click="doRegister" data-args="">注册</button>
   <div class="error" id="formError" style="margin-top:12px"></div>
   <div id="successMsg" style="display:none">
     <div class="success">
       <h2>✅ 注册成功</h2>
-      <p>您可以 <a href="/admin/" style="color:#e53e3e">登录后台</a> 开始使用了。</p>
+      <p>您可以 <a href="/admin/" style="color:var(--accent)">登录后台</a> 开始使用了。</p>
     </div>
   </div>
 </div>
-<script nonce="__NONCE__">
+<script nonce="{{.Nonce}}">
 var TOKEN = 'INVITE_TOKEN_PLACEHOLDER';
-async function doRegister() {
+window.doRegister = async function() {
   var username = document.getElementById('username').value.trim();
   var password = document.getElementById('password').value;
   document.getElementById('formError').style.display = 'none';
@@ -80,11 +73,10 @@ async function doRegister() {
     document.getElementById('registerBtn').disabled = false;
     document.getElementById('registerBtn').textContent = '注册';
   }
-}
+};
 function showError(field, msg) {
   var el = document.getElementById(field + 'Error');
   if (el) { el.textContent = msg; el.style.display = ''; }
 }
 </script>
-</body>
-</html>
+{{template "chromebot" .}}

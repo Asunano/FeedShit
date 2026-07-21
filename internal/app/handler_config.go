@@ -1,16 +1,124 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"feedshit/internal/middleware"
 )
+
+// ========== Announcements ==========
+//
+// Two scopes:
+//   - Global: stored as JSON in config key "home_announcement", shown on the
+//     homepage and the /projects list page.
+//   - Per-project: stored as JSON in projects.announcement, shown on each
+//     /fb/{slug} feedback page (injected via PROJECT data).
+//
+// Announcement content supports plain text or sanitized HTML (bluemonday UGC
+// policy) to prevent stored XSS.
+
+const announcementConfigKey = "home_announcement"
+
+// announcement represents either scope's payload.
+type announcement struct {
+	Enabled     bool   `json:"enabled"`
+	Level       string `json:"level"`       // info | warning | success | danger
+	ContentType string `json:"content_type"` // text | html
+	Content     string `json:"content"`
+	Dismissible bool   `json:"dismissible"`
+	UpdatedAt   int64  `json:"updated_at"`
+}
+
+var validAnnounceLevels = map[string]bool{"info": true, "warning": true, "success": true, "danger": true}
+
+// PublicGetAnnouncement returns the global announcement (if enabled) for public pages.
+func (a *App) PublicGetAnnouncement(c *gin.Context) {
+	raw := a.DB.GetConfig(announcementConfigKey)
+	var ann announcement
+	if raw != "" {
+		if err := json.Unmarshal([]byte(raw), &ann); err != nil {
+			ann = announcement{}
+		}
+	}
+	if !ann.Enabled || strings.TrimSpace(ann.Content) == "" {
+		c.JSON(http.StatusOK, gin.H{"enabled": false})
+		return
+	}
+	if ann.ContentType == "html" {
+		ann.Content = SanitizeHTML(ann.Content)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"enabled":     true,
+		"level":       ann.Level,
+		"content_type": ann.ContentType,
+		"content":     ann.Content,
+		"dismissible": ann.Dismissible,
+		"updated_at":  ann.UpdatedAt,
+	})
+}
+
+// AdminGetAnnouncement returns the stored global announcement config (admin only).
+func (a *App) AdminGetAnnouncement(c *gin.Context) {
+	raw := a.DB.GetConfig(announcementConfigKey)
+	var ann announcement
+	if raw != "" {
+		if err := json.Unmarshal([]byte(raw), &ann); err != nil {
+			ann = announcement{}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"enabled":     ann.Enabled,
+		"level":       ann.Level,
+		"content_type": ann.ContentType,
+		"content":     ann.Content,
+		"dismissible": ann.Dismissible,
+	})
+}
+
+// AdminUpdateAnnouncement saves the global announcement (admin only).
+func (a *App) AdminUpdateAnnouncement(c *gin.Context) {
+	var req announcement
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+		return
+	}
+	if req.Level == "" {
+		req.Level = "info"
+	}
+	if !validAnnounceLevels[req.Level] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "公告级别无效"})
+		return
+	}
+	if req.ContentType == "" {
+		req.ContentType = "text"
+	}
+	if req.ContentType != "text" && req.ContentType != "html" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "内容格式无效"})
+		return
+	}
+	if req.ContentType == "html" {
+		req.Content = SanitizeHTML(req.Content)
+	}
+	req.UpdatedAt = time.Now().Unix()
+	payload, err := json.Marshal(req)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "序列化失败"})
+		return
+	}
+	if err := a.DB.SetConfig(announcementConfigKey, string(payload), "首页全局公告（JSON）"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存公告失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "公告已保存"})
+}
 
 // ========== Admin: Config Sections ==========
 

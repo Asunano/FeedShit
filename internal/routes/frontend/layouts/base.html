@@ -1,0 +1,43 @@
+{{define "chrometop"}}<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{if .Title}}{{.Title}} · {{end}}FeedShit</title>
+  <link rel="stylesheet" href="/shared/tokens.css">
+  <link rel="stylesheet" href="/shared/components.css">
+  <script src="/shared/theme.js"></script>
+  <script src="/shared/delegate.js"></script>
+</head>
+<body>
+  {{if eq .Nav "admin"}}
+  <header class="header">
+    <h1><span>Feed</span>Shit</h1>
+    <div class="nav">
+      <button class="active" data-tab="dashboard" data-click="switchTab" data-args="'dashboard'">概览</button>
+      <button data-tab="projects" data-click="switchTab" data-args="'projects'">项目</button>
+      <button data-tab="team" data-click="switchTab" data-args="'team'" id="navTeam" style="display:none">团队</button>
+      <button data-tab="audit" data-click="switchTab" data-args="'audit'">审计</button>
+      <button data-tab="settings" data-click="switchTab" data-args="'settings'">设置</button>
+      <button data-tab="kb" data-click="switchTab" data-args="'kb'" id="navKb" style="display:none">知识库</button>
+      <a href="/track" class="header-link" target="_blank" title="反馈跟踪">跟踪</a>
+    </div>
+    <div class="header-right">
+      <button type="button" class="theme-toggle" id="themeToggleBtn" aria-label="切换主题" title="主题"><span class="theme-toggle__icon" aria-hidden="true"></span></button>
+      <span id="currentUserLabel" style="font-size:.8rem;color:var(--muted)"></span><button data-click="logout" data-args="">退出登录</button>
+    </div>
+  </header>
+  {{else}}
+  <button type="button" class="theme-toggle theme-toggle--float" id="themeToggleBtn" aria-label="切换主题" title="主题">
+    <span class="theme-toggle__icon" aria-hidden="true"></span>
+  </button>
+  {{end}}
+{{end}}
+
+{{define "chromebot"}}
+  <footer class="site-footer">
+    <span>FeedShit · 反馈收集与产品洞察</span>
+  </footer>
+</body>
+</html>
+{{end}}

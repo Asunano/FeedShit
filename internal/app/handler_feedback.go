@@ -161,6 +161,11 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 
 	go a.Mailer.SendFeedbackNotification(fb)
 	go a.SendWebhookNotification(fb)
+	// Notify the submitter (confirmation + tracking link) when they opted in.
+	if contactEmail != "" {
+		trackURL := a.Cfg.BaseURL + "/track#token=" + trackingToken
+		go a.Mailer.SendSubmitterConfirmation(fb, trackURL)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":        "反馈提交成功",
@@ -179,11 +184,11 @@ func (a *App) AdminListFeedbacks(c *gin.Context) {
 	assignee := c.Query("assignee")
 	category := c.Query("category")
 	trackingToken := c.Query("tracking_token")
-	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 
 	if limit <= 0 || limit > 200 {
-		limit = 50
+		limit = 100
 	}
 	if offset < 0 {
 		offset = 0
@@ -293,12 +298,14 @@ func (a *App) AdminListFeedbacks(c *gin.Context) {
 
 	projList, _ := a.DB.GetProjects()
 	assignees, _ := a.DB.GetAssignees()
+	projNames, _ := a.DB.GetProjectNameMap()
 
 	c.JSON(http.StatusOK, gin.H{
-		"feedbacks": list,
-		"total":     total,
-		"projects":  projList,
-		"assignees": assignees,
+		"feedbacks":    list,
+		"total":        total,
+		"projects":     projList,
+		"assignees":    assignees,
+		"project_names": projNames,
 	})
 }
 
@@ -376,6 +383,9 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 
 	user, _ := c.Get("admin_user")
 	clientIP := middleware.GetClientIP(c)
+	if statusChanged {
+		a.DB.RecordStatusChange(id, oldFb.Status, effectiveStatus, fmt.Sprintf("%v", user), "")
+	}
 	a.DB.InsertAuditLog("update_status", fmt.Sprintf("反馈 #%d 状态更新为 %s", id, effectiveStatus), fmt.Sprintf("%v", user), clientIP)
 
 	// Notify submitter only when status actually changed
@@ -385,18 +395,19 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 		if label == "" {
 			label = effectiveStatus
 		}
+		trackURL := a.Cfg.BaseURL + "/track#token=" + oldFb.TrackingToken
 		vars := map[string]string{
-			"id":     fmt.Sprintf("%d", oldFb.ID),
-			"title":  oldFb.Title,
-			"status": label,
+			"id":        fmt.Sprintf("%d", oldFb.ID),
+			"title":     oldFb.Title,
+			"status":    label,
+			"track_url": trackURL,
 		}
 		subject := email.BuildStatusChangeSubject(a.DB, vars)
 		body := email.BuildStatusChangeBody(a.DB, vars)
 		go a.Mailer.SendStatusChangeNotification(oldFb, subject, body)
 
 		// M2 CSAT: invite submitter to rate once resolved
-		if effectiveStatus == database.StatusResolved && oldFb.ContactEmail != "" {
-			trackURL := a.Cfg.BaseURL + "/track#token=" + oldFb.TrackingToken
+		if effectiveStatus == database.StatusResolved {
 			go a.Mailer.SendCSATInvite(oldFb, trackURL)
 		}
 	}
@@ -411,6 +422,37 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 	}, oldFb)
 
 	c.JSON(http.StatusOK, gin.H{"message": "状态已更新"})
+}
+
+// AdminTriggerRatingInvite opens the CSAT rating for a feedback and emails the
+// submitter an invitation, so they can rate even when status is not resolved (track #3).
+func (a *App) AdminTriggerRatingInvite(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	oldFb, deny := a.checkFeedbackWritePerm(c, id)
+	if deny != "" {
+		c.JSON(http.StatusForbidden, gin.H{"error": deny})
+		return
+	}
+	if oldFb == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "反馈不存在"})
+		return
+	}
+	if err := a.DB.SetRatingOpen(id, true); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("rating_invite", fmt.Sprintf("反馈 #%d 管理员发起评分邀请", id), fmt.Sprintf("%v", user), clientIP)
+	if oldFb.ContactEmail != "" {
+		trackURL := a.Cfg.BaseURL + "/track#token=" + oldFb.TrackingToken
+		go a.Mailer.SendCSATInvite(oldFb, trackURL)
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "已发起评分邀请"})
 }
 
 func (a *App) AdminDeleteFeedback(c *gin.Context) {

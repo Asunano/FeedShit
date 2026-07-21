@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -15,6 +16,9 @@ import (
 	"feedshit/internal/database"
 	"feedshit/internal/middleware"
 )
+
+// emailRegex validates submitter email addresses for the email portal lookup.
+var emailRegex = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 
 // ========== Public Tracking (Submitter Self-Service) ==========
 
@@ -54,18 +58,33 @@ func (a *App) PublicTrackFeedback(c *gin.Context) {
 	}
 
 	rating, _ := a.DB.GetRating(fb.ID)
+	usefulVotes, _ := a.DB.CountVotesByType(fb.ID, "useful")
+	encVotes, _ := a.DB.CountVotesByType(fb.ID, "encountered")
+	history, _ := a.DB.ListStatusHistory(fb.ID)
+	histItems := make([]gin.H, 0, len(history))
+	for _, h := range history {
+		histItems = append(histItems, gin.H{
+			"from_status": h.FromStatus,
+			"to_status":   h.ToStatus,
+			"changed_by":  h.ChangedBy,
+			"note":        h.Note,
+			"created_at":  h.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
 	resp := gin.H{
-		"id":           fb.ID,
-		"project_id":   fb.ProjectID,
-		"title":        fb.Title,
-		"description":  fb.Description,
-		"status":       fb.Status,
-		"category":     fb.Category,
-		"priority":     fb.Priority,
-		"votes":        fb.Votes,
-		"created_at":   fb.CreatedAt.Format("2006-01-02 15:04:05"),
-		"allow_rating": fb.Status == database.StatusResolved,
-		"notes":        publicNotes,
+		"id":                fb.ID,
+		"project_id":        fb.ProjectID,
+		"title":             fb.Title,
+		"description":       fb.Description,
+		"status":            fb.Status,
+		"category":          fb.Category,
+		"priority":          fb.Priority,
+		"useful_votes":      usefulVotes,
+		"encountered_votes": encVotes,
+		"created_at":        fb.CreatedAt.Format("2006-01-02 15:04:05"),
+		"allow_rating":      fb.Status == database.StatusResolved || fb.RatingOpen,
+		"status_history":    histItems,
+		"notes":             publicNotes,
 	}
 	if rating != nil {
 		resp["rating"] = rating.Score
@@ -73,6 +92,39 @@ func (a *App) PublicTrackFeedback(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// PublicListByEmail lets a submitter list all feedback they submitted under a
+// given email address (the email portal on the tracking page). Each item
+// returns its tracking token so the submitter can open the corresponding
+// tracking page; tokens are unguessable, so this does not leak data to
+// third parties who do not control that inbox.
+func (a *App) PublicListByEmail(c *gin.Context) {
+	email := strings.TrimSpace(c.Query("email"))
+	if email == "" || !emailRegex.MatchString(email) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供有效的邮箱地址"})
+		return
+	}
+	list, err := a.DB.ListFeedbackByContactEmail(email, 50)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+	if list == nil {
+		list = []database.Feedback{}
+	}
+	items := make([]gin.H, 0, len(list))
+	for _, f := range list {
+		items = append(items, gin.H{
+			"id":         f.ID,
+			"project_id": f.ProjectID,
+			"title":      f.Title,
+			"status":     f.Status,
+			"updated_at": time.Unix(f.UpdatedAt, 0).Format("2006-01-02 15:04:05"),
+			"token":      f.TrackingToken,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
 // PublicSubmitReply allows a submitter to add a follow-up reply to their feedback.
@@ -147,8 +199,8 @@ func (a *App) PublicSubmitRating(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "未找到对应的反馈记录"})
 		return
 	}
-	if fb.Status != database.StatusResolved {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "仅已解决的反馈可评分"})
+	if fb.Status != database.StatusResolved && !fb.RatingOpen {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "当前不可评分"})
 		return
 	}
 
@@ -185,6 +237,14 @@ func (a *App) PublicVoteFeedback(c *gin.Context) {
 		return
 	}
 
+	voteType := strings.TrimSpace(c.Query("type"))
+	if voteType == "" {
+		voteType = "useful"
+	}
+	if voteType != "useful" && voteType != "encountered" {
+		voteType = "useful"
+	}
+
 	// Verify feedback exists and project is active / not archived
 	fb, err := a.DB.GetFeedback(id)
 	if err != nil || fb == nil {
@@ -210,13 +270,57 @@ func (a *App) PublicVoteFeedback(c *gin.Context) {
 		h := sha256.Sum256([]byte(middleware.GetClientIP(c) + "|" + ua))
 		voterKey = "anon:" + hex.EncodeToString(h[:])
 	}
-	already, err := a.DB.InsertVote(id, voterKey)
+	already, err := a.DB.InsertVote(id, voterKey, voteType)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "投票失败"})
 		return
 	}
-	votes, _ := a.DB.CountVotes(id)
-	c.JSON(http.StatusOK, gin.H{"voted": !already, "votes": votes})
+	votes, _ := a.DB.CountVotesByType(id, voteType)
+	c.JSON(http.StatusOK, gin.H{"type": voteType, "voted": !already, "votes": votes})
+}
+
+// PublicNeedHelp lets a submitter revert a resolved/closed feedback to "processing"
+// when the resolution did not actually solve their problem (track page #6).
+func (a *App) PublicNeedHelp(c *gin.Context) {
+	token := strings.TrimSpace(c.Param("token"))
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少跟踪令牌"})
+		return
+	}
+	fb, err := a.DB.GetFeedbackByTrackingToken(token)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		return
+	}
+	if fb == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "未找到对应的反馈记录"})
+		return
+	}
+	if fb.Status != database.StatusResolved && fb.Status != database.StatusClosed {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "仅已解决或已关闭的反馈可标记为仍需帮助"})
+		return
+	}
+
+	if err := a.DB.UpdateFeedbackStatus(fb.ID, database.StatusProcessing, fb.Tags); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败"})
+		return
+	}
+	if err := a.DB.RecordStatusChange(fb.ID, fb.Status, database.StatusProcessing, "提交者", "仍需帮助"); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "记录状态变更失败"})
+		return
+	}
+	user := "提交者"
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("need_help", fmt.Sprintf("反馈 #%d 提交者标记仍需帮助", fb.ID), user, clientIP)
+	go a.sendWebhookEvent("status_change", map[string]interface{}{
+		"id":         fb.ID,
+		"project_id": fb.ProjectID,
+		"title":      fb.Title,
+		"status":     database.StatusProcessing,
+		"operator":   user,
+	}, fb)
+
+	c.JSON(http.StatusOK, gin.H{"message": "已标记为仍需帮助，状态回退为处理中"})
 }
 
 // PublicRoadmap returns public roadmap items for a project (M3).

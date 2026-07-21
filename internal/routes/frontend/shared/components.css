@@ -1,0 +1,88 @@
+/* FeedShit 共享组件层（单一来源）
+ * 所有内嵌页面统一引入（在页面 <style> 之前加载，故页面可在其后追加覆盖规则）。
+ * 全部基于 /shared/tokens.css 的设计 token，明暗主题自动适配。
+ * 组件范围：徽章 / 标签 / 提示条 / 模态 / 按钮 / 卡片 / 表格 / 表单字段 / 分页。
+ */
+
+/* ===== 状态徽章（反馈状态） ===== */
+.status-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:500;line-height:1.4}
+.status-pending{background:var(--status-pending-bg);color:var(--status-pending-fg)}
+.status-processing{background:var(--status-processing-bg);color:var(--status-processing-fg)}
+.status-resolved{background:var(--status-resolved-bg);color:var(--status-resolved-fg)}
+.status-closed{background:var(--status-closed-bg);color:var(--status-closed-fg)}
+
+/* ===== 优先级徽章 ===== */
+.priority-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:.7rem;font-weight:600;text-transform:uppercase;line-height:1.4}
+.priority-urgent{background:var(--priority-urgent-bg);color:var(--priority-urgent-fg)}
+.priority-high{background:var(--priority-high-bg);color:var(--priority-high-fg)}
+.priority-medium{background:var(--priority-medium-bg);color:var(--priority-medium-fg)}
+.priority-low{background:var(--priority-low-bg);color:var(--priority-low-fg)}
+
+/* ===== 标签 / 徽章（通用） ===== */
+.tag{display:inline-block;padding:1px 6px;background:var(--note-border);border-radius:3px;font-size:.75rem;color:var(--tag-fg);font-family:monospace}
+
+/* ===== 提示条（toast） ===== */
+.toast{display:none;padding:10px 14px;border-radius:4px;font-size:.85rem;margin:8px 0}
+.toast.success{display:block;background:var(--success-bg);color:var(--success-fg);border:1px solid var(--success-border)}
+.toast.error{display:block;background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-border)}
+
+/* ===== 模态 ===== */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:var(--z-modal);align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal{background:var(--panel);border-radius:8px;padding:24px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-2)}
+.modal h3{font-size:1rem;font-weight:600;margin-bottom:16px}
+.modal-actions{margin-top:20px;display:flex;gap:8px;justify-content:flex-end}
+.modal-actions button{padding:8px 20px;border:none;border-radius:4px;cursor:pointer;font-size:.85rem}
+
+/* ===== 按钮 ===== */
+.btn{display:inline-block;padding:8px 16px;background:var(--primary);color:var(--primary-fg);border:none;border-radius:4px;font-size:.9rem;cursor:pointer;transition:background .15s;text-decoration:none;font-family:inherit}
+.btn:hover{background:var(--field-label)}
+.btn:disabled{background:var(--disabled);cursor:not-allowed}
+.btn-primary{background:var(--accent);color:var(--primary-fg);border-color:var(--accent)}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-secondary{background:var(--hover);color:var(--field-label);border:1px solid var(--border)}
+.btn-secondary:hover{background:var(--border)}
+.btn-danger{color:var(--danger)}
+.btn-danger:hover{background:var(--danger-bg)}
+.btn-sm{padding:5px 14px;font-size:.8rem;border:1px solid var(--input-border);background:var(--panel);color:var(--field-label)}
+.btn-sm:hover{background:var(--hover)}
+.btn-block{display:block;width:100%}
+
+/* ===== 卡片 / 面板 ===== */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:24px}
+
+/* ===== 表格 ===== */
+.table-wrap{background:var(--panel);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:10px 14px;font-size:.75rem;font-weight:600;color:var(--muted);text-transform:uppercase;border-bottom:1px solid var(--border);background:var(--subtle)}
+td{padding:10px 14px;border-bottom:1px solid var(--hover);font-size:.85rem}
+tr:hover{background:var(--note-bg)}
+tr:last-child td{border-bottom:none}
+
+/* ===== 表单字段 ===== */
+.field{margin-bottom:16px}
+.field label{display:block;font-size:.85rem;font-weight:500;margin-bottom:4px;color:var(--field-label)}
+.field input[type=text],.field textarea,.field select{width:100%;padding:8px 10px;border:1px solid var(--input-border);border-radius:4px;font-size:.9rem;font-family:inherit;transition:border-color .15s}
+.field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--muted)}
+.field textarea{resize:vertical;min-height:100px}
+.field select{background:var(--panel)}
+.field .field-hint{font-size:.75rem;color:var(--hint);margin-top:2px}
+.field .field-error{font-size:.8rem;color:var(--danger);margin-top:4px;display:none}
+.field .field-error.visible{display:block}
+
+/* ===== 分页 ===== */
+.pagination-bar{display:flex;align-items:center;gap:12px;margin:12px 0 4px;flex-wrap:wrap}
+.pagination-bar .count{color:var(--muted);font-size:.8rem}
+.pagination-bar .btn-sm:disabled{opacity:.45;cursor:not-allowed}
+
+/* ===== 主题切换（单按钮循环：亮→暗→跟随系统） ===== */
+/* 按钮外观统一；图标为内联 SVG，stroke=currentColor 自动适配明暗 */
+.theme-toggle{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;padding:0;border-radius:50%;background:var(--panel);border:1px solid var(--border);color:var(--field-label);cursor:pointer;transition:background .15s,border-color .15s;flex:none}
+.theme-toggle:hover{background:var(--hover)}
+.theme-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.theme-toggle__icon{display:inline-flex;line-height:0}
+.theme-toggle__icon svg{width:20px;height:20px;display:block}
+.theme-toggle--float{position:fixed;top:12px;right:16px;z-index:var(--z-header)}
+
+/* ===== 共享页脚（chromebot 统一输出） ===== */
+.site-footer{text-align:center;padding:20px 16px;margin-top:32px;border-top:1px solid var(--border);font-size:.8rem;color:var(--muted)}

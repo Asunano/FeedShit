@@ -1,0 +1,1329 @@
+{{template "chrometop" .}}
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.6}
+.container{max-width:560px;margin:40px auto;padding:0 16px}
+h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
+.subtitle{color:var(--muted);font-size:.85rem;margin-bottom:24px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:24px}
+.field{margin-bottom:16px}
+.field > label{display:block;font-size:.85rem;font-weight:600;margin-bottom:4px;color:var(--fg)}
+.field .req{color:var(--danger);margin-left:2px}
+.field input[type=text],.field input[type=email],.field input[type=url],.field input[type=tel],
+.field input[type=number],.field input[type=date],.field input[type=time],.field input[type=datetime-local],
+.field input[type=month],.field input[type=color],.field input[type=password],
+.field textarea,.field select{
+  width:100%;padding:9px 10px;border:1px solid var(--border-soft);border-radius:4px;
+  font-size:.9rem;box-sizing:border-box;background:var(--panel);color:var(--field-fg);
+  transition:border-color .15s,box-shadow .15s
+}
+.field input:focus,.field textarea:focus,.field select:focus{
+  outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(229,62,62,.15)
+}
+.field textarea{resize:vertical}
+.checkbox-group,.radio-group{display:flex;flex-direction:column;gap:6px}
+.checkbox-group label,.radio-group label{display:flex;align-items:center;gap:6px;font-weight:400;cursor:pointer;font-size:.85rem}
+.checkbox-group input,.radio-group input{width:auto;margin:0}
+.field-error{color:var(--danger);font-size:.78rem;margin-top:4px;min-height:0}
+.field-error.visible{margin-top:4px}
+.help-text{font-size:.75rem;color:var(--muted);margin-top:4px;margin-bottom:0}
+.char-counter{font-size:.7rem;color:var(--hint);text-align:right;margin-top:2px}
+
+/* File areas */
+.file-area{margin-bottom:16px}
+.file-area .label{font-size:.85rem;font-weight:500;margin-bottom:4px;color:var(--field-label)}
+.file-input-wrap{position:relative;border:1px dashed var(--border-muted);border-radius:4px;padding:12px;text-align:center;cursor:pointer;transition:border-color .15s}
+.file-input-wrap:hover{border-color:var(--muted)}
+.file-input-wrap input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.file-input-wrap .hint{color:var(--hint);font-size:.8rem}
+.preview-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.preview-item{position:relative;width:72px;height:72px;border:1px solid var(--border-soft);border-radius:4px;overflow:hidden;background:var(--subtle)}
+.preview-item img{width:100%;height:100%;object-fit:cover}
+.preview-item .preview-name{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:var(--primary-fg);font-size:.55rem;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 2px}
+.preview-item .preview-remove{position:absolute;top:1px;right:1px;width:18px;height:18px;background:rgba(180,0,0,.75);color:var(--primary-fg);border:none;border-radius:50%;font-size:.7rem;line-height:18px;text-align:center;cursor:pointer;display:none}
+.preview-item:hover .preview-remove{display:block}
+.file-list{margin-top:8px;font-size:.8rem;color:var(--tag-fg)}
+.file-list .item{display:flex;justify-content:space-between;align-items:center;padding:3px 0}
+.file-list .item .remove{color:var(--danger);cursor:pointer;font-size:.75rem}
+
+.project-badge{display:inline-block;background:var(--note-border);padding:2px 8px;border-radius:3px;font-size:.8rem;color:var(--tag-fg);font-family:monospace}
+.btn{display:block;width:100%;padding:10px;background:var(--primary);color:var(--primary-fg);border:none;border-radius:4px;font-size:.9rem;cursor:pointer;transition:background .15s}
+.btn:hover{background:var(--field-label)}
+.btn:disabled{background:var(--disabled);cursor:not-allowed}
+.status{margin-top:12px;padding:10px;border-radius:4px;font-size:.85rem;display:none}
+.status.success{display:block;background:var(--success-bg);color:var(--success-fg);border:1px solid var(--success-border)}
+.status.error{display:block;background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-border)}
+.status.loading{display:block;background:var(--amber-bg);color:var(--status-pending-fg);border:1px solid var(--amber-border)}
+/* PoW progress */
+.pow-indicator{margin-top:8px;font-size:.8rem;color:var(--hint);display:none}
+.pow-indicator.active{display:block}
+.pow-bar{height:3px;background:var(--border-soft);border-radius:2px;margin-top:4px;overflow:hidden}
+.pow-bar-inner{height:100%;background:var(--muted);width:0%;transition:width .3s}
+/* Success card */
+.success-card{text-align:center;padding:20px 0}
+.success-card .check{font-size:2.5rem;color:var(--online);margin-bottom:8px}
+.success-card .fb-id{font-size:1.1rem;font-weight:600;color:var(--fg);margin-bottom:4px}
+.success-card .fb-note{font-size:.8rem;color:var(--muted);margin-bottom:16px}
+.success-card .btn-new{display:inline-block;padding:8px 24px;background:var(--hover);color:var(--field-label);border:1px solid var(--border-soft);border-radius:4px;font-size:.85rem;cursor:pointer}
+.success-card .btn-new:hover{background:var(--border-soft)}
+/* Privacy notice */
+.privacy-notice{margin-top:16px;padding:10px 12px;background:var(--note-bg);border:1px solid var(--note-border);border-radius:4px;font-size:.75rem;color:var(--hint);line-height:1.5}
+.privacy-notice strong{color:var(--disabled)}
+/* Duplicate warning */
+.dup-warning{margin-top:8px;padding:8px 10px;background:var(--status-pending-bg);color:var(--status-pending-fg);border:1px solid var(--amber-border);border-radius:4px;font-size:.8rem;display:none}
+.dup-warning.visible{display:block}
+.faq-hint-title{font-weight:600;margin-bottom:4px}
+.faq-item{margin:4px 0}
+.faq-q{color:var(--amber-fg);text-decoration:none;cursor:pointer;font-weight:500}
+.faq-q:hover{text-decoration:underline}
+.faq-a{margin:4px 0 6px;padding:6px 8px;background:rgba(0,0,0,.03);border-radius:4px;white-space:pre-wrap;word-break:break-word}
+.faq-still{margin-top:6px;text-align:right}
+.faq-still a{color:var(--amber-fg);font-weight:600;text-decoration:none}
+.faq-still a:hover{text-decoration:underline}
+[data-theme="dark"] .faq-q,[data-theme="dark"] .faq-still a{color:var(--status-pending-fg)}
+[data-theme="dark"] .faq-a{background:rgba(255,255,255,.06)}
+/* Duplicate candidate cards */
+.dup-title{font-weight:600;margin-bottom:4px}
+.dup-item{margin:6px 0;padding:6px 8px;background:rgba(0,0,0,.03);border-radius:4px}
+.dup-card-title{font-weight:500;color:var(--amber-fg);word-break:break-word}
+.dup-card-summary{margin:2px 0 4px;color:var(--status-pending-fg);word-break:break-word;max-height:3.2em;overflow:hidden}
+.dup-card-link{color:var(--amber-fg);font-weight:600;text-decoration:none}
+.dup-card-link:hover{text-decoration:underline}
+.dup-still{margin-top:6px;text-align:right}
+.dup-still a{color:var(--amber-fg);font-weight:600;text-decoration:none}
+.dup-still a:hover{text-decoration:underline}
+[data-theme="dark"] .dup-card-title,[data-theme="dark"] .dup-card-link,[data-theme="dark"] .dup-still a{color:var(--status-pending-fg)}
+[data-theme="dark"] .dup-item{background:rgba(255,255,255,.06)}
+/* Contact modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-overlay.active{display:flex}
+.modal{background:var(--panel);border-radius:8px;padding:24px;width:90%;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.15)}
+.modal h3{margin:0 0 8px 0;font-size:1.05rem}
+.modal .btn{padding:8px 18px;border:1px solid var(--border-soft);border-radius:4px;background:var(--panel);cursor:pointer;font-size:.85rem}
+.modal .btn-primary{background:var(--accent);color:var(--primary-fg);border-color:var(--accent)}
+.modal .btn-primary:hover{background:var(--accent-hover)}
+.modal .field{margin-bottom:12px}
+.modal .field label{display:block;font-size:.8rem;font-weight:600;margin-bottom:4px;color:var(--fg)}
+.modal .field input{width:100%;padding:8px 10px;border:1px solid var(--border-soft);border-radius:4px;font-size:.85rem;box-sizing:border-box}
+.modal .field input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(229,62,62,.15)}
+.modal-actions{display:flex;gap:8px;margin-top:16px}
+.modal-actions .btn{flex:1;width:auto}
+[data-theme="dark"] .modal{background:var(--primary)}
+[data-theme="dark"] .modal h3{color:var(--note-border)}
+[data-theme="dark"] .modal .field label{color:var(--border-muted)}
+[data-theme="dark"] .modal input{background:var(--field-input-bg);border-color:var(--field-label);color:var(--note-border)}
+[data-theme="dark"] .modal .btn{background:var(--field-input-bg);border-color:var(--field-label);color:var(--border-soft)}
+
+/* page head + theme toggle */
+.page-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+
+/* ===== Responsive ===== */
+@media (max-width:768px){
+  .container{margin:16px auto;padding:0 12px}
+  .card{padding:16px}
+  .field input[type=text],.field input[type=email],.field input[type=url],.field input[type=tel],
+  .field input[type=number],.field input[type=date],.field input[type=time],.field input[type=datetime-local],
+  .field input[type=month],.field textarea,.field select{min-height:40px}
+  .btn{min-height:44px}
+  .file-input-wrap{padding:16px}
+}
+
+/* ===== Modular form schema styles ===== */
+.field-half{width:50%;display:inline-block;vertical-align:top;box-sizing:border-box;padding-right:8px}
+.field-third{width:33.33%;display:inline-block;vertical-align:top;box-sizing:border-box;padding-right:8px}
+.rating-group{display:flex;gap:4px;padding:4px 0}
+.rating-star{font-size:1.5rem;cursor:pointer;opacity:.3;transition:opacity .15s}
+.rating-star.active,.rating-star:hover{opacity:1}
+.toggle-switch{position:relative;display:inline-block;width:44px;height:24px;vertical-align:middle}
+.toggle-switch input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--border-muted);border-radius:24px;transition:.2s}
+.toggle-slider::before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:var(--panel);border-radius:50%;transition:.2s}
+.toggle-switch input:checked + .toggle-slider{background:var(--link)}
+.toggle-switch input:checked + .toggle-slider::before{transform:translateX(20px)}
+.toggle-label{margin-left:8px;font-size:.85rem;vertical-align:middle}
+.tags-input{border:1px solid var(--border-soft);border-radius:4px;padding:4px}
+.tags-input input{border:none;outline:none;width:100%;padding:4px;background:transparent;color:var(--field-fg)}
+.tag-list{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.tag-item{background:var(--tag-bg);border-radius:3px;padding:2px 6px;font-size:.8rem;display:inline-flex;align-items:center;gap:4px}
+.tag-remove{cursor:pointer;font-weight:bold;color:var(--hint);font-size:.75rem}
+.tag-remove:hover{color:var(--danger)}
+.section-divider{margin:16px 0;padding:8px 0;border-top:1px solid var(--note-border)}
+.section-title{font-size:1rem;font-weight:600;margin:0 0 4px 0;color:var(--fg)}
+.section-desc{font-size:.8rem;color:var(--muted);margin:0}
+.custom-html{padding:4px 0}
+.md-preview{background:var(--note-bg);border:1px solid var(--border-soft)}
+.paragraph{padding:6px 0;font-size:.9rem;color:var(--fg);line-height:1.6}
+.paragraph code{background:var(--subtle);padding:1px 4px;border-radius:3px;font-size:.85em}
+.divider{border:none;border-top:1px solid var(--border);margin:16px 0}
+.scale-group{display:flex;flex-direction:column;gap:4px}
+.scale-option{display:flex;align-items:flex-start;gap:6px;cursor:pointer;font-size:.85rem}
+.scale-option input{width:auto;margin-top:3px}
+.scale-option .scale-label{font-weight:400}
+@media (max-width:768px){
+  .field-half,.field-third{width:100%;display:block;padding-right:0}
+}
+/* Announcement banner */
+.announcement-bar{display:flex;align-items:flex-start;gap:10px;border-radius:8px;padding:12px 14px;font-size:.9rem;border:1px solid transparent}
+.announcement-bar .ann-icon{font-size:1.05rem;line-height:1.4}
+.announcement-bar .ann-body{flex:1;min-width:0}
+.announcement-bar .ann-body *{max-width:100%}
+.announcement-bar .ann-close{background:none;border:none;color:inherit;cursor:pointer;font-size:1.1rem;opacity:.6;padding:0 2px;line-height:1}
+.announcement-bar .ann-close:hover{opacity:1}
+.ann-info{background:var(--accent-soft,rgba(37,99,235,.1));border-color:var(--accent-border,rgba(37,99,235,.35));color:var(--fg)}
+.ann-warning{background:rgba(217,119,6,.12);border-color:rgba(217,119,6,.4);color:var(--fg)}
+.ann-success{background:rgba(22,163,74,.12);border-color:rgba(22,163,74,.4);color:var(--fg)}
+.ann-danger{background:rgba(220,38,38,.12);border-color:rgba(220,38,38,.4);color:var(--fg)}
+</style>
+<div class="container">
+  <div class="page-head">
+    <h1 id="pageTitle">反馈提交</h1>
+  </div>
+  <p class="subtitle" id="pageSubtitle">项目：<span class="project-badge" id="projectDisplay">-</span></p>
+  <div id="projectAnnouncement"></div>
+  <div id="lastTrackBanner"></div>
+  <div class="card">
+    <form id="feedbackForm" enctype="multipart/form-data">
+      <!-- Entire form body is rendered from PROJECT.form_schema (see renderFormBySchema). -->
+      <div id="formRoot"></div>
+
+      <div class="dup-warning" id="dupWarning">检测到您可能正在重复提交相同内容的反馈。</div>
+      <div class="dup-warning" id="faqHint"></div>
+
+      <button type="submit" class="btn" id="submitBtn">提交反馈</button>
+      <div class="pow-indicator" id="powIndicator">
+        <span id="powText">正在计算工作量证明...</span>
+        <div class="pow-bar"><div class="pow-bar-inner" id="powBar"></div></div>
+      </div>
+      <div class="status" id="statusMsg"></div>
+    </form>
+
+    <!-- Contact info modal -->
+    <div class="modal-overlay" id="contactModal">
+      <div class="modal" style="max-width:420px">
+        <h3>📬 接收通知</h3>
+        <p style="font-size:.85rem;color:var(--tag-fg);margin-bottom:16px">填写联系方式后，反馈状态更新或有回复时您将收到邮件通知。</p>
+        <div class="field">
+          <label for="modal_contact_name">您的称呼</label>
+          <input type="text" id="modal_contact_name" placeholder="如何称呼您？">
+        </div>
+        <div class="field">
+          <label for="modal_contact_email">邮箱 <span class="req">*</span></label>
+          <input type="email" id="modal_contact_email" placeholder="用于接收通知和跟踪链接">
+        </div>
+        <div class="modal-actions">
+          <button class="btn" data-click="closeContactModal" data-args="">取消</button>
+          <button class="btn btn-primary" data-click="confirmContactModal" data-args="">确认</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="privacy-notice">
+      <strong>隐私说明：</strong>您提交的信息仅用于问题处理，管理员可查看全部内容。联系信息为选填项，不填则视为匿名反馈。
+    </div>
+  </div>
+</div>
+<script nonce="{{.Nonce}}">
+(function(){
+  // Project data injected by server — unique per /fb/{slug} page.
+  // NOTE: use a plain token (NOT a /* */ comment) — html/template strips JS
+  // block comments, which would break the strings.Replace injection in routes.go.
+  var PROJECT = __PROJECT_DATA__;
+  if (!PROJECT) {
+    document.body.innerHTML = '<div style="text-align:center;padding:60px;font-family:sans-serif"><h1>页面错误</h1><p>项目信息未加载</p></div>';
+    return;
+  }
+
+  // Set page title and project display
+  document.title = PROJECT.name + ' - 反馈提交';
+  document.getElementById('pageTitle').textContent = PROJECT.name + ' 反馈';
+  document.getElementById('projectDisplay').textContent = PROJECT.slug;
+  if (PROJECT.description) {
+    document.getElementById('pageSubtitle').innerHTML =
+      '项目：<span class="project-badge">' + escHtml(PROJECT.slug) + '</span> ' +
+      '<span style="color:var(--disabled);font-size:.8rem">' + escHtml(PROJECT.description) + '</span>';
+  }
+
+  // ---- Per-project announcement banner ----
+  renderProjectAnnouncement(PROJECT.announcement);
+  renderLastTrackBanner();
+
+  function renderLastTrackBanner() {
+    var el = document.getElementById('lastTrackBanner');
+    if (!el) return;
+    var key = 'feedshit_last_track_' + (PROJECT.slug || '');
+    var url = '';
+    try { url = localStorage.getItem(key) || ''; } catch(e){}
+    if (!url) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="announcement-bar ann-info" style="margin:0 0 16px;align-items:center">' +
+      '<span class="ann-icon">🔗</span>' +
+      '<div class="ann-body">您有一条未查看的反馈跟踪链接</div>' +
+      '<button type="button" id="openLastTrack" style="margin-left:8px;padding:4px 12px;background:var(--hover);color:var(--field-label);border:1px solid var(--border-soft);border-radius:4px;font-size:.8rem;cursor:pointer">查看</button>' +
+      '<button type="button" id="copyLastTrack" style="padding:4px 12px;background:var(--hover);color:var(--field-label);border:1px solid var(--border-soft);border-radius:4px;font-size:.8rem;cursor:pointer">复制</button>' +
+      '<button type="button" class="ann-close" id="dismissLastTrack" aria-label="忽略">×</button></div>';
+    document.getElementById('openLastTrack').onclick = function(){ window.open(url, '_blank'); };
+    document.getElementById('copyLastTrack').onclick = function(){ if (navigator.clipboard) navigator.clipboard.writeText(url); this.textContent = '已复制'; };
+    document.getElementById('dismissLastTrack').onclick = function(){ try { localStorage.removeItem(key); } catch(e){} el.innerHTML = ''; };
+  }
+
+  function renderProjectAnnouncement(data) {
+    var el = document.getElementById('projectAnnouncement');
+    if (!el) return;
+    if (!data || !data.enabled || !data.content) { el.innerHTML = ''; return; }
+    var level = data.level || 'info';
+    var bar = document.createElement('div');
+    bar.className = 'announcement-bar ann-' + level;
+    bar.style.margin = '0 0 16px';
+    var icons = {info:'ℹ️',warning:'⚠️',success:'✅',danger:'🚫'};
+    var icon = document.createElement('span');
+    icon.className = 'ann-icon'; icon.textContent = icons[level] || 'ℹ️';
+    var body = document.createElement('div');
+    body.className = 'ann-body';
+    if (data.content_type === 'html') { body.innerHTML = data.content; }
+    else { body.textContent = data.content; }
+    bar.appendChild(icon);
+    bar.appendChild(body);
+    if (data.dismissible) {
+      var close = document.createElement('button');
+      close.className = 'ann-close'; close.setAttribute('aria-label','关闭公告'); close.textContent = '×';
+      close.addEventListener('click', function(){ bar.style.display='none'; });
+      bar.appendChild(close);
+    }
+    el.innerHTML = '';
+    el.appendChild(bar);
+  }
+
+  var categories = PROJECT.categories || [];
+
+  // Upload size ceiling (MB). Refreshed from /api/v1/setup/status so the hint
+  // always matches the server's MAX_UPLOAD_MB.
+  var maxUploadMB = 20;
+
+  // ========== Escaping / helper helpers ==========
+  function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function escAttr(s) { return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function _a(s) { return escAttr(s); }
+  function _e(s) { return escHtml(s); }
+  function _r(f) { return f.required ? ' required' : ''; }
+  function _at(n, v) { return (v !== undefined && v !== null && v !== '') ? ' ' + n + '="' + _a(String(v)) + '"' : ''; }
+  function reqMark(f) { return f.required ? ' <span class="req">*</span>' : ''; }
+  function mdLite(s) {
+    // Lightweight inline markdown for paragraph/display fields: **b**, *i*, `code`, newlines.
+    var out = escHtml(s || '');
+    out = out.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    out = out.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    out = out.replace(/`(.+?)`/g, '<code>$1</code>');
+    out = out.replace(/\n/g, '<br>');
+    return out;
+  }
+
+  // ========== Field Registry — modular field type system ==========
+  // Each entry: { label, render(f, fName), collect(f, fName), validate?(f, fName) }
+  // Add a new type by appending an entry; no need to touch render/collect/validate.
+  var FIELD_REGISTRY = {
+    text: {
+      render: function(f, fName) {
+        return '<input type="text" id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'') + '"' +
+          _at('minlength', f.min_length) + _at('maxlength', f.max_length) + _at('pattern', f.pattern) + '>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    textarea: {
+      render: function(f, fName) {
+        return '<textarea id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'') + '"' +
+          _at('rows', f.rows||4) + _at('maxlength', f.max_length) + ' style="min-height:80px"></textarea>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    number: {
+      render: function(f, fName) {
+        return '<input type="number" id="' + fName + '" name="' + fName + '"' + _r(f) +
+          _at('min', f.min) + _at('max', f.max) + _at('step', f.step) + ' placeholder="' + _a(f.placeholder||'') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    email: {
+      render: function(f, fName) {
+        return '<input type="email" id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    url: {
+      render: function(f, fName) {
+        return '<input type="url" id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    tel: {
+      render: function(f, fName) {
+        return '<input type="tel" id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    date: {
+      render: function(f, fName) {
+        return '<input type="date" id="' + fName + '" name="' + fName + '"' + _r(f) +
+          _at('min', f.min) + _at('max', f.max) + '>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    time: {
+      render: function(f, fName) {
+        return '<input type="time" id="' + fName + '" name="' + fName + '"' + _r(f) + '>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    datetime: {
+      label: '日期时间',
+      render: function(f, fName) {
+        return '<input type="datetime-local" id="' + fName + '" name="' + fName + '"' + _r(f) +
+          _at('min', f.min) + _at('max', f.max) + '>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    month: {
+      label: '月份',
+      render: function(f, fName) {
+        return '<input type="month" id="' + fName + '" name="' + fName + '"' + _r(f) + '>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    color: {
+      render: function(f, fName) {
+        return '<input type="color" id="' + fName + '" name="' + fName + '"' + _r(f) + ' value="' + _a(f.default||'#000000') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    select: {
+      render: function(f, fName) {
+        var h = '<select id="' + fName + '" name="' + fName + '"' + _r(f) + '><option value="">请选择...</option>';
+        (f.options||[]).forEach(function(o){ h += '<option value="' + _a(o) + '">' + _e(o) + '</option>'; });
+        return h + '</select>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    checkbox: {
+      render: function(f, fName) {
+        var h = '<div class="checkbox-group">';
+        (f.options||[]).forEach(function(o){
+          h += '<label><input type="checkbox" name="' + fName + '" value="' + _a(o) + '"> ' + _e(o) + '</label>';
+        });
+        return h + '</div>';
+      },
+      collect: function(f, fName) {
+        var checks = document.querySelectorAll('input[name="' + fName + '"]:checked');
+        return Array.from(checks).map(function(c){ return c.value; });
+      }
+    },
+    radio: {
+      render: function(f, fName) {
+        var h = '<div class="radio-group">';
+        (f.options||[]).forEach(function(o, i){
+          h += '<label><input type="radio" name="' + fName + '" value="' + _a(o) + '"' + (i===0 && f.required?' required':'') + '> ' + _e(o) + '</label>';
+        });
+        return h + '</div>';
+      },
+      collect: function(f, fName) {
+        var el = document.querySelector('input[name="' + fName + '"]:checked');
+        return el ? el.value : '';
+      }
+    },
+    rating: {
+      render: function(f, fName) {
+        var max = f.max || 5;
+        var def = parseInt(f.default || '0', 10);
+        if (isNaN(def) || def < 0) def = 0;
+        if (def > max) def = max;
+        var icon = f.icon || 'star';
+        var sym = icon === 'heart' ? '❤' : icon === 'thumb' ? '👍' : '★';
+        var h = '<div class="rating-group" id="' + fName + '_rg">';
+        for (var i = 1; i <= max; i++) {
+          h += '<span class="rating-star' + (i <= def ? ' active' : '') + '" data-idx="' + i + '" data-field="' + fName + '">' + sym + '</span>';
+        }
+        h += '<input type="hidden" id="' + fName + '" name="' + fName + '" value="' + _a(def || '') + '">';
+        return h + '</div>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    scale: {
+      label: '量表',
+      render: function(f, fName) {
+        var max = f.max || (f.options ? f.options.length : 5);
+        if (max < 1) max = 5;
+        var h = '<div class="scale-group" id="' + fName + '_sg">';
+        for (var i = 1; i <= max; i++) {
+          var lbl = (f.options && f.options[i-1]) ? f.options[i-1] : (String(i));
+          h += '<label class="scale-option"><input type="radio" name="' + fName + '" value="' + i + '"' + (f.required && i===1?'':'') + '> ' +
+            '<span class="scale-label">' + _e(lbl) + '</span></label>';
+        }
+        h += '</div>';
+        return h;
+      },
+      collect: function(f, fName) {
+        var el = document.querySelector('input[name="' + fName + '"]:checked');
+        return el ? el.value : '';
+      }
+    },
+    toggle: {
+      render: function(f, fName) {
+        var on = f.default === 'on' ? ' checked' : '';
+        return '<label class="toggle-switch"><input type="checkbox" id="' + fName + '" name="' + fName + '"' + _r(f) + on + '>' +
+          '<span class="toggle-slider"></span></label><span class="toggle-label" id="' + fName + '_lbl">' + _e(f.default==='on'?(f.label_on||'已启用'):(f.label_off||'已禁用')) + '</span>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? (el.checked ? 'on' : 'off') : 'off'; }
+    },
+    slider: {
+      render: function(f, fName) {
+        return '<input type="range" id="' + fName + '" name="' + fName + '"' + _r(f) +
+          _at('min', f.min||0) + _at('max', f.max||100) + _at('step', f.step||1) + '>' +
+          '<output id="' + fName + '_out" style="margin-left:8px;font-weight:600">' + (f.default||50) + '</output>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    tags: {
+      render: function(f, fName) {
+        var maxTags = f.max || 0;
+        var hint = maxTags ? '<div class="help-text">最多 ' + maxTags + ' 个标签</div>' : '';
+        return '<div class="tags-input" id="' + fName + '_wrap"><input type="text" id="' + fName + '_inp" placeholder="' + _a(f.placeholder||'输入标签后回车') + '">' +
+          '<div class="tag-list" id="' + fName + '_list"></div><input type="hidden" id="' + fName + '" name="' + fName + '"></div>' + hint;
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    markdown: {
+      render: function(f, fName) {
+        return '<textarea id="' + fName + '" name="' + fName + '"' + _r(f) + ' placeholder="' + _a(f.placeholder||'支持 Markdown 语法') + '" style="min-height:120px;font-family:monospace"></textarea>' +
+          '<div class="md-preview" id="' + fName + '_preview" style="display:none;border:1px solid var(--border-soft);border-radius:4px;padding:8px;margin-top:4px;min-height:60px;font-size:.85rem"></div>';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value.trim() : ''; }
+    },
+    // Custom upload (non-system). Files are appended to the managed upload buckets
+    // on change so they are still saved by the backend.
+    file: {
+      render: function(f, fName) {
+        return '<input type="file" id="' + fName + '" name="' + fName + '"' + (f.multiple?' multiple':'') + _at('accept', f.accept) + '>';
+      },
+      collect: function(f, fName) { return ''; }
+    },
+    image: {
+      render: function(f, fName) {
+        return '<input type="file" id="' + fName + '" name="' + fName + '" accept="image/*"' + (f.multiple?' multiple':'') + '>';
+      },
+      collect: function(f, fName) { return ''; }
+    },
+    hidden: {
+      render: function(f, fName) {
+        return '<input type="hidden" id="' + fName + '" name="' + fName + '" value="' + _a(f.default||'') + '">';
+      },
+      collect: function(f, fName) { var el = document.getElementById(fName); return el ? el.value : ''; }
+    },
+    paragraph: {
+      label: '说明文字',
+      render: function(f, fName) {
+        return '<div class="paragraph">' + mdLite(f.content||f.label||'') + '</div>';
+      },
+      collect: function(f, fName) { return ''; }
+    },
+    divider: {
+      label: '分割线',
+      render: function(f, fName) {
+        return '<hr class="divider">';
+      },
+      collect: function(f, fName) { return ''; }
+    },
+    section: {
+      render: function(f, fName) {
+        return '<div class="section-divider' + (f.collapsible?' collapsible':'') + '"><h3 class="section-title">' + _e(f.label||'') + '</h3>' +
+          (f.description ? '<p class="section-desc">' + _e(f.description) + '</p>' : '') + '</div>';
+      },
+      collect: function(f, fName) { return ''; }
+    },
+    html: {
+      render: function(f, fName) {
+        return '<div class="custom-html">' + (f.content||'') + '</div>';
+      },
+      collect: function(f, fName) { return ''; }
+    }
+  };
+
+  // ========== Parse schema ==========
+  var formSchema = PROJECT.form_schema || [];
+  if (typeof formSchema === 'string') {
+    try { var _p = JSON.parse(formSchema); formSchema = Array.isArray(_p) ? _p : []; } catch(e) { formSchema = []; }
+  }
+  if (formSchema.fields) formSchema = formSchema.fields;
+
+  // Detect which system fields are present in the schema.
+  var hasSys = { title:false, description:false, category:false, notify:false, images:false, files:false };
+  formSchema.forEach(function(f){ if (f.sys && hasSys.hasOwnProperty(f.sys)) hasSys[f.sys] = true; });
+
+  var formRoot = document.getElementById('formRoot');
+
+  // ---- System field helpers (rendered entirely from the schema field) ----
+  function notifyBlock() {
+    return '<div class="field" id="wrap_notify"><label class="checkbox-label" style="display:flex;align-items:flex-start;gap:8px;cursor:pointer">' +
+      '<input type="checkbox" id="notify_consent" style="margin-top:2px;width:auto">' +
+      '<span>📬 接收反馈处理通知<br><small style="color:var(--muted);font-weight:normal">勾选后可填写称呼和邮箱，当反馈状态更新或有回复时您将收到邮件通知，并获取反馈跟踪链接。</small></span></label>' +
+      '<input type="hidden" id="contact_name" name="contact_name">' +
+      '<input type="hidden" id="contact_email" name="contact_email"></div>';
+  }
+  function imageArea(field, id) {
+    var lbl = (field && field.label) ? field.label : '图片';
+    return '<div class="file-area"><div class="label">' + _e(lbl) + '</div>' +
+      '<div class="file-input-wrap"><input type="file" id="' + id + '" name="' + id + '" multiple accept="image/*">' +
+      '<span class="hint">点击或拖拽图片到此处（单文件建议不超过 ' + maxUploadMB + ' MB）</span></div>' +
+      '<div class="preview-grid" id="imagePreview"></div></div>';
+  }
+  function fileArea(field, id) {
+    var lbl = (field && field.label) ? field.label : '附件';
+    return '<div class="file-area"><div class="label">' + _e(lbl) + '</div>' +
+      '<div class="file-input-wrap"><input type="file" id="' + id + '" name="' + id + '" multiple accept=".log,.txt,.csv,.json,.zip,.png,.jpg,.jpeg,.gif,.pdf,.md">' +
+      '<span class="hint">点击或拖拽文件到此处（单文件建议不超过 ' + maxUploadMB + ' MB）</span></div>' +
+      '<div class="file-list" id="fileList"></div></div>';
+  }
+
+  // ---- Char counter wiring ----
+  function attachCharCounter(f, fName) {
+    if ((f.type === 'text' || f.type === 'textarea') && f.max_length) {
+      var el = document.getElementById(fName);
+      var cc = document.getElementById('cc_' + fName);
+      if (!el || !cc) return;
+      function upd() { cc.textContent = el.value.length + ' / ' + f.max_length; }
+      el.addEventListener('input', upd);
+      upd();
+    }
+  }
+
+  // ========== Render entire form from schema ==========
+  function renderFormBySchema() {
+    if (!formSchema || formSchema.length === 0) {
+      // No fields configured. The backend's default schema normally prevents
+      // this, but if an admin clears the schema we show a neutral notice
+      // instead of hardcoded template content.
+      formRoot.innerHTML = '<p class="help-text" style="padding:8px 0">该表单尚未配置任何字段，请在后台编辑项目的“自定义表单字段”。</p>';
+      return;
+    }
+    var html = '';
+    formSchema.forEach(function(field){
+      var fName = 'cf_' + field.name;
+      var widthClass = field.width === 'half' ? ' field-half' : field.width === 'third' ? ' field-third' : '';
+
+      // ---- System fields ----
+      if (field.sys === 'title') {
+        html += '<div class="field' + widthClass + '" id="wrap_sys_title"><label for="sys_title">' + _e(field.label||'标题') + reqMark(field) + '</label>' +
+          '<input type="text" id="sys_title" name="sys_title"' + _r(field) + ' placeholder="' + _a(field.placeholder||'') + '"' +
+          _at('maxlength', field.max_length) + _at('minlength', field.min_length) + '>' +
+          '<div class="field-error" id="err_sys_title"></div></div>';
+        return;
+      }
+      if (field.sys === 'description') {
+        html += '<div class="field' + widthClass + '" id="wrap_sys_description"><label for="sys_description">' + _e(field.label||'详细描述') + reqMark(field) + '</label>' +
+          '<textarea id="sys_description" name="sys_description"' + _r(field) + ' placeholder="' + _a(field.placeholder||'') + '"' +
+          _at('rows', field.rows||5) + _at('maxlength', field.max_length) + ' style="min-height:80px"></textarea>' +
+          '<div class="field-error" id="err_sys_description"></div></div>';
+        return;
+      }
+      if (field.sys === 'category') {
+        // If the project defines no categories and this field isn't required,
+        // hide it entirely instead of showing an empty "请选择分类" dropdown.
+        if (categories.length === 0 && !field.required) return;
+        var ch = '<div class="field' + widthClass + '" id="wrap_sys_category"><label for="sys_category">' + _e(field.label||'分类') + reqMark(field) + '</label>' +
+          '<select id="sys_category" name="sys_category"' + _r(field) + '><option value="">请选择分类（选填）</option>';
+        categories.forEach(function(cat){ ch += '<option value="' + _a(cat.key) + '">' + _e(cat.name) + '</option>'; });
+        html += ch + '</select></div>';
+        return;
+      }
+      if (field.sys === 'notify') {
+        html += notifyBlock();
+        return;
+      }
+      if (field.sys === 'images') {
+        html += '<div class="' + widthClass + '">' + imageArea(field, 'sys_images') + '</div>';
+        return;
+      }
+      if (field.sys === 'files') {
+        html += '<div class="' + widthClass + '">' + fileArea(field, 'sys_files') + '</div>';
+        return;
+      }
+
+      // ---- Custom (registry) fields ----
+      var reg = FIELD_REGISTRY[field.type];
+      if (!reg) { html += '<p class="error" style="color:var(--danger)">未知字段类型: ' + _e(field.type) + '</p>'; return; }
+      var skipLabel = (field.type === 'hidden' || field.type === 'section' || field.type === 'html' || field.type === 'divider');
+      html += '<div class="field' + widthClass + '" id="wrap_' + fName + '">';
+      if (!skipLabel) {
+        html += '<label for="' + fName + '">' + _e(field.label) + reqMark(field) + '</label>';
+      }
+      html += reg.render(field, fName);
+      if (field.help_text) html += '<p class="help-text">' + _e(field.help_text) + '</p>';
+      if (!skipLabel) html += '<div class="field-error" id="err_' + fName + '"></div>';
+      if ((field.type === 'text' || field.type === 'textarea') && field.max_length) {
+        html += '<div class="char-counter" id="cc_' + fName + '"></div>';
+      }
+      html += '</div>';
+    });
+
+    // Notification opt-in is a platform feature and must always be available so
+    // submitters can receive status/reply emails. If the schema doesn't define a
+    // sys:notify field (e.g. a custom schema or an old project), append the
+    // default block. When sys:notify IS present it was already rendered once
+    // above, so we never duplicate it.
+    if (!hasSys.notify) {
+      html += notifyBlock();
+    }
+
+    formRoot.innerHTML = html;
+    wireDynamicHandlers();
+
+    // Move the FAQ self-service hint directly below the description field so
+    // submitters see relevant answers earlier (closer to where they type).
+    var faqEl = document.getElementById('faqHint');
+    if (faqEl) {
+      var descWrap = document.getElementById('wrap_sys_description');
+      if (descWrap && descWrap.parentNode) {
+        descWrap.parentNode.insertBefore(faqEl, descWrap.nextSibling);
+      }
+    }
+  }
+
+  // ========== Wire up interactive handlers for rendered fields ==========
+  function wireDynamicHandlers() {
+    formSchema.forEach(function(field){
+      var fName = 'cf_' + field.name;
+      if (field.type === 'toggle') {
+        var el = document.getElementById(fName);
+        if (el) el.addEventListener('change', function(){
+          var lbl = document.getElementById(fName + '_lbl');
+          if (lbl) lbl.textContent = this.checked ? (field.label_on || '已启用') : (field.label_off || '已禁用');
+        });
+      } else if (field.type === 'slider') {
+        var el = document.getElementById(fName);
+        if (el) el.addEventListener('input', function(){
+          var out = document.getElementById(fName + '_out');
+          if (out) out.textContent = this.value;
+        });
+      } else if (field.type === 'rating') {
+        var rg = document.getElementById(fName + '_rg');
+        if (rg) rg.addEventListener('click', function(e) {
+          var star = e.target.closest('.rating-star');
+          if (!star) return;
+          var idx = parseInt(star.dataset.idx);
+          var fld = star.dataset.field;
+          document.getElementById(fld).value = idx;
+          rg.querySelectorAll('.rating-star').forEach(function(s, i) {
+            s.className = 'rating-star' + (i < idx ? ' active' : '');
+          });
+        });
+      } else if (field.type === 'tags') {
+        var inp = document.getElementById(fName + '_inp');
+        if (inp) inp.addEventListener('keydown', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            addTag('cf_' + field.name, this.value, field.max || 0);
+            this.value = '';
+          }
+        });
+        var wrap = document.getElementById(fName + '_wrap');
+        if (wrap) wrap.addEventListener('click', function(e) {
+          var rm = e.target.closest('.tag-remove');
+          if (!rm) return;
+          removeTag(rm.dataset.prefix, rm.dataset.val);
+        });
+      } else if (field.type === 'file' || field.type === 'image') {
+        var fi = document.getElementById(fName);
+        if (fi) fi.addEventListener('change', function(){
+          Array.from(this.files).forEach(function(f){ pushManagedFile(f, field.type === 'image' ? 'images' : 'files'); });
+          this.value = '';
+          renderUploadViews();
+        });
+      }
+      attachCharCounter(field, fName);
+    });
+
+    // System image/file areas (whichever ids exist).
+    ['sys_images', 'images'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('change', function(){
+        Array.from(this.files).forEach(function(f){ pushManagedFile(f, 'images'); });
+        this.value = '';
+        renderUploadViews();
+      });
+    });
+    ['sys_files', 'files'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.addEventListener('change', function(){
+        Array.from(this.files).forEach(function(f){ pushManagedFile(f, 'files'); });
+        this.value = '';
+        renderUploadViews();
+      });
+    });
+  }
+
+  // Tags helper
+  function addTag(prefix, val, max) {
+    val = (val == null ? '' : String(val)).trim();
+    if (!val) return;
+    var hidden = document.getElementById(prefix);
+    var list = document.getElementById(prefix + '_list');
+    var inp = document.getElementById(prefix + '_inp');
+    if (!hidden || !list) return;
+    var existing = hidden.value ? hidden.value.split(',') : [];
+    if (max && existing.length >= max) return; // respect max tag limit
+    if (existing.indexOf(val) === -1) {
+      existing.push(val);
+      var tag = document.createElement('span');
+      tag.className = 'tag-item';
+      tag.innerHTML = _e(val) + ' <span class="tag-remove" data-prefix="' + prefix + '" data-val="' + _a(val) + '">&times;</span>';
+      list.appendChild(tag);
+    }
+    hidden.value = existing.join(',');
+    if (inp) inp.value = '';
+  }
+  function removeTag(prefix, val) {
+    var hidden = document.getElementById(prefix);
+    var list = document.getElementById(prefix + '_list');
+    if (!hidden || !list) return;
+    var existing = hidden.value.split(',').filter(function(v){ return v !== val; });
+    hidden.value = existing.join(',');
+    list.querySelectorAll('.tag-item').forEach(function(el){
+      if (el.textContent.indexOf(val) === 0) el.remove();
+    });
+  }
+
+  // ========== Managed file buckets (shared by system + custom upload fields) ==========
+  var managedFiles = { images: [], files: [] };
+  function pushManagedFile(f, bucket) { managedFiles[bucket].push(f); }
+  function formatSize(b) {
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return (b/1024).toFixed(1) + ' KB';
+    return (b/1048576).toFixed(1) + ' MB';
+  }
+  function renderUploadViews() {
+    // Image previews
+    var preview = document.getElementById('imagePreview');
+    if (preview) {
+      preview.innerHTML = '';
+      managedFiles.images.forEach(function(f, i) {
+        var item = document.createElement('div');
+        item.className = 'preview-item';
+        var img = document.createElement('img');
+        img.alt = f.name;
+        var reader = new FileReader();
+        reader.onload = (function(el){ return function(e){ el.src = e.target.result; }; })(img);
+        reader.readAsDataURL(f);
+        var nameBar = document.createElement('div');
+        nameBar.className = 'preview-name';
+        nameBar.textContent = f.name;
+        var removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'preview-remove';
+        removeBtn.textContent = '×';
+        removeBtn.title = '移除此图片';
+        removeBtn.addEventListener('click', function(){ managedFiles.images.splice(i, 1); renderUploadViews(); });
+        item.appendChild(img); item.appendChild(nameBar); item.appendChild(removeBtn);
+        preview.appendChild(item);
+      });
+    }
+    // File list
+    var fileList = document.getElementById('fileList');
+    if (fileList) {
+      fileList.innerHTML = '';
+      managedFiles.files.forEach(function(f, i) {
+        var div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = '<span>' + escHtml(f.name) + ' (' + formatSize(f.size) + ')</span>' +
+          '<span class="remove" data-idx="' + i + '">移除</span>';
+        div.querySelector('.remove').addEventListener('click', function(){
+          managedFiles.files.splice(i, 1); renderUploadViews();
+        });
+        fileList.appendChild(div);
+      });
+    }
+  }
+
+  // ========== Collect custom data from form ==========
+  function collectFormData() {
+    var data = {};
+    formSchema.forEach(function(field){
+      if (field.sys) return; // system fields are sent as dedicated params
+      var reg = FIELD_REGISTRY[field.type];
+      if (!reg || !reg.collect) return;
+      if (field.type === 'section' || field.type === 'html' || field.type === 'divider' || field.type === 'paragraph') return;
+      var val = reg.collect(field, 'cf_' + field.name);
+      if (val !== '' && val !== undefined && val !== null) {
+        if (Array.isArray(val)) { if (val.length) data[field.name] = val; }
+        else data[field.name] = val;
+      }
+    });
+    return data;
+  }
+
+  // ========== Contact modal ==========
+  // Bound after the form is rendered (notify_consent lives inside #formRoot).
+  function bindNotifyConsent() {
+    var notifyEl = document.getElementById('notify_consent');
+    if (!notifyEl) return;
+    notifyEl.addEventListener('change', function() {
+      if (this.checked) {
+        // Only pre-fill from the committed contact info when the modal is
+        // empty, so content the user typed but cancelled is preserved.
+        var mn = document.getElementById('modal_contact_name');
+        var me = document.getElementById('modal_contact_email');
+        var cn = document.getElementById('contact_name');
+        var ce = document.getElementById('contact_email');
+        if (mn && mn.value === '' && cn) mn.value = cn.value;
+        if (me && me.value === '' && ce) me.value = ce.value;
+        document.getElementById('contactModal').classList.add('active');
+        if (mn) mn.focus();
+      } else {
+        document.getElementById('contact_name').value = '';
+        document.getElementById('contact_email').value = '';
+      }
+    });
+  }
+
+  window.closeContactModal = function() {
+    document.getElementById('contactModal').classList.remove('active');
+    var nc = document.getElementById('notify_consent');
+    if (nc) nc.checked = false;
+  };
+  window.confirmContactModal = function() {
+    var name = document.getElementById('modal_contact_name').value.trim();
+    var email = document.getElementById('modal_contact_email').value.trim();
+    if (!name && !email) {
+      document.getElementById('contactModal').classList.remove('active');
+      var nc = document.getElementById('notify_consent');
+      if (nc) nc.checked = false;
+      return;
+    }
+    if (!name) { alert('请输入您的称呼'); return; }
+    if (!email) { alert('请输入邮箱地址'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { alert('请输入有效的邮箱地址'); return; }
+    document.getElementById('contact_name').value = name;
+    document.getElementById('contact_email').value = email;
+    document.getElementById('contactModal').classList.remove('active');
+  };
+
+  // ========== Form draft (localStorage autosave) ==========
+  var DRAFT_KEY = 'feedshit_draft_' + (PROJECT.slug || '');
+  var restoring = false;
+  var saveTimer = null;
+  function collectDraft() {
+    var draft = {};
+    var root = document.getElementById('feedbackForm');
+    if (!root) return draft;
+    root.querySelectorAll('input,select,textarea').forEach(function(el){
+      if (el.type === 'file') return;
+      var k = el.id;
+      if (!k) return;
+      if (el.type === 'checkbox' || el.type === 'radio') {
+        if (el.checked) draft[k] = (el.value && el.value !== 'on') ? el.value : 'on';
+      } else if (el.type === 'hidden') {
+        if (k.indexOf('cf_') === 0 || k === 'sys_title' || k === 'sys_description' || k === 'sys_category') draft[k] = el.value;
+      } else {
+        draft[k] = el.value;
+      }
+    });
+    return draft;
+  }
+  function saveDraft() {
+    if (restoring) return;
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(collectDraft())); } catch(e){}
+  }
+  function debounceSaveDraft() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveDraft, 400);
+  }
+  function rebuildTags(prefix, val) {
+    var list = document.getElementById(prefix + '_list');
+    if (!list) return;
+    list.innerHTML = '';
+    val.split(',').forEach(function(t){
+      t = t.trim(); if (!t) return;
+      var tag = document.createElement('span');
+      tag.className = 'tag-item';
+      tag.innerHTML = _e(t) + ' <span class="tag-remove" data-prefix="' + prefix + '" data-val="' + _a(t) + '">&times;</span>';
+      list.appendChild(tag);
+    });
+  }
+  function restoreDraft() {
+    try {
+      var raw = localStorage.getItem(DRAFT_KEY);
+      if (!raw) return;
+      var draft = JSON.parse(raw);
+      if (!draft || !Object.keys(draft).length) return;
+      restoring = true;
+      Object.keys(draft).forEach(function(k){
+        var el = document.getElementById(k);
+        if (!el) return;
+        var v = draft[k];
+        if (el.type === 'checkbox' || el.type === 'radio') {
+          if (v === 'on' || v === el.value) el.checked = true;
+        } else if (el.type === 'hidden') {
+          el.value = v;
+          if (k.indexOf('cf_') === 0) {
+            var rg = document.getElementById(k + '_rg');
+            if (rg && v) rg.querySelectorAll('.rating-star').forEach(function(s, i){ s.className = 'rating-star' + (i < parseInt(v, 10) ? ' active' : ''); });
+            var list = document.getElementById(k + '_list');
+            if (list && v) rebuildTags(k, v);
+          }
+        } else {
+          el.value = v;
+        }
+      });
+      restoring = false;
+    } catch(e){}
+  }
+  function attachDraftListeners() {
+    var f = document.getElementById('feedbackForm');
+    if (!f) return;
+    f.addEventListener('input', debounceSaveDraft);
+    f.addEventListener('change', debounceSaveDraft);
+  }
+
+  // Build the form
+  renderFormBySchema();
+  bindNotifyConsent();
+  restoreDraft();
+  attachDraftListeners();
+
+  // ========== Title/Description element accessors (sys or legacy) ==========
+  function titleEl() { return document.getElementById('sys_title'); }
+  function descEl() { return document.getElementById('sys_description'); }
+  function titleLabel() {
+    var f = formSchema.find(function(x){ return x.sys === 'title'; });
+    return f && f.label ? f.label : '标题';
+  }
+
+  // ========== Duplicate detection hash ==========
+  var lastSubmitHash = '';
+  function computeContentHash(title, desc) {
+    var str = title.trim().toLowerCase() + '||' + desc.trim().toLowerCase();
+    var hash = 5381;
+    for (var i = 0; i < str.length; i++) hash = ((hash << 5) + hash + str.charCodeAt(i)) & 0x7fffffff;
+    return hash.toString(36);
+  }
+
+  // ========== Friendly error mapping ==========
+  function friendlyError(serverMsg) {
+    if (!serverMsg) return '提交失败，请稍后重试';
+    if (serverMsg.indexOf('频率超限') >= 0 || serverMsg.indexOf('每小时') >= 0) return '提交过于频繁，请稍后再试（每小时有次数限制）';
+    if (serverMsg.indexOf('工作量证明') >= 0 && serverMsg.indexOf('已使用') >= 0) return '安全校验已过期，请刷新页面后重新提交';
+    if (serverMsg.indexOf('工作量证明') >= 0) return '安全校验失败，请刷新页面后重试';
+    if (serverMsg.indexOf('项目') >= 0 && serverMsg.indexOf('停用') >= 0) return '该项目已停用，无法提交反馈';
+    if (serverMsg.indexOf('标题') >= 0 && serverMsg.indexOf('空') >= 0) return '请填写' + titleLabel();
+    if (serverMsg.indexOf('文件') >= 0 && (serverMsg.indexOf('类型') >= 0 || serverMsg.indexOf('校验') >= 0)) return '文件格式不支持：' + serverMsg;
+    if (serverMsg.indexOf('体过大') >= 0 || serverMsg.indexOf('MaxBytes') >= 0) return '文件总大小超出限制，请压缩后重试';
+    return serverMsg;
+  }
+
+  // ========== PoW + Submit ==========
+  async function computePoW(projectId, timestamp, difficulty, onProgress) {
+    var prefix = '0'.repeat(difficulty);
+    var encoder = new TextEncoder();
+    var nonce = 0;
+    var base = projectId + timestamp;
+    while (true) {
+      var payload = base + nonce;
+      var hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(payload));
+      var hashArray = Array.from(new Uint8Array(hashBuffer));
+      var hashHex = hashArray.map(function(b){ return b.toString(16).padStart(2,'0'); }).join('');
+      if (hashHex.startsWith(prefix)) return { nonce: nonce, hash: hashHex };
+      nonce++;
+      if (nonce % 5000 === 0) {
+        if (onProgress) onProgress(nonce);
+        await new Promise(function(r){ setTimeout(r, 0); });
+      }
+    }
+  }
+
+  var form = document.getElementById('feedbackForm');
+  var submitBtn = document.getElementById('submitBtn');
+  var statusMsg = document.getElementById('statusMsg');
+  var powIndicator = document.getElementById('powIndicator');
+  var powText = document.getElementById('powText');
+  var powBar = document.getElementById('powBar');
+  var dupWarning = document.getElementById('dupWarning');
+
+  var powDifficulty = 4;
+  fetch('/api/v1/setup/status').then(function(r){ return r.json(); }).then(function(d){
+    if (d.pow_difficulty) powDifficulty = d.pow_difficulty;
+    if (d.max_upload_mb) maxUploadMB = d.max_upload_mb;
+  }).catch(function(){});
+
+  // ========== FAQ self-service hint ==========
+  var faqHint = document.getElementById('faqHint');
+  var faqTimer = null, lastFaqQuery = '';
+  var dupTimer = null, lastDupQuery = '';
+  var lastDupCandidates = [];
+  var dupForceConfirmed = false;
+
+  function renderFaqHint(faqs) {
+    if (!faqs || faqs.length === 0) { faqHint.className = 'dup-warning'; faqHint.innerHTML = ''; return; }
+    var html = '<div class="faq-hint-title">可能已有相关解答（点击问题展开答案）：</div>';
+    faqs.forEach(function(f) {
+      var aid = 'faq-a-' + f.id;
+      html += '<div class="faq-item"><a class="faq-q" data-click="__toggleFaq" data-args="\'' + aid + '\'">' + escHtml(f.question) + '</a>' +
+        '<div class="faq-a" id="' + aid + '" style="display:none">' + escHtml(f.answer) + '</div></div>';
+    });
+    html += '<div class="faq-still"><a data-click="__scrollToSubmit" data-args="">仍未解决？仍要提交新反馈 →</a></div>';
+    faqHint.className = 'dup-warning visible';
+    faqHint.innerHTML = html;
+  }
+  window.__toggleFaq = function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+  };
+  window.__scrollToSubmit = function() {
+    faqHint.className = 'dup-warning'; faqHint.innerHTML = '';
+    dupWarning.className = 'dup-warning'; dupWarning.innerHTML = '';
+    var sb = document.getElementById('submitBtn');
+    if (sb) sb.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  function searchFAQ() {
+    if (!PROJECT || !PROJECT.slug) return;
+    var t = titleEl(), d = descEl();
+    var q = ((t ? t.value : '') + ' ' + (d ? d.value : '')).trim();
+    if (q.length === 0) { faqHint.className = 'dup-warning'; faqHint.innerHTML = ''; lastFaqQuery = ''; return; }
+    if (q === lastFaqQuery) return;
+    lastFaqQuery = q;
+    fetch('/api/v1/faq?q=' + encodeURIComponent(q) + '&project=' + encodeURIComponent(PROJECT.slug))
+      .then(function(r){ return r.json(); })
+      .then(function(d){ renderFaqHint(d && d.faqs ? d.faqs : []); })
+      .catch(function(){ faqHint.className = 'dup-warning'; });
+  }
+  function debounceFaqSearch() { if (faqTimer) clearTimeout(faqTimer); faqTimer = setTimeout(searchFAQ, 300); }
+
+  // ========== Duplicate feedback detection ==========
+  function renderDupWarning(cands) {
+    lastDupCandidates = cands || [];
+    if (!cands || cands.length === 0) { dupForceConfirmed = false; dupWarning.className = 'dup-warning'; dupWarning.innerHTML = ''; return; }
+    var html = '<div class="dup-title">检测到您可能正在重复提交相同内容的反馈：</div>';
+    cands.forEach(function(c) {
+      html += '<div class="dup-item"><div class="dup-card-title">' + escHtml(c.title) + '</div>' +
+        (c.summary ? '<div class="dup-card-summary">' + escHtml(c.summary) + '</div>' : '') +
+        '<a class="dup-card-link" href="/track?token=' + encodeURIComponent(c.token) + '">查看原反馈 →</a></div>';
+    });
+    html += '<div class="dup-still"><a data-click="__scrollToSubmit" data-args="">仍要提交新反馈 →</a></div>';
+    dupWarning.className = 'dup-warning visible';
+    dupWarning.innerHTML = html;
+  }
+  // When similar feedback exists, ask for a one-tap confirmation before
+  // submitting. This does NOT block submission — it only makes the user
+  // consciously confirm. Another submit (after __forceSubmit) proceeds.
+  function showDupForceConfirm() {
+    var n = lastDupCandidates.length;
+    dupWarning.className = 'dup-warning visible';
+    dupWarning.innerHTML = '检测到 ' + n + ' 条相似反馈。如确认仍要提交，请点击下方按钮。' +
+      '<div class="dup-still"><a data-click="__forceSubmit" data-args="">仍要提交新反馈 →</a></div>';
+  }
+  window.__forceSubmit = function() {
+    var ev = new Event('submit', { cancelable: true });
+    form.dispatchEvent(ev);
+  };
+  function searchDuplicate() {
+    if (!PROJECT || !PROJECT.slug) return;
+    var t = titleEl(), d = descEl();
+    var q = ((t ? t.value : '') + ' ' + (d ? d.value : '')).trim();
+    if (q.length < 3) { dupWarning.className = 'dup-warning'; dupWarning.innerHTML = ''; lastDupQuery = ''; dupForceConfirmed = false; return; }
+    if (q === lastDupQuery) return;
+    lastDupQuery = q;
+    fetch('/api/v1/feedback/check-duplicate?q=' + encodeURIComponent(q) + '&project=' + encodeURIComponent(PROJECT.slug))
+      .then(function(r){ return r.json(); })
+      .then(function(d){ renderDupWarning(d && d.candidates ? d.candidates : []); })
+      .catch(function(){ dupWarning.className = 'dup-warning'; });
+  }
+  function debounceDupSearch() { if (dupTimer) clearTimeout(dupTimer); dupTimer = setTimeout(searchDuplicate, 300); }
+
+  // Live error clearing + FAQ/dup search on title/description
+  function bindLiveSearch() {
+    var t = titleEl(), d = descEl();
+    if (t) t.addEventListener('input', function(){
+      var err = document.getElementById('err_sys_title');
+      if (err) { err.className = 'field-error'; err.textContent = ''; }
+      dupWarning.className = 'dup-warning';
+      debounceFaqSearch(); debounceDupSearch();
+    });
+    if (d) d.addEventListener('input', function(){ debounceFaqSearch(); debounceDupSearch(); });
+  }
+  bindLiveSearch();
+
+  function setFieldError(elId, msg) {
+    var err = document.getElementById(elId);
+    if (err) { err.textContent = msg; err.className = 'field-error visible'; }
+  }
+
+  form.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    statusMsg.className = 'status'; statusMsg.style.display = 'none';
+    dupWarning.className = 'dup-warning'; dupWarning.innerHTML = '';
+    faqHint.className = 'dup-warning'; faqHint.innerHTML = '';
+    // Clear previous per-field errors
+    formRoot.querySelectorAll('.field-error').forEach(function(el){ el.className = 'field-error'; el.textContent = ''; });
+
+    var tEl = titleEl(), dEl = descEl();
+    var title = tEl ? tEl.value.trim() : '';
+    var description = dEl ? dEl.value.trim() : '';
+
+    if (!title) {
+      setFieldError('err_sys_title', '请填写' + titleLabel());
+      if (tEl) tEl.focus();
+      return;
+    }
+
+    // Require a one-tap confirmation when similar feedback was detected, but
+    // never block submission — the user can still force-submit.
+    if (lastDupCandidates.length > 0 && !dupForceConfirmed) {
+      dupForceConfirmed = true;
+      showDupForceConfirm();
+      return;
+    }
+
+    // Validate required custom + system-description fields
+    for (var i = 0; i < formSchema.length; i++) {
+      var field = formSchema[i];
+      if (!field.required) continue;
+      var errId = '';
+      var valid = true;
+      if (field.sys === 'description') {
+        valid = description !== '';
+        errId = 'err_sys_description';
+      } else if (field.sys) {
+        continue; // title handled above; others validated server-side
+      } else {
+        var fName = 'cf_' + field.name;
+        errId = 'err_' + fName;
+        switch (field.type) {
+          case 'text': case 'textarea': case 'email': case 'url': case 'tel':
+          case 'number': case 'date': case 'time': case 'datetime': case 'month':
+            var el = document.getElementById(fName);
+            valid = el && el.value.trim() !== '';
+            break;
+          case 'select':
+            var sel = document.getElementById(fName);
+            valid = sel && sel.value !== '';
+            break;
+          case 'checkbox': case 'radio': case 'scale':
+            valid = document.querySelector('input[name="' + fName + '"]:checked') !== null;
+            break;
+          case 'tags':
+            var th = document.getElementById(fName);
+            valid = th && th.value.trim() !== '';
+            break;
+        }
+      }
+      if (!valid) {
+        setFieldError(errId, '请填写必填项：' + (field.label || field.name));
+        var focusEl = document.getElementById(errId.replace('err_', (field.sys==='description'?'sys_description':(field.sys==='title'?'sys_title':'cf_'))));
+        if (focusEl) focusEl.focus();
+        return;
+      }
+    }
+
+    // Duplicate detection
+    var contentHash = computeContentHash(title, description);
+    if (contentHash === lastSubmitHash) {
+      dupWarning.className = 'dup-warning visible';
+      dupWarning.textContent = '检测到您可能正在重复提交相同内容的反馈。如确需提交，请再次点击按钮。';
+      if (dupWarning.dataset.confirmed !== '1') { dupWarning.dataset.confirmed = '1'; return; }
+    }
+    dupWarning.dataset.confirmed = '';
+
+    submitBtn.disabled = true;
+    powIndicator.classList.add('active');
+    powBar.style.width = '0%';
+
+    try {
+      var projectId = PROJECT.slug;
+      var timestamp = Math.floor(Date.now() / 1000).toString();
+      powText.textContent = '正在计算工作量证明...';
+      var powStart = Date.now();
+
+      var pow = await computePoW(projectId, timestamp, powDifficulty, function(count) {
+        var expected = Math.pow(16, powDifficulty);
+        var pct = Math.min(95, Math.round(count / expected * 100));
+        powBar.style.width = pct + '%';
+        var elapsed = (Date.now() - powStart) / 1000;
+        var rate = elapsed > 0 ? count / elapsed : 0;
+        var remain = rate > 0 ? Math.max(0, (expected - count) / rate) : 0;
+        var eta = remain > 1 ? '（预计剩余约 ' + Math.ceil(remain) + ' 秒）' : '';
+        powText.textContent = '正在计算工作量证明... 已尝试 ' + count.toLocaleString() + ' 次' + eta;
+      });
+
+      powBar.style.width = '100%';
+      powText.textContent = '安全校验完成，正在提交...';
+
+      var fd = new FormData();
+      fd.append('project_id', projectId);
+      fd.append('title', title);
+      fd.append('description', description);
+      fd.append('contact_name', (document.getElementById('contact_name')||{value:''}).value.trim());
+      fd.append('contact_email', (document.getElementById('contact_email')||{value:''}).value.trim());
+
+      // Category (system field)
+      if (hasSys.category) {
+        var sc = document.getElementById('sys_category');
+        if (sc) fd.append('category', sc.value);
+      }
+
+      // Custom data as JSON
+      var customData = collectFormData();
+      fd.append('custom_data', JSON.stringify(customData));
+
+      // Managed uploads
+      managedFiles.images.forEach(function(f){ fd.append('images', f); });
+      managedFiles.files.forEach(function(f){ fd.append('files', f); });
+
+      var resp = await fetch('/api/v1/feedback/submit', {
+        method: 'POST',
+        headers: { 'X-PoW-Timestamp': timestamp, 'X-PoW-Nonce': pow.nonce.toString() },
+        body: fd
+      });
+
+      var data = await resp.json();
+      if (resp.ok) {
+        lastSubmitHash = contentHash;
+        showSuccessCard(data.id, data.tracking_token);
+      } else {
+        showStatus('error', friendlyError(data.error));
+      }
+    } catch (err) {
+      showStatus('error', '网络错误，请检查网络连接后重试');
+    } finally {
+      submitBtn.disabled = false;
+      powIndicator.classList.remove('active');
+    }
+  });
+
+  // ========== Success card ==========
+  function showSuccessCard(feedbackId, trackingToken) {
+    var trackUrl = window.location.origin + '/track#token=' + encodeURIComponent(trackingToken || '');
+    try { localStorage.setItem('feedshit_last_track_' + (PROJECT.slug || ''), trackUrl); } catch(e){}
+    try { localStorage.removeItem(DRAFT_KEY); } catch(e){}
+    dupForceConfirmed = false;
+    var formEl = document.getElementById('feedbackForm');
+    formEl.innerHTML = '<div class="success-card">' +
+      '<div class="check">✓</div>' +
+      '<div class="fb-id">反馈已提交</div>' +
+      '<div class="fb-id">编号 #' + feedbackId + '</div>' +
+      '<div class="fb-note">请保存以下跟踪链接，可随时查看处理进度和回复：</div>' +
+      '<div style="margin:12px 0;padding:10px;background:var(--bg);border:1px solid var(--border-soft);border-radius:4px;word-break:break-all;font-size:.8rem;font-family:monospace;text-align:left" id="trackLinkBox">' + trackUrl + '</div>' +
+      '<div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' +
+      '<button class="btn-new" id="copyTrackBtn">复制链接</button>' +
+      '<button class="btn-new" id="openTrackBtn">打开跟踪页</button>' +
+      '<button class="btn-new" id="newFeedbackBtn">提交新反馈</button>' +
+      '</div></div>';
+    document.getElementById('copyTrackBtn').addEventListener('click', function(){
+      if (navigator.clipboard) navigator.clipboard.writeText(trackUrl).then(function(){ document.getElementById('copyTrackBtn').textContent = '已复制'; });
+      else { var ta = document.createElement('textarea'); ta.value = trackUrl; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); document.getElementById('copyTrackBtn').textContent = '已复制'; }
+    });
+    document.getElementById('openTrackBtn').addEventListener('click', function(){ window.open('/track#token=' + encodeURIComponent(trackingToken || ''), '_blank'); });
+    document.getElementById('newFeedbackBtn').addEventListener('click', function(){ location.reload(); });
+  }
+
+  function showStatus(type, msg) {
+    statusMsg.className = 'status ' + type;
+    statusMsg.textContent = msg;
+    statusMsg.style.display = 'block';
+  }
+})();
+</script>
+{{template "chromebot" .}}

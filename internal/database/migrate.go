@@ -302,6 +302,36 @@ func (d *Database) migrate() error {
 		{25, "admin email field", `
 			ALTER TABLE admins ADD COLUMN email TEXT NOT NULL DEFAULT '';
 		`},
+		{26, "project announcement column", `
+			ALTER TABLE projects ADD COLUMN announcement TEXT NOT NULL DEFAULT '';
+		`},
+		{27, "votes two-type + rating_open + status history", `
+			CREATE TABLE IF NOT EXISTS feedback_votes_new (
+				feedback_id INTEGER NOT NULL,
+				voter_key   TEXT    NOT NULL,
+				vote_type   TEXT    NOT NULL DEFAULT 'useful',
+				created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+				PRIMARY KEY(feedback_id, voter_key, vote_type)
+			);
+			INSERT INTO feedback_votes_new (feedback_id, voter_key, vote_type, created_at)
+				SELECT feedback_id, voter_key, 'useful', created_at FROM feedback_votes;
+			DROP TABLE feedback_votes;
+			ALTER TABLE feedback_votes_new RENAME TO feedback_votes;
+			CREATE INDEX IF NOT EXISTS idx_votes_feedback ON feedback_votes(feedback_id);
+
+			ALTER TABLE feedbacks ADD COLUMN rating_open INTEGER NOT NULL DEFAULT 0;
+
+			CREATE TABLE IF NOT EXISTS feedback_status_history (
+				id          INTEGER PRIMARY KEY AUTOINCREMENT,
+				feedback_id INTEGER NOT NULL,
+				from_status TEXT    NOT NULL DEFAULT '',
+				to_status   TEXT    NOT NULL DEFAULT '',
+				changed_by  TEXT    NOT NULL DEFAULT '',
+				note        TEXT    NOT NULL DEFAULT '',
+				created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+			);
+			CREATE INDEX IF NOT EXISTS idx_statushist_fb ON feedback_status_history(feedback_id);
+		`},
 		// Future migrations go here — never renumber existing entries.
 	}
 
