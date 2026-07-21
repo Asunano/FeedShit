@@ -6,7 +6,7 @@ import (
 )
 
 // InsertFeedbackNote adds a note/reply to a feedback.
-func (d *Database) InsertFeedbackNote(feedbackID int64, content, author string, isPublic bool) (int64, error) {
+func (d *Database) InsertFeedbackNote(feedbackID int64, content, author string, isPublic bool, filePaths string) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -15,8 +15,8 @@ func (d *Database) InsertFeedbackNote(feedbackID int64, content, author string, 
 		pub = 1
 	}
 	res, err := d.db.Exec(
-		`INSERT INTO feedback_notes (feedback_id, content, author, is_public) VALUES (?, ?, ?, ?)`,
-		feedbackID, content, author, pub,
+		`INSERT INTO feedback_notes (feedback_id, content, author, is_public, file_paths) VALUES (?, ?, ?, ?, ?)`,
+		feedbackID, content, author, pub, filePaths,
 	)
 	if err != nil {
 		return 0, err
@@ -30,7 +30,7 @@ func (d *Database) ListFeedbackNotes(feedbackID int64) ([]FeedbackNote, error) {
 	defer d.mu.RUnlock()
 
 	rows, err := d.db.Query(
-		`SELECT id, feedback_id, content, author, is_public, created_at FROM feedback_notes WHERE feedback_id = ? ORDER BY created_at ASC`,
+		`SELECT id, feedback_id, content, author, is_public, file_paths, created_at FROM feedback_notes WHERE feedback_id = ? ORDER BY created_at ASC`,
 		feedbackID,
 	)
 	if err != nil {
@@ -43,7 +43,7 @@ func (d *Database) ListFeedbackNotes(feedbackID int64) ([]FeedbackNote, error) {
 		var n FeedbackNote
 		var createdAt int64
 		var isPublic int
-		if err := rows.Scan(&n.ID, &n.FeedbackID, &n.Content, &n.Author, &isPublic, &createdAt); err != nil {
+		if err := rows.Scan(&n.ID, &n.FeedbackID, &n.Content, &n.Author, &isPublic, &n.FilePaths, &createdAt); err != nil {
 			return nil, err
 		}
 		n.IsPublic = isPublic == 1
@@ -59,13 +59,13 @@ func (d *Database) GetFeedbackNote(id int64) (*FeedbackNote, error) {
 	defer d.mu.RUnlock()
 
 	row := d.db.QueryRow(
-		`SELECT id, feedback_id, content, author, is_public, created_at FROM feedback_notes WHERE id = ?`,
+		`SELECT id, feedback_id, content, author, is_public, file_paths, created_at FROM feedback_notes WHERE id = ?`,
 		id,
 	)
 	var n FeedbackNote
 	var createdAt int64
 	var isPublic int
-	if err := row.Scan(&n.ID, &n.FeedbackID, &n.Content, &n.Author, &isPublic, &createdAt); err != nil {
+	if err := row.Scan(&n.ID, &n.FeedbackID, &n.Content, &n.Author, &isPublic, &n.FilePaths, &createdAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}

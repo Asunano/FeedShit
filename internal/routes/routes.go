@@ -261,6 +261,7 @@ func Register(r *gin.Engine, application *app.App) {
 	trackReply.Use(middleware.RateLimitMiddleware(application.RL))
 	trackReply.GET("/by-email", application.PublicListByEmail)
 	trackReply.POST("/reply", application.PublicSubmitReply)
+	trackReply.GET("/file", application.PublicServeTrackFile)
 	trackReply.POST("/:token/rating", application.PublicSubmitRating)
 	trackReply.POST("/:token/need-help", application.PublicNeedHelp)
 

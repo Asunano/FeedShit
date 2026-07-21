@@ -91,6 +91,7 @@ type FeedbackNote struct {
 	Content    string    `json:"content"`
 	Author     string    `json:"author"`
 	IsPublic   bool      `json:"is_public"`
+	FilePaths  string    `json:"file_paths"`
 	CreatedAt  time.Time `json:"created_at"`
 }
 
@@ -323,13 +324,13 @@ func (d *Database) GetFeedbackByTrackingToken(token string) (*Feedback, error) {
 }
 
 // InsertSubmitterReply adds a public reply from the feedback submitter.
-func (d *Database) InsertSubmitterReply(feedbackID int64, content string) (int64, error) {
+func (d *Database) InsertSubmitterReply(feedbackID int64, content, filePaths string) (int64, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	res, err := d.db.Exec(
-		`INSERT INTO feedback_notes (feedback_id, content, author, is_public) VALUES (?, ?, ?, 1)`,
-		feedbackID, content, "提交者",
+		`INSERT INTO feedback_notes (feedback_id, content, author, is_public, file_paths) VALUES (?, ?, ?, 1, ?)`,
+		feedbackID, content, "提交者", filePaths,
 	)
 	if err != nil {
 		return 0, err

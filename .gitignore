@@ -5,6 +5,9 @@
 
 # Data directory (SQLite, uploads)
 data/
+# Uploaded attachments (user files) — never commit, any depth
+uploads/
+**/uploads/
 
 # Database files
 *.db

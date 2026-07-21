@@ -141,6 +141,7 @@ func (a *App) checkFeedbackReadPerm(c *gin.Context, fbID int64) (*database.Feedb
 // allowedExtensions defines the file types accepted for upload.
 var allowedExtensions = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".gif": true, ".webp": true, ".bmp": true, ".svg": true,
+	".pdf": true, ".doc": true, ".docx": true, ".zip": true,
 	".log": true, ".txt": true, ".csv": true, ".json": true,
 }
 
@@ -212,6 +213,39 @@ func (a *App) saveUpload(fh *multipart.FileHeader, projectID string) (string, er
 	}
 
 	return filepath.ToSlash(relPath), nil
+}
+
+// saveUploadFiles reads every uploaded file from the "file" multipart field,
+// persists each via saveUpload, and returns their relative storage paths as a
+// JSON array string (e.g. ["uploads/proj/.../a.png"]). Requests that are not
+// multipart/form-data (e.g. JSON or urlencoded) yield an empty array without
+// error, so callers can safely pass the result even when no file was attached.
+func (a *App) saveUploadFiles(c *gin.Context, projectID string) (string, error) {
+	if !strings.HasPrefix(c.ContentType(), "multipart/form-data") {
+		return "[]", nil
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, a.Cfg.MaxUploadSize)
+	if err := c.Request.ParseMultipartForm(a.Cfg.MaxUploadSize); err != nil {
+		return "", fmt.Errorf("解析上传失败: %w", err)
+	}
+	form, ferr := c.MultipartForm()
+	if ferr != nil || form == nil {
+		return "[]", nil
+	}
+	files := form.File["file"]
+	paths := make([]string, 0, len(files))
+	for _, fh := range files {
+		p, err := a.saveUpload(fh, projectID)
+		if err != nil {
+			return "", err
+		}
+		paths = append(paths, p)
+	}
+	b, err := json.Marshal(paths)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // cookieSecure determines whether auth cookies should be marked Secure,
@@ -397,8 +431,9 @@ func (a *App) AdminServeFile(c *gin.Context) {
 	}
 
 	// Restrict file serving to the uploads/ subdirectory only — never the whole
-	// DataDir (which also contains the SQLite DB and backup snapshots).
-	baseDir := filepath.Join(a.Cfg.DataDir, "uploads")
+	// DataDir (which also contains the SQLite DB and backup snapshots). Stored
+	// paths already carry the "uploads/" prefix, so join from DataDir directly.
+	baseDir := a.Cfg.DataDir
 	absPath := filepath.Join(baseDir, cleaned)
 	// EvalSymlinks resolves symlinks to prevent symlink-based path traversal
 	absResolved, err := filepath.EvalSymlinks(absPath)

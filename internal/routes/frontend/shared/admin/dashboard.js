@@ -177,6 +177,16 @@
     return resp.json();
   }
 
+  // apiForm sends a FormData body (multipart) for file uploads. It deliberately
+  // does NOT set Content-Type so the browser can assign the multipart boundary.
+  async function apiForm(url, formData) {
+    var opts = { method: 'POST', body: formData };
+    opts.headers = getCsrfHeaders();
+    var resp = await api(url, opts);
+    if (!resp) return null;
+    return resp.json();
+  }
+
   // ========== Knowledge Base (FAQ) ==========
   var kbProjectSlug = '';
   var kbCache = [];
@@ -655,6 +665,8 @@
       '<div id="notesList">加载中...</div>' +
       '<div class="note-form">' +
       '<textarea id="noteContent" placeholder="添加内部备注或公开回复..."></textarea>' +
+      '<input type="file" id="noteFiles" multiple accept="image/*,.pdf,.doc,.docx,.txt,.log,.csv,.json,.zip" style="margin-top:8px">' +
+      '<div style="margin:4px 0 8px;font-size:.75rem;color:var(--muted)">支持图片/PDF/Word/文本/日志/压缩包，单文件最大 20MB（选填）</div>' +
       '<div class="note-form-actions">' +
       '<label><input type="checkbox" id="notePublic"> 公开回复（提交者可见）</label>' +
       '<button data-click="addNote" data-args="'+f.id+'">提交</button>' +
@@ -709,27 +721,49 @@
       var dt = n.created_at ? n.created_at.replace('T',' ').substring(0,16) : '-';
       var pubClass = n.is_public ? ' public' : '';
       var badge = n.is_public ? '<span class="note-badge pub">公开</span>' : '<span class="note-badge priv">内部</span>';
+      var fileHtml = '';
+      try {
+        var fps = JSON.parse(n.file_paths || '[]');
+        if (fps.length) {
+          fileHtml = '<div class="note-files">';
+          fps.forEach(function(fp){
+            var fname = fp.split('/').pop();
+            fileHtml += '<a class="file-chip" href="/admin/files/'+esc(fp)+'" target="_blank" rel="noopener" download style="display:inline-block;margin:6px 6px 0 0;padding:4px 10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--accent);text-decoration:none;font-size:.8rem">'+esc(fname)+'</a>';
+          });
+          fileHtml += '</div>';
+        }
+      } catch(e) {}
       return '<div class="note-item'+pubClass+'">' +
         '<div class="note-header"><span class="note-author">'+esc(n.author)+badge+'</span>' +
         '<span><span class="note-time">'+dt+'</span> ' +
         '<button class="note-delete" data-click="deleteNote" data-args="'+n.id+','+feedbackId+'">删除</button></span></div>' +
-        '<div class="note-content">'+esc(n.content)+'</div></div>';
+        '<div class="note-content">'+esc(n.content)+'</div>' + fileHtml + '</div>';
     }).join('');
   }
 
   window.addNote = async function(feedbackId) {
     var content = document.getElementById('noteContent').value.trim();
-    if (!content) { showToast('内容不能为空', 'error'); return; }
+    var fileInput = document.getElementById('noteFiles');
+    var hasFile = fileInput && fileInput.files && fileInput.files.length > 0;
+    if (!content && !hasFile) { showToast('内容或附件至少填写一项', 'error'); return; }
     var isPublic = document.getElementById('notePublic').checked;
-    var d = await apiJSON('/api/v1/admin/feedbacks/' + feedbackId + '/notes', {
-      method: 'POST',
-      body: JSON.stringify({content: content, is_public: isPublic})
-    });
+
+    var fd = new FormData();
+    fd.append('content', content);
+    fd.append('is_public', isPublic ? 'true' : 'false');
+    if (hasFile) {
+      for (var i = 0; i < fileInput.files.length; i++) {
+        if (fileInput.files[i].size > 20*1024*1024) { showToast('文件 ' + fileInput.files[i].name + ' 超过 20MB', 'error'); return; }
+        fd.append('file', fileInput.files[i]);
+      }
+    }
+    var d = await apiForm('/api/v1/admin/feedbacks/' + feedbackId + '/notes', fd);
     if (!d) return;
     if (d.error) { showToast(d.error, 'error'); return; }
     showToast('备注已添加', 'success');
     document.getElementById('noteContent').value = '';
     document.getElementById('notePublic').checked = false;
+    if (fileInput) fileInput.value = '';
     loadNotes(feedbackId);
   };
 

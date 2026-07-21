@@ -3,8 +3,11 @@ package app
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -152,17 +155,24 @@ func (a *App) PublicSubmitReply(c *gin.Context) {
 		return
 	}
 
-	content := strings.TrimSpace(c.PostForm("content"))
-	if content == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容不能为空"})
+	// Accept optional file attachments (multipart). Text-only replies remain
+	// supported; a reply with neither content nor a file is rejected.
+	filePaths, err := a.saveUploadFiles(c, fb.ProjectID)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	content := strings.TrimSpace(c.PostForm("content"))
 	if len(content) > 2000 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容最多 2000 字"})
 		return
 	}
+	if content == "" && filePaths == "[]" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "回复内容或附件至少填写一项"})
+		return
+	}
 
-	noteID, err := a.DB.InsertSubmitterReply(fb.ID, content)
+	noteID, err := a.DB.InsertSubmitterReply(fb.ID, content, filePaths)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存回复失败"})
 		return
@@ -185,6 +195,93 @@ func (a *App) PublicSubmitReply(c *gin.Context) {
 		"message": "回复已提交",
 		"note_id": noteID,
 	})
+}
+
+// PublicServeTrackFile serves a file attached to a feedback note, accessible
+// only to the submitter who owns that feedback — and only for public notes, so
+// internal admin attachments never leak. The file path is derived entirely
+// from the database (never from client input) and is validated against the
+// uploads/ subtree to block traversal.
+func (a *App) PublicServeTrackFile(c *gin.Context) {
+	token := strings.TrimSpace(c.Query("token"))
+	noteID, err := strconv.ParseInt(c.Query("note"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少必要的回复参数"})
+		return
+	}
+	idx := 0
+	if v := c.Query("i"); v != "" {
+		idx, err = strconv.Atoi(v)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的附件索引"})
+			return
+		}
+	}
+	if token == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少跟踪令牌"})
+		return
+	}
+
+	fb, err := a.DB.GetFeedbackByTrackingToken(token)
+	if err != nil || fb == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "未找到对应的反馈记录"})
+		return
+	}
+	note, err := a.DB.GetFeedbackNote(noteID)
+	if err != nil || note == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "未找到对应的回复"})
+		return
+	}
+	if note.FeedbackID != fb.ID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该附件"})
+		return
+	}
+	if !note.IsPublic {
+		// Internal admin notes are never exposed to submitters.
+		c.JSON(http.StatusForbidden, gin.H{"error": "无权访问该附件"})
+		return
+	}
+
+	var paths []string
+	if err := json.Unmarshal([]byte(note.FilePaths), &paths); err != nil || len(paths) == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "该回复没有附件"})
+		return
+	}
+	if idx < 0 || idx >= len(paths) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "附件不存在"})
+		return
+	}
+	relPath := paths[idx]
+
+	cleaned := filepath.Clean(filepath.FromSlash(relPath))
+	if strings.Contains(cleaned, "..") {
+		c.JSON(http.StatusForbidden, gin.H{"error": "非法路径"})
+		return
+	}
+
+	absDataDirResolved, err := filepath.EvalSymlinks(a.Cfg.DataDir)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "路径解析失败"})
+		return
+	}
+	absBaseResolved := filepath.Join(absDataDirResolved, "uploads")
+	absPath := filepath.Join(absDataDirResolved, cleaned)
+	absResolved, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "文件不存在"})
+		return
+	}
+	if !strings.HasPrefix(absResolved, absBaseResolved+string(os.PathSeparator)) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "非法路径"})
+		return
+	}
+	info, err := os.Stat(absResolved)
+	if err != nil || info.IsDir() {
+		c.JSON(http.StatusNotFound, gin.H{"error": "文件不存在"})
+		return
+	}
+
+	c.File(absResolved)
 }
 
 // PublicSubmitRating lets a submitter rate a resolved feedback via their tracking token (M2 CSAT).

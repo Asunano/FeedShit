@@ -77,6 +77,16 @@ func validateFileContent(header []byte, ext string) bool {
 		return len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[')
 	case ".log", ".txt", ".csv":
 		return true // text files — no reliable magic bytes
+	case ".pdf":
+		return len(header) >= 5 && string(header[:5]) == "%PDF-"
+	case ".zip", ".docx":
+		// ZIP local file header; .docx/.xlsx/.pptx are ZIP containers sharing this magic.
+		return len(header) >= 4 && header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x03 && header[3] == 0x04
+	case ".doc":
+		// OLE2 compound document magic (legacy .doc).
+		return len(header) >= 8 &&
+			header[0] == 0xD0 && header[1] == 0xCF && header[2] == 0x11 && header[3] == 0xE0 &&
+			header[4] == 0xA1 && header[5] == 0xB1 && header[6] == 0x1A && header[7] == 0xE1
 	default:
 		return false
 	}

@@ -330,9 +330,12 @@ func (d *Database) migrate() error {
 				note        TEXT    NOT NULL DEFAULT '',
 				created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 			);
-			CREATE INDEX IF NOT EXISTS idx_statushist_fb ON feedback_status_history(feedback_id);
+		CREATE INDEX IF NOT EXISTS idx_statushist_fb ON feedback_status_history(feedback_id);
+	`},
+		{28, "feedback_notes file_paths", `
+			ALTER TABLE feedback_notes ADD COLUMN file_paths TEXT NOT NULL DEFAULT '[]';
 		`},
-		// Future migrations go here — never renumber existing entries.
+	// Future migrations go here — never renumber existing entries.
 	}
 
 	for _, m := range migrations {

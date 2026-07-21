@@ -100,23 +100,40 @@ func (a *App) AdminAddFeedbackNote(c *gin.Context) {
 		return
 	}
 
-	var req struct {
-		Content  string `json:"content"`
-		IsPublic bool   `json:"is_public"`
+	ct := c.ContentType()
+	var content, filePaths string
+	var isPublic bool
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		var err error
+		filePaths, err = a.saveUploadFiles(c, fb.ProjectID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		content = strings.TrimSpace(c.PostForm("content"))
+		v := c.PostForm("is_public")
+		isPublic = v == "true" || v == "on" || v == "1"
+	} else {
+		var req struct {
+			Content  string `json:"content"`
+			IsPublic bool   `json:"is_public"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
+			return
+		}
+		content = strings.TrimSpace(req.Content)
+		isPublic = req.IsPublic
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
-		return
-	}
-	if strings.TrimSpace(req.Content) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "内容不能为空"})
+	if content == "" && filePaths == "[]" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "内容或附件至少填写一项"})
 		return
 	}
 
 	user, _ := c.Get("admin_user")
 	author := fmt.Sprintf("%v", user)
 
-	noteID, err := a.DB.InsertFeedbackNote(id, req.Content, author, req.IsPublic)
+	noteID, err := a.DB.InsertFeedbackNote(id, content, author, isPublic, filePaths)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败"})
 		return
@@ -126,11 +143,11 @@ func (a *App) AdminAddFeedbackNote(c *gin.Context) {
 	a.DB.InsertAuditLog("add_note", fmt.Sprintf("反馈 #%d 添加备注", id), author, clientIP)
 
 	// Notify submitter when a public reply is added
-	if req.IsPublic && fb.ContactEmail != "" {
+	if isPublic && fb.ContactEmail != "" {
 		vars := map[string]string{
 			"id":           fmt.Sprintf("%d", fb.ID),
 			"title":        fb.Title,
-			"note_content": req.Content,
+			"note_content": content,
 			"author":       author,
 		}
 		subject := email.BuildReplySubject(a.DB, vars)
@@ -143,8 +160,8 @@ func (a *App) AdminAddFeedbackNote(c *gin.Context) {
 		"id":         fb.ID,
 		"project_id": fb.ProjectID,
 		"title":      fb.Title,
-		"note":       req.Content,
-		"is_public":  req.IsPublic,
+		"note":       content,
+		"is_public":  isPublic,
 		"author":     author,
 	}, fb)
 
