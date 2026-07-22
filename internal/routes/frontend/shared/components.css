@@ -4,6 +4,10 @@
  * 组件范围：徽章 / 标签 / 提示条 / 模态 / 按钮 / 卡片 / 表格 / 表单字段 / 分页。
  */
 
+/* ===== 全局布局：页脚固定底部（内容短时贴底，不悬空） ===== */
+body{display:flex;flex-direction:column;min-height:100vh}
+.site-footer{margin-top:auto}
+
 /* ===== 状态徽章（反馈状态） ===== */
 .status-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.75rem;font-weight:500;line-height:1.4}
 .status-pending{background:var(--status-pending-bg);color:var(--status-pending-fg)}
@@ -86,3 +90,56 @@ tr:last-child td{border-bottom:none}
 
 /* ===== 共享页脚（chromebot 统一输出） ===== */
 .site-footer{text-align:center;padding:20px 16px;margin-top:32px;border-top:1px solid var(--border);font-size:.8rem;color:var(--muted)}
+
+/* ===== Unified public navigation ===== */
+.pnav{display:flex;align-items:center;height:52px;padding:0 20px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:var(--z-header)}
+.pnav__brand{font-size:1.05rem;font-weight:700;color:var(--fg);text-decoration:none;margin-right:28px}
+.pnav__brand span{color:var(--accent)}
+.pnav__links{display:flex;align-items:center;gap:6px;margin-left:auto}
+.pnav__links a{padding:6px 12px;border-radius:6px;font-size:.88rem;color:var(--field-label);text-decoration:none;transition:background .15s}
+.pnav__links a:hover{background:var(--hover);text-decoration:none}
+.pnav__links a.active{background:var(--primary);color:var(--primary-fg)}
+.pnav__toggle{width:34px;height:34px}
+
+/* ===== 缩略图网格（图片附件预览，统一 96×96 防布局错乱） ===== */
+.thumb-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.thumb-item{position:relative;width:96px;height:96px;border:1px solid var(--border-soft);border-radius:6px;overflow:hidden;background:var(--subtle);cursor:zoom-in;transition:border-color .15s}
+.thumb-item:hover{border-color:var(--accent)}
+.thumb-item img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb-item .thumb-name{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:#fff;font-size:.6rem;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:2px 3px}
+
+/* ===== 折叠式媒体按钮（反馈详情：截图 / 文件 各自独立展开，防布局撑爆） ===== */
+.media-toggle{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--panel);border:1px solid var(--border);border-radius:6px;font-size:.82rem;color:var(--field-label);cursor:pointer;margin:8px 8px 0 0;transition:background .15s}
+.media-toggle:hover{background:var(--hover)}
+.media-toggle .count{display:inline-block;min-width:18px;padding:0 5px;background:var(--tag-bg);color:var(--tag-fg);border-radius:10px;font-size:.72rem;text-align:center}
+
+/* ===== 图片预览 Lightbox（点击缩略图看大图，不下载原图） ===== */
+.lightbox{display:none;position:fixed;inset:0;z-index:var(--z-modal);background:rgba(0,0,0,.82);align-items:center;justify-content:center;flex-direction:column;padding:24px}
+.lightbox.active{display:flex}
+.lightbox__img{max-width:90vw;max-height:82vh;width:auto;height:auto;object-fit:contain;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,.5);background:#fff}
+.lightbox__bar{display:flex;align-items:center;gap:14px;margin-top:14px;color:#fff;font-size:.82rem;flex-wrap:wrap;justify-content:center}
+.lightbox__btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:6px 14px;border-radius:20px;cursor:pointer;font-size:.82rem;text-decoration:none}
+.lightbox__btn:hover{background:rgba(255,255,255,.28)}
+.lightbox__close{position:absolute;top:16px;right:20px;width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-size:1.2rem;cursor:pointer;line-height:38px;text-align:center}
+.lightbox__close:hover{background:rgba(255,255,255,.28)}
+.lightbox__cap{color:#ddd;font-size:.75rem;max-width:90vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+
+/* 后台详情：自定义字段（按 form_schema 渲染的中文标签 + 人类可读值） */
+.custom-data{margin-top:12px;border:1px solid var(--border-soft);border-radius:8px;overflow:hidden}
+.cd-row{display:flex;gap:12px;padding:8px 12px;border-bottom:1px solid var(--border-soft);font-size:.85rem}
+.cd-row:last-child{border-bottom:none}
+.cd-label{flex:0 0 38%;max-width:38%;color:var(--field-label);font-weight:600}
+.cd-value{flex:1;color:var(--fg);word-break:break-word;white-space:pre-wrap}
+
+/* ===== FAQ 编辑器：Markdown 预览 / 语法提示（admin + 公共页共用） ===== */
+.settings-hint{font-size:.78rem;color:var(--muted);margin:-4px 0 8px;line-height:1.5}
+.settings-hint code{background:rgba(127,127,127,.18);padding:0 3px;border-radius:3px}
+.faq-preview-bar{margin:2px 0 6px}
+.faq-preview{border:1px dashed var(--border);border-radius:8px;padding:10px 12px;margin:6px 0 10px;background:var(--panel);max-height:40vh;overflow:auto;line-height:1.55}
+.faq-preview p{margin:0 0 6px}
+.faq-preview ul,.faq-preview ol{margin:4px 0 8px 18px;padding:0}
+.faq-preview code{background:rgba(127,127,127,.18);padding:1px 4px;border-radius:4px;font-size:.85em}
+.faq-preview pre{background:rgba(127,127,127,.14);padding:8px;border-radius:6px;overflow:auto}
+.faq-preview pre code{background:none;padding:0}
+.faq-preview a{color:var(--accent)}
+.faq-preview blockquote{border-left:3px solid var(--border);margin:6px 0;padding-left:10px;color:var(--muted)}

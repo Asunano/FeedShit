@@ -15,7 +15,7 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 .btn{display:inline-block;padding:10px 24px;background:var(--primary);color:var(--primary-fg);border:none;border-radius:4px;font-size:.9rem;cursor:pointer;transition:background .15s}
 .btn:hover{background:var(--hover)}
 .btn:disabled{background:var(--status-closed-bg);color:var(--tag-fg);cursor:not-allowed}
-.btn-sm{padding:6px 16px;font-size:.8rem}
+.btn-sm{padding:6px 16px;font-size:.8rem;border:1px solid var(--input-border);background:var(--panel);color:var(--field-label);border-radius:4px;cursor:pointer}
 .status{margin-top:12px;padding:10px;border-radius:4px;font-size:.85rem;display:none}
 .status.success{display:block;background:var(--success-bg);color:var(--success-fg);border:1px solid var(--success-border)}
 .status.error{display:block;background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger-border)}
@@ -48,7 +48,11 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 /* Reply form */
 .reply-section{margin-top:20px;padding-top:16px;border-top:1px solid var(--note-border)}
 .reply-section h3{font-size:.9rem;font-weight:600;margin-bottom:12px;color:var(--muted)}
-.reply-form textarea{margin-bottom:8px}
+.reply-form textarea{margin-bottom:8px;resize:none;height:96px;min-height:96px;width:100%;padding:8px 10px;border:1px solid var(--input-border);border-radius:4px;font-size:.9rem;font-family:inherit;background:var(--field-input-bg);color:var(--fg);box-sizing:border-box}
+.reply-preview{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.reply-thumb{position:relative;width:64px;height:64px;border:1px solid var(--border);border-radius:6px;overflow:hidden;background:var(--panel)}
+.reply-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.reply-chip{display:inline-flex;align-items:center;gap:4px;padding:6px 10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;font-size:.78rem;color:var(--accent);text-decoration:none}
 .reply-form .file-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
 .reply-form .file-row input[type=file]{font-size:.8rem}
 .reply-form .btn-row{display:flex;justify-content:flex-end;gap:8px}
@@ -75,37 +79,41 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 .vote-btn:disabled{opacity:.6;cursor:not-allowed}
 .file-hint{font-size:.75rem;color:var(--muted);margin:4px 0 0}
 </style>
+<!-- 图片预览 Lightbox（追踪页：点击缩略图看大图，含下载原图） -->
+<div class="lightbox" id="trackLightbox">
+  <div class="lightbox__close" id="trackLbClose" aria-label="关闭">×</div>
+  <img class="lightbox__img" id="trackLbImg" alt="预览">
+  <div class="lightbox__cap" id="trackLbCap"></div>
+  <div class="lightbox__bar">
+    <button class="lightbox__btn" id="trackLbPrev">← 上一张</button>
+    <span id="trackLbIdx"></span>
+    <button class="lightbox__btn" id="trackLbNext">下一张 →</button>
+    <a class="lightbox__btn" id="trackLbDownload" href="#" download>下载原图</a>
+  </div>
+</div>
+
 <div class="container">
   <h1>反馈跟踪</h1>
-  <p class="subtitle">输入跟踪令牌查看反馈处理进度</p>
+  <p class="subtitle">输入跟踪令牌查看处理进度，或输入邮箱查看你提交的全部反馈</p>
 
-  <!-- Lookup form -->
+  <!-- Unified lookup: token OR email -->
   <div class="card lookup-section" id="lookupCard">
     <div class="field">
-      <label for="tokenInput">跟踪令牌</label>
+      <label for="tokenInput">跟踪令牌 / 邮箱</label>
       <div class="token-input">
-        <input type="text" id="tokenInput" placeholder="粘贴您的跟踪令牌" autocomplete="off">
+        <input type="text" id="tokenInput" placeholder="粘贴跟踪令牌，或输入提交反馈时的邮箱" autocomplete="off">
         <button class="btn" id="lookupBtn" data-click="doLookup" data-args="">查询</button>
       </div>
     </div>
     <div class="status" id="lookupStatus"></div>
   </div>
 
-  <!-- Email portal: list all feedback submitted under an email address -->
-  <div class="card" id="emailPortalCard" style="margin-top:16px">
-    <details>
-      <summary style="cursor:pointer;font-weight:600">按邮箱查看我提交的全部反馈</summary>
-      <p style="font-size:.8rem;color:var(--muted);margin:8px 0">输入提交反馈时填写的邮箱，列出你名下的反馈（点击可打开对应跟踪页）。</p>
-      <div class="field">
-        <label for="emailLookupInput">邮箱</label>
-        <div style="display:flex;gap:8px">
-          <input type="email" id="emailLookupInput" placeholder="你提交反馈时填写的邮箱" style="flex:1">
-          <button class="btn btn-sm" id="emailLookupBtn" data-click="lookupByEmail" data-args="">查询</button>
-        </div>
-      </div>
-      <div class="status" id="emailLookupStatus"></div>
+  <!-- Email / list results (hidden until an email lookup returns a list) -->
+  <div class="card" id="emailResultsCard" style="display:none;margin-top:16px">
+    <div class="notes-section">
+      <h3>该邮箱名下的反馈</h3>
       <div id="emailResults"></div>
-    </details>
+    </div>
   </div>
 
   <!-- Feedback detail (hidden until lookup) -->
@@ -121,6 +129,7 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
         提交于 <span id="fbDate"></span>
       </div>
       <div class="fb-desc" id="fbDesc"></div>
+      <div id="fbFiles" style="margin-top:12px"></div>
       <div class="fb-vote" id="fbVote" style="margin-top:10px;display:none">
         <button class="vote-btn" id="voteUsefulBtn" data-click="voteFeedback" data-args="useful">👍 有用 (<span id="voteUsefulCount">0</span>)</button>
         <button class="vote-btn" id="voteEncounteredBtn" style="margin-left:8px" data-click="voteFeedback" data-args="encountered">🤝 也遇到 (<span id="voteEncounteredCount">0</span>)</button>
@@ -151,6 +160,7 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
             <input type="file" id="replyFile" multiple accept="image/*,.pdf,.doc,.docx,.txt,.log,.csv,.json,.zip">
             <span id="fileNames" style="font-size:.75rem;color:var(--muted)"></span>
           </div>
+          <div class="reply-preview" id="replyPreview"></div>
           <p class="file-hint">支持图片/PDF/Word/文本/日志/压缩包，单文件最大 20MB（选填）</p>
           <div class="btn-row">
             <button class="btn btn-sm" id="replyBtn" data-click="doReply" data-args="">提交回复</button>
@@ -174,6 +184,92 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
   var currentToken = '';
   var currentId = 0;
   var ratingScore = 0;
+  var ownFilesArr = [];
+  var noteFilesMap = {};
+
+  function isRaster(name){
+    var ext = (name.split('.').pop() || '').toLowerCase();
+    return ['png','jpg','jpeg','gif','webp','bmp'].indexOf(ext) >= 0;
+  }
+  // mediaBlockHtml 渲染一组附件：图片→96×96 缩略图（走 /thumb 预览），非图→下载链。
+  function mediaBlockHtml(fps, token, scope, noteID) {
+    var imgs = [], others = [];
+    fps.forEach(function(fp, i){
+      var fname = fp.split('/').pop();
+      if (isRaster(fname)) imgs.push({name:fname, i:i});
+      else others.push({name:fname, i:i});
+    });
+    var html = '';
+    if (imgs.length) {
+      html += '<div class="thumb-grid">';
+      imgs.forEach(function(im){
+        var url = '/api/v1/track/thumb?token=' + encodeURIComponent(token) + '&note=' + noteID + '&i=' + im.i;
+        html += '<div class="thumb-item" data-scope="'+scope+'" data-note="'+noteID+'" data-i="'+im.i+'"><img src="'+url+'" alt="'+escHtml(im.name)+'"><div class="thumb-name">'+escHtml(im.name)+'</div></div>';
+      });
+      html += '</div>';
+    }
+    if (others.length) {
+      html += '<div class="thumb-grid" style="margin-top:6px">';
+      others.forEach(function(o){
+        var dl = '/api/v1/track/file?token=' + encodeURIComponent(token) + '&note=' + noteID + '&i=' + o.i;
+        html += '<a class="file-chip" href="'+dl+'" target="_blank" rel="noopener" download style="display:inline-flex;align-items:center;gap:4px;padding:6px 10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--accent);text-decoration:none;font-size:.8rem">'+escHtml(o.name)+'</a>';
+      });
+      html += '</div>';
+    }
+    return html;
+  }
+  function buildMediaSection(fps, token, scope, noteID, title) {
+    if (!fps.length) return '';
+    return '<div class="fb-files" style="margin-top:10px"><div style="font-size:.8rem;color:var(--muted);margin-bottom:4px">'+escHtml(title)+' ('+fps.length+')</div>' + mediaBlockHtml(fps, token, scope, noteID) + '</div>';
+  }
+
+  // ===== 追踪页灯箱（点击缩略图看大图，可下载原图） =====
+  var trackLbItems = []; var trackLbIdx = 0;
+  function renderTrackLb(){
+    var it = trackLbItems[trackLbIdx]; if(!it) return;
+    document.getElementById('trackLbImg').src = it.thumb;
+    document.getElementById('trackLbCap').textContent = it.name;
+    document.getElementById('trackLbDownload').href = it.download;
+    document.getElementById('trackLbIdx').textContent = (trackLbIdx+1) + ' / ' + trackLbItems.length;
+  }
+  function openTrackLb(items, idx){
+    trackLbItems = items; trackLbIdx = idx; renderTrackLb();
+    document.getElementById('trackLightbox').classList.add('active');
+  }
+  function closeTrackLb(){ document.getElementById('trackLightbox').classList.remove('active'); }
+  document.getElementById('trackLbClose').addEventListener('click', closeTrackLb);
+  document.getElementById('trackLightbox').addEventListener('click', function(e){ if (e.target === this) closeTrackLb(); });
+  document.getElementById('trackLbPrev').addEventListener('click', function(){ if(trackLbItems.length){ trackLbIdx=(trackLbIdx-1+trackLbItems.length)%trackLbItems.length; renderTrackLb(); } });
+  document.getElementById('trackLbNext').addEventListener('click', function(){ if(trackLbItems.length){ trackLbIdx=(trackLbIdx+1)%trackLbItems.length; renderTrackLb(); } });
+  document.addEventListener('keydown', function(e){
+    var lb = document.getElementById('trackLightbox');
+    if (!lb.classList.contains('active')) return;
+    if (e.key === 'Escape') closeTrackLb();
+    if (e.key === 'ArrowLeft') document.getElementById('trackLbPrev').click();
+    if (e.key === 'ArrowRight') document.getElementById('trackLbNext').click();
+  });
+  // 缩略图点击委托（detailsSection 内含原始截图与回复缩略图）
+  document.getElementById('detailSection').addEventListener('click', function(e){
+    var t = e.target.closest('.thumb-item');
+    if (!t) return;
+    var scope = t.getAttribute('data-scope');
+    var noteID = t.getAttribute('data-note');
+    var i = parseInt(t.getAttribute('data-i'), 10);
+    var fps = scope === 'own' ? ownFilesArr : (noteFilesMap[noteID] || []);
+    var items = [];
+    fps.forEach(function(fp, idx){
+      var fname = fp.split('/').pop();
+      if (!isRaster(fname)) return;
+      items.push({
+        thumb: '/api/v1/track/thumb?token=' + encodeURIComponent(currentToken) + '&note=' + noteID + '&i=' + idx,
+        download: '/api/v1/track/file?token=' + encodeURIComponent(currentToken) + '&note=' + noteID + '&i=' + idx,
+        name: fname
+      });
+    });
+    var pos = 0;
+    for (var k = 0; k < i; k++) { if (isRaster(fps[k].split('/').pop())) pos++; }
+    openTrackLb(items, pos);
+  });
 
   // 主题（亮 / 暗 / 跟随系统）由 /shared/theme.js 统一管理
 
@@ -190,41 +286,46 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
   }
 
   function escHtml(s){ var d = document.createElement('div'); d.textContent = s == null ? '' : s; return d.innerHTML; }
-  window.lookupByEmail = function() {
-    var email = document.getElementById('emailLookupInput').value.trim();
-    var status = document.getElementById('emailLookupStatus');
+  function renderEmailList(items) {
     var results = document.getElementById('emailResults');
-    if (!email) { status.className = 'status error'; status.textContent = '请输入邮箱'; status.style.display = 'block'; return; }
-    status.className = 'status loading'; status.innerHTML = '<div class="loading"><div class="spinner"></div></div>'; status.style.display = 'block';
-    results.innerHTML = '';
-    fetch('/api/v1/track/by-email?email=' + encodeURIComponent(email))
+    if (!items.length) {
+      results.innerHTML = '<p class="no-notes">该邮箱暂无任何反馈记录。</p>';
+    } else {
+      results.innerHTML = items.map(function(it){
+        return '<div class="note-item" style="margin-top:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
+          '<a href="/track#token=' + encodeURIComponent(it.token) + '" style="font-weight:600">#' + it.id + ' ' + escHtml(it.title) + '</a>' +
+          '<span class="fb-status ' + escHtml(it.status) + '">' + (statusLabels[it.status] || it.status) + '</span></div>' +
+          '<div class="note-time">更新于 ' + escHtml(it.updated_at) + '</div></div>';
+      }).join('');
+    }
+    document.getElementById('emailResultsCard').style.display = 'block';
+  }
+
+  window.doLookup = function() {
+    var q = document.getElementById('tokenInput').value.trim();
+    if (!q) {
+      showLookupStatus('error', '请输入跟踪令牌或邮箱');
+      return;
+    }
+    currentToken = q;
+    document.getElementById('emailResultsCard').style.display = 'none';
+    document.getElementById('detailSection').style.display = 'none';
+    showLookupStatus('loading', '<div class="loading"><div class="spinner"></div><div>正在查询...</div></div>');
+    fetch('/api/v1/track/lookup?q=' + encodeURIComponent(q))
       .then(function(r){ return r.json().then(function(d){ return {status: r.status, data: d}; }); })
       .then(function(res){
         if (res.status === 200) {
-          status.style.display = 'none';
-          var items = res.data.items || [];
-          if (!items.length) { results.innerHTML = '<p class="no-notes">该邮箱暂无任何反馈记录。</p>'; return; }
-          results.innerHTML = items.map(function(it){
-            return '<div class="note-item" style="margin-top:8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px">' +
-              '<a href="/track#token=' + encodeURIComponent(it.token) + '" style="font-weight:600">#' + it.id + ' ' + escHtml(it.title) + '</a>' +
-              '<span class="fb-status ' + escHtml(it.status) + '">' + (statusLabels[it.status] || it.status) + '</span></div>' +
-              '<div class="note-time">更新于 ' + escHtml(it.updated_at) + '</div></div>';
-          }).join('');
+          hideLookupStatus();
+          if (res.data.type === 'list') {
+            renderEmailList(res.data.items || []);
+          } else {
+            renderFeedback(res.data);
+          }
         } else {
-          status.className = 'status error'; status.textContent = (res.data && res.data.error) || '查询失败'; status.style.display = 'block';
+          showLookupStatus('error', (res.data && res.data.error) || '查询失败');
         }
       })
-      .catch(function(){ status.className = 'status error'; status.textContent = '网络错误，请稍后重试'; status.style.display = 'block'; });
-  };
-
-  window.doLookup = function() {
-    var token = document.getElementById('tokenInput').value.trim();
-    if (!token) {
-      showLookupStatus('error', '请输入跟踪令牌');
-      return;
-    }
-    currentToken = token;
-    loadFeedback(false);
+      .catch(function(){ showLookupStatus('error', '网络错误，请稍后重试'); });
   };
 
   // loadFeedback fetches feedback and renders it. When silent=true it refreshes
@@ -264,6 +365,10 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     var desc = data.description || '（无详细描述）';
     document.getElementById('fbDesc').textContent = desc;
     currentId = data.id;
+
+    // 原始提交附件：图片缩略图 + 非图下载（点击缩略图看大图）
+    try { ownFilesArr = JSON.parse(data.file_paths || '[]'); } catch(e){ ownFilesArr = []; }
+    document.getElementById('fbFiles').innerHTML = buildMediaSection(ownFilesArr, currentToken, 'own', 0, '提交附件');
 
     // Vote display (two dimensions: useful / encountered)
     var voteBox = document.getElementById('fbVote');
@@ -319,18 +424,13 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
         var isSubmitter = n.author === '提交者';
         var cls = isSubmitter ? 'submitter' : 'admin';
         var authorLabel = isSubmitter ? '提交者' : (n.author || '管理员');
+        var fps = [];
+        try { fps = JSON.parse(n.file_paths || '[]'); } catch(e){}
+        noteFilesMap[n.id] = fps;
         var fileHtml = '';
-        try {
-          var fps = JSON.parse(n.file_paths || '[]');
-          if (fps.length) {
-            fileHtml = '<div class="note-files">';
-            for (var fi = 0; fi < fps.length; fi++) {
-              var fname = fps[fi].split('/').pop();
-              fileHtml += '<a class="file-chip" href="/api/v1/track/file?token=' + encodeURIComponent(currentToken) + '&note=' + n.id + '&i=' + fi + '" target="_blank" rel="noopener" style="display:inline-block;margin:6px 6px 0 0;padding:4px 10px;background:var(--panel);border:1px solid var(--border);border-radius:8px;color:var(--accent);text-decoration:none;font-size:.8rem">' + escHtml(fname) + '</a>';
-            }
-            fileHtml += '</div>';
-          }
-        } catch(e) {}
+        if (fps.length) {
+          fileHtml = '<div class="note-files" style="margin-top:6px">' + mediaBlockHtml(fps, currentToken, 'note', n.id) + '</div>';
+        }
         html += '<div class="note-item ' + cls + '">' +
           '<div class="note-header">' +
           '<span class="note-author ' + cls + '">' + escHtml(authorLabel) + '</span>' +
@@ -509,14 +609,40 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     if (e.key === 'Enter') { e.preventDefault(); doLookup(); }
   });
 
-  // File input display
+  // File input display + image thumbnail preview (#4)
   document.getElementById('replyFile').addEventListener('change', function(){
     var names = [];
-    for (var i = 0; i < this.files.length; i++) { names.push(this.files[i].name); }
+    var preview = document.getElementById('replyPreview');
+    if (preview) preview.innerHTML = '';
+    for (var i = 0; i < this.files.length; i++) {
+      var f = this.files[i];
+      names.push(f.name);
+      if (!isRaster(f.name) || !preview) {
+        if (preview) {
+          var chip = document.createElement('span');
+          chip.className = 'reply-chip';
+          chip.textContent = f.name;
+          preview.appendChild(chip);
+        }
+        continue;
+      }
+      var url = URL.createObjectURL(f);
+      var box = document.createElement('div');
+      box.className = 'reply-thumb';
+      box.title = f.name;
+      var img = document.createElement('img');
+      img.src = url; img.alt = f.name;
+      img.onload = (function(u){ return function(){ URL.revokeObjectURL(u); }; })(url);
+      box.appendChild(img);
+      preview.appendChild(box);
+    }
     document.getElementById('fileNames').textContent = names.length ? names.join(', ') : '';
   });
 
   initFromHash();
+  // 同一页面内点击邮件列表里的 /track#token= 链接只改变 hash，
+  // 不会重新加载，因此监听 hashchange 重新拉取对应反馈详情（#3）。
+  window.addEventListener('hashchange', initFromHash);
 
 
 

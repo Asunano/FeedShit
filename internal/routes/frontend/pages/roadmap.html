@@ -1,10 +1,10 @@
 {{template "chrometop" .}}
 <style>
   * { box-sizing:border-box; }
-  body { font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background:var(--bg); color:var(--fg); margin:0; padding:24px; }
-  .wrap { max-width:1100px; margin:0 auto; }
-  header { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+  body { font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background:var(--bg); color:var(--fg); margin:0; padding:0; }
+  .container { max-width:1400px; margin:0 auto; padding:32px 20px 56px; }
   h1 { font-size:1.4rem; margin:0; }
+  .page-head { margin-bottom:8px; }
   .sub { color:var(--muted); font-size:.85rem; }
   .toolbar { display:flex; gap:10px; align-items:center; margin-bottom:18px; flex-wrap:wrap; }
   select { padding:6px 10px; border:1px solid var(--input-border); border-radius:6px; font-size:.85rem; background:var(--panel); color:var(--fg); }
@@ -14,8 +14,10 @@
   .col.planning h2 { border-color:var(--chart-orange); }
   .col.in_progress h2 { border-color:var(--brand-blue); }
   .col.released h2 { border-color:var(--online); }
-  .card { background:var(--subtle); border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:10px; }
+  .card { background:var(--subtle); border:1px solid var(--border); border-radius:8px; padding:10px; margin-bottom:10px; cursor:pointer; transition:border-color .15s ease, box-shadow .15s ease; }
+  .card:hover { border-color:var(--brand-blue); box-shadow:0 2px 8px rgba(0,0,0,.12); }
   .card .title { font-weight:600; font-size:.9rem; margin-bottom:6px; }
+  .card .desc { font-size:.8rem; color:var(--muted); margin:0 0 8px; line-height:1.5; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
   .card .meta { display:flex; align-items:center; justify-content:space-between; font-size:.75rem; color:var(--muted); }
   .cat { display:inline-block; background:var(--tag-bg); color:var(--tag-fg); border-radius:10px; padding:1px 8px; font-size:.7rem; }
   .vote { border:1px solid var(--input-border); background:var(--panel); border-radius:14px; padding:2px 10px; cursor:pointer; font-size:.75rem; color:var(--fg); }
@@ -24,31 +26,96 @@
   .empty { color:var(--hint); font-size:.8rem; text-align:center; padding:20px 0; }
   .status { color:var(--muted); font-size:.8rem; margin-top:4px; }
   a.home { color:var(--brand-blue); text-decoration:none; font-size:.85rem; }
+
+  /* detail modal + pagination footer */
+  .rm-foot { display:flex; justify-content:center; align-items:center; gap:14px; margin-top:20px; flex-wrap:wrap; }
+  .rm-count { color:var(--muted); font-size:.8rem; }
+  .rm-loadmore { padding:8px 20px; border:1px solid var(--brand-blue); background:transparent; color:var(--brand-blue); border-radius:20px; cursor:pointer; font-size:.85rem; }
+  .rm-loadmore:hover { background:var(--brand-blue); color:var(--primary-fg); }
+  .rm-loadmore:disabled { opacity:.5; cursor:default; }
+  .rm-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.55); z-index:1000; padding:16px; }
+  .rm-modal.open { display:flex; }
+  .rm-modal__panel { background:var(--panel); color:var(--fg); border:1px solid var(--border); border-radius:12px; max-width:560px; width:100%; max-height:84vh; overflow:auto; padding:18px 18px 20px; position:relative; }
+  .rm-modal__close { position:absolute; top:8px; right:12px; border:none; background:transparent; color:var(--muted); font-size:1.4rem; cursor:pointer; line-height:1; padding:2px 6px; }
+  .rm-modal__close:hover { color:var(--fg); }
+  .rm-modal__title { font-size:1.05rem; font-weight:700; margin:0 30px 10px 0; }
+  .rm-modal__meta { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px; }
+  .rm-modal__desc { font-size:.9rem; line-height:1.65; white-space:pre-wrap; word-break:break-word; }
+  .rm-modal__votes { margin-top:16px; }
+  .badge { display:inline-block; font-size:.7rem; padding:1px 9px; border-radius:10px; }
+  .badge.planning { background:rgba(245,158,11,.16); color:#f59e0b; }
+  .badge.in_progress { background:rgba(59,130,246,.16); color:#3b82f6; }
+  .badge.released { background:rgba(34,197,94,.16); color:#22c55e; }
+  @media (max-width:1100px) {
+    .board { grid-template-columns:1fr 1fr; }
+  }
+  @media (max-width:780px) {
+    .board { grid-template-columns:1fr; }
+    .container { padding:20px 14px 40px; }
+  }
 </style>
-<div class="wrap">
-  <header>
+<div class="container">
+  <div class="page-head">
     <h1>产品路线图</h1>
     <span class="sub" id="projName"></span>
-  </header>
+  </div>
   <div class="toolbar">
     <select id="catFilter"><option value="">全部分类</option></select>
     <a class="home" href="/">← 返回首页</a>
   </div>
+  <div class="proj-chips" id="projChips" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:14px"></div>
   <div class="board">
     <div class="col planning"><h2>📋 规划中</h2><div id="col-planning"></div></div>
     <div class="col in_progress"><h2>🚧 进行中</h2><div id="col-in_progress"></div></div>
     <div class="col released"><h2>🚀 已发布</h2><div id="col-released"></div></div>
   </div>
+  <div class="rm-foot">
+    <span class="rm-count" id="rmCount"></span>
+    <button type="button" class="rm-loadmore" id="rmLoadMore" data-click="loadMoreRoadmap" style="display:none">加载更多</button>
+  </div>
 </div>
+
+<div class="rm-modal" id="rmModal">
+  <div class="rm-modal__panel" id="rmModalPanel">
+    <button type="button" class="rm-modal__close" id="rmModalClose" aria-label="关闭">×</button>
+    <h3 class="rm-modal__title" id="rmModalTitle"></h3>
+    <div class="rm-modal__meta" id="rmModalMeta"></div>
+    <div class="rm-modal__desc" id="rmModalDesc"></div>
+    <div class="rm-modal__votes"><button type="button" class="vote" id="rmModalVote" data-click="vote" data-args="0, this">👍 0</button></div>
+  </div>
+</div>
+
 <script nonce="{{.Nonce}}">
   function slugFromPath() {
-    var m = location.pathname.match(/\/p\/([^/]+)\/roadmap/);
+    var m = location.pathname.match(/\/p\/([^/]+)\/roadmap/) || location.pathname.match(/\/roadmap\/([^/]+)/);
     return m ? decodeURIComponent(m[1]) : '';
   }
   var slug = slugFromPath();
+  var curProj = '';
+  var projNameEl = document.getElementById('projName');
+  if (projNameEl) projNameEl.textContent = slug ? ('项目：' + slug) : '总路线图 · 全部项目';
   var voted = {};
+  var state = { offset:0, limit:20, loading:false, done:false, total:0, byId:{}, cats:{} };
+  var statusText = { planning:'规划中', in_progress:'进行中', released:'已发布' };
 
   function esc(s) { return (s==null?'':String(s)).replace(/[&<>"]/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function summary(s) {
+    s = (s==null?'':String(s)).trim();
+    if (!s) return '';
+    return s.length > 100 ? s.slice(0, 100) + '…' : s;
+  }
+  function fmtDate(ts) {
+    if (!ts) return '';
+    var d = new Date(ts * 1000);
+    var m = ('0' + (d.getUTCMonth() + 1)).slice(-2);
+    var day = ('0' + d.getUTCDate()).slice(-2);
+    return d.getUTCFullYear() + '-' + m + '-' + day;
+  }
+  function colId(st) {
+    if (st === 'in_progress') return 'col-in_progress';
+    if (st === 'released') return 'col-released';
+    return 'col-planning';
+  }
 
   window.vote = function(id, btn) {
     if (voted[id]) return;
@@ -64,58 +131,162 @@
   }
 
   function card(it) {
-    var cls = it.roadmap_status || 'planning';
     var div = document.createElement('div');
     div.className = 'card';
+    div.setAttribute('data-click', 'openRmDetail');
+    div.setAttribute('data-args', String(it.id));
+    var desc = summary(it.description);
+    var projChip = (!slug && it.project_slug) ? '<span class="cat" style="background:rgba(59,130,246,.16);color:#3b82f6">' + esc(it.project_slug) + '</span>' : '';
+    var pin = it.roadmap_order > 0 ? ' <span class="badge planning">📌</span>' : '';
+    var mention = (it.mention_count > 0) ? ' <span class="badge planning">+' + it.mention_count + ' 提及</span>' : '';
+    var extra = '';
+    if (it.owner || it.release) {
+      extra = '<div class="meta" style="margin-top:4px;color:var(--muted)">' +
+        (it.owner ? '负责人：' + esc(it.owner) : '') +
+        (it.owner && it.release ? ' · ' : '') +
+        (it.release ? '版本：' + esc(it.release) : '') + '</div>';
+    }
     div.innerHTML =
-      '<div class="title">' + esc(it.title) + '</div>' +
-      '<div class="meta"><span class="cat">' + esc(it.category || '未分类') + '</span>' +
-      '<button class="vote" data-click="vote" data-args="' + it.id + ', this">👍 ' + (it.votes || 0) + '</button></div>';
+      '<div class="title">' + esc(it.title) + pin + '</div>' +
+      (desc ? '<div class="desc">' + esc(desc) + '</div>' : '') +
+      '<div class="meta">' + projChip + '<span class="cat">' + esc(it.category || '未分类') + '</span>' + mention +
+      '<button type="button" class="vote" data-click="vote" data-args="' + it.id + ', this">👍 ' + (it.votes || 0) + '</button></div>' +
+      extra;
     return div;
   }
 
-  function render(items) {
-    ['planning','in_progress','released'].forEach(function(st){
-      document.getElementById('col-' + st).innerHTML = '';
-    });
-    var counts = {planning:0, in_progress:0, released:0};
+  function appendItems(items) {
     items.forEach(function(it){
-      var st = it.roadmap_status || 'planning';
-      if (!counts.hasOwnProperty(st)) st = 'planning';
-      document.getElementById('col-' + st).appendChild(card(it));
-      counts[st]++;
-    });
-    ['planning','in_progress','released'].forEach(function(st){
-      if (counts[st] === 0) {
-        var e = document.createElement('div');
-        e.className = 'empty'; e.textContent = '暂无';
-        document.getElementById('col-' + st).appendChild(e);
-      }
+      state.byId[it.id] = it;
+      if (it.category) state.cats[it.category] = true;
+      var col = document.getElementById(colId(it.roadmap_status));
+      if (!col) return;
+      var empty = col.querySelector('.empty');
+      if (empty) col.removeChild(empty);
+      col.appendChild(card(it));
     });
   }
 
-  function load() {
+  function resetBoard() {
+    ['planning','in_progress','released'].forEach(function(st){
+      var col = document.getElementById(colId(st));
+      col.innerHTML = '<div class="empty">暂无</div>';
+    });
+  }
+
+  function updateFooter() {
+    var countEl = document.getElementById('rmCount');
+    var btn = document.getElementById('rmLoadMore');
+    countEl.textContent = '共 ' + state.total + ' 条';
+    if (!state.done && state.total > state.offset) {
+      btn.style.display = '';
+      btn.disabled = state.loading;
+      btn.textContent = state.loading ? '加载中…' : '加载更多';
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+
+  function loadMore() {
+    if (state.loading || state.done) return;
+    state.loading = true;
+    updateFooter();
     var cat = document.getElementById('catFilter').value;
-    var url = '/api/v1/roadmap?slug=' + encodeURIComponent(slug) + (cat ? '&category=' + encodeURIComponent(cat) : '');
+    var url = '/api/v1/roadmap?slug=' + encodeURIComponent(slug) +
+      '&limit=' + state.limit + '&offset=' + state.offset +
+      (cat ? '&category=' + encodeURIComponent(cat) : '');
     fetch(url).then(function(r){ return r.json(); }).then(function(d){
       var items = d.items || [];
-      render(items);
-      // populate category filter
-      var cats = {};
-      items.forEach(function(it){ if (it.category) cats[it.category] = true; });
+      if (state.offset === 0) {
+        state.byId = {}; state.cats = {};
+        resetBoard();
+      }
+      appendItems(items);
+      state.total = (typeof d.total === 'number') ? d.total : (state.offset + items.length);
+      state.offset += items.length;
+      if (items.length < state.limit || state.offset >= state.total) state.done = true;
+      // 分类筛选项（保留当前选择）
       var sel = document.getElementById('catFilter');
       var cur = sel.value;
       sel.innerHTML = '<option value="">全部分类</option>';
-      Object.keys(cats).forEach(function(c){
+      Object.keys(state.cats).forEach(function(c){
         var o = document.createElement('option'); o.value = c; o.textContent = c; sel.appendChild(o);
       });
       sel.value = cur;
-    }).catch(function(){ render([]); });
+      buildProjectChips();
+    }).catch(function(){
+      if (state.offset === 0) resetBoard();
+    }).then(function(){
+      state.loading = false;
+      updateFooter();
+    });
   }
 
-  document.getElementById('catFilter').addEventListener('change', load);
-  load();
+  window.loadMoreRoadmap = function() { loadMore(); };
 
+  function buildProjectChips() {
+    if (slug) { document.getElementById('projChips').style.display = 'none'; return; }
+    var projs = {};
+    Object.keys(state.byId).forEach(function(k){ var it = state.byId[k]; if (it.project_slug) projs[it.project_slug] = true; });
+    var box = document.getElementById('projChips');
+    box.innerHTML = '';
+    var all = document.createElement('button');
+    all.className = 'badge' + (curProj === '' ? ' planning' : '');
+    all.textContent = '全部项目';
+    all.style.cursor = 'pointer'; all.style.border = 'none';
+    all.onclick = function(){ selectProject(''); };
+    box.appendChild(all);
+    Object.keys(projs).forEach(function(p){
+      var b = document.createElement('button');
+      b.className = 'badge' + (curProj === p ? ' planning' : '');
+      b.textContent = p;
+      b.style.cursor = 'pointer'; b.style.border = 'none';
+      b.onclick = function(){ selectProject(p); };
+      box.appendChild(b);
+    });
+    box.style.display = 'flex';
+  }
+  function selectProject(p) {
+    curProj = p;
+    slug = p;
+    if (projNameEl) projNameEl.textContent = p ? ('项目：' + p) : '总路线图 · 全部项目';
+    state.offset = 0; state.done = false; state.loading = false;
+    buildProjectChips();
+    loadMore();
+  }
 
+  window.openRmDetail = function(id) {
+    var it = state.byId[id];
+    if (!it) return;
+    document.getElementById('rmModalTitle').textContent = it.title || '(无标题)';
+    var meta = document.getElementById('rmModalMeta');
+    var extra = [];
+    if (it.mention_count > 0) extra.push('+' + it.mention_count + ' 人提及');
+    if (it.target_date) extra.push('目标：' + fmtDate(it.target_date));
+    if (it.owner) extra.push('负责人：' + it.owner);
+    if (it.release) extra.push('版本：' + it.release);
+    meta.innerHTML =
+      '<span class="cat">' + esc(it.category || '未分类') + '</span>' +
+      '<span class="badge ' + (it.roadmap_status || 'planning') + '">' + (statusText[it.roadmap_status] || '规划中') + '</span>' +
+      (extra.length ? '<span class="badge planning">' + extra.join(' · ') + '</span>' : '');
+    document.getElementById('rmModalDesc').textContent = it.description || '(暂无描述)';
+    var vb = document.getElementById('rmModalVote');
+    vb.setAttribute('data-args', it.id + ', this');
+    vb.textContent = '👍 ' + (it.votes || 0);
+    vb.classList.toggle('voted', !!voted[id]);
+    document.getElementById('rmModal').classList.add('open');
+  };
+
+  function closeRmDetail() { document.getElementById('rmModal').classList.remove('open'); }
+  document.getElementById('rmModalClose').addEventListener('click', closeRmDetail);
+  document.getElementById('rmModal').addEventListener('click', function(e){ if (e.target === this) closeRmDetail(); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeRmDetail(); });
+
+  document.getElementById('catFilter').addEventListener('change', function(){
+    state.offset = 0; state.done = false; state.loading = false;
+    loadMore();
+  });
+
+  loadMore();
 </script>
 {{template "chromebot" .}}

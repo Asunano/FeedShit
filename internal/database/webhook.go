@@ -262,3 +262,68 @@ func (d *Database) MarkOutboxFailure(id int64, lastErr string, attempts int, nex
 	_, err := d.db.Exec(`UPDATE webhook_outbox SET attempts = ?, last_error = ?, next_at = ? WHERE id = ?`, attempts, lastErr, nextAt, id)
 	return err
 }
+
+// WebhookDeliveryStats aggregates delivery outcomes for a subscription: total
+// attempts, successful (HTTP 2xx) vs failed (anything else, including a 0
+// status recorded when the request never completed). rate is the success
+// percentage (0 when there are no deliveries).
+func (d *Database) WebhookDeliveryStats(subID int64) (total, success, failed int, rate float64, err error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	row := d.db.QueryRow(
+		`SELECT COUNT(*),
+		        COALESCE(SUM(CASE WHEN response_status >= 200 AND response_status < 300 THEN 1 ELSE 0 END), 0),
+		        COALESCE(SUM(CASE WHEN response_status < 200 OR response_status >= 300 THEN 1 ELSE 0 END), 0)
+		 FROM webhook_deliveries WHERE subscription_id = ?`, subID)
+	if e := row.Scan(&total, &success, &failed); e != nil {
+		return 0, 0, 0, 0, e
+	}
+	if total > 0 {
+		rate = float64(success) / float64(total) * 100
+	}
+	return total, success, failed, rate, nil
+}
+
+// RecordWebhookDelivery logs a single webhook delivery attempt (success or
+// failure) for audit/history display. Response bodies and error text are
+// truncated to keep the table bounded.
+func (d *Database) RecordWebhookDelivery(subID int64, event, url, requestBody string, responseStatus int, responseBody, errText string, createdAt int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	const maxLen = 4096
+	if len(responseBody) > maxLen {
+		responseBody = responseBody[:maxLen]
+	}
+	if len(errText) > maxLen {
+		errText = errText[:maxLen]
+	}
+	_, err := d.db.Exec(
+		`INSERT INTO webhook_deliveries (subscription_id, event, url, request_body, response_status, response_body, error, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		subID, event, url, requestBody, responseStatus, responseBody, errText, createdAt)
+	return err
+}
+
+// ListWebhookDeliveries returns the most recent delivery records for a subscription.
+func (d *Database) ListWebhookDeliveries(subID int64, limit int) ([]WebhookDelivery, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	if limit <= 0 || limit > 200 {
+		limit = 20
+	}
+	rows, err := d.db.Query(`SELECT id, subscription_id, event, url, request_body, response_status, response_body, error, created_at FROM webhook_deliveries WHERE subscription_id = ? ORDER BY created_at DESC LIMIT ?`, subID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var list []WebhookDelivery
+	for rows.Next() {
+		var dl WebhookDelivery
+		var createdAt int64
+		if err := rows.Scan(&dl.ID, &dl.SubscriptionID, &dl.Event, &dl.URL, &dl.RequestBody, &dl.ResponseStatus, &dl.ResponseBody, &dl.Error, &createdAt); err != nil {
+			return nil, err
+		}
+		dl.CreatedAt = time.Unix(createdAt, 0)
+		list = append(list, dl)
+	}
+	return list, nil
+}

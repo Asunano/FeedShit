@@ -1,0 +1,84 @@
+{{define "adminAudit"}}
+<div id="tab-audit" style="display:none">
+    <div class="filter-bar">
+      <strong style="font-size:.95rem">操作审计日志</strong>
+      <span class="count" id="auditCount"></span>
+      <span class="spacer"></span>
+      <select id="auditFilterAction" title="操作类型">
+        <option value="">全部操作</option>
+        <optgroup label="项目">
+          <option value="create_project">创建项目</option>
+          <option value="update_project">更新项目</option>
+          <option value="delete_project">删除项目</option>
+          <option value="archive_project">归档/取消归档</option>
+          <option value="create_category">创建分类</option>
+          <option value="update_category">更新分类</option>
+          <option value="delete_category">删除分类</option>
+        </optgroup>
+        <optgroup label="反馈">
+          <option value="update_status">状态变更</option>
+          <option value="delete_feedback">删除反馈</option>
+          <option value="assign_feedback">指派反馈</option>
+          <option value="bulk_delete">批量删除</option>
+          <option value="mark_duplicate">标记重复</option>
+          <option value="update_category">反馈改分类</option>
+          <option value="csat_rating">满意度评分</option>
+          <option value="need_help">仍需帮助</option>
+          <option value="set_roadmap">看板关联</option>
+          <option value="add_note">添加备注</option>
+          <option value="delete_note">删除备注</option>
+        </optgroup>
+        <optgroup label="成员 / 账号">
+          <option value="login">登录</option>
+          <option value="create_admin">创建成员</option>
+          <option value="update_admin">更新成员</option>
+          <option value="delete_admin">删除成员</option>
+          <option value="reset_password">重置密码</option>
+          <option value="set_member_grants">设置授权</option>
+          <option value="create_invitation">创建邀请</option>
+          <option value="register_from_invite">邀请注册</option>
+        </optgroup>
+        <optgroup label="Token / 安全">
+          <option value="create_api_token">创建 Token</option>
+          <option value="update_api_token">更新 Token</option>
+          <option value="delete_api_token">删除 Token</option>
+          <option value="update_account">修改账户</option>
+          <option value="update_email_template">更新邮件模板</option>
+        </optgroup>
+        <optgroup label="数据 / 备份">
+          <option value="export">导出反馈</option>
+          <option value="backup">备份</option>
+          <option value="backup_download">下载备份</option>
+          <option value="csv_import">CSV 导入</option>
+          <option value="json_import">JSON 导入</option>
+          <option value="archive">归档反馈</option>
+          <option value="prune_backups">清理备份</option>
+        </optgroup>
+        <optgroup label="Webhook">
+          <option value="create_webhook_sub">创建订阅</option>
+          <option value="update_webhook_sub">更新订阅</option>
+          <option value="delete_webhook_sub">删除订阅</option>
+        </optgroup>
+        <optgroup label="其他">
+          <option value="create_faq">创建 FAQ</option>
+          <option value="update_faq">更新 FAQ</option>
+          <option value="delete_faq">删除 FAQ</option>
+          <option value="weekly_report">周报</option>
+          <option value="rating_invite">评分邀请</option>
+          <option value="api_submit">API 提交</option>
+        </optgroup>
+      </select>
+      <input type="text" id="auditFilterUser" placeholder="用户" style="width:120px">
+      <input type="date" id="auditFilterFrom" title="起始日期">
+      <input type="date" id="auditFilterTo" title="结束日期">
+      <button class="btn-sm" data-click="applyAuditFilter" data-args="">筛选</button>
+      <button class="btn-sm" data-click="exportAuditCSV" data-args="">导出 CSV</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>时间</th><th>操作</th><th>详情</th><th>用户</th><th>IP</th></tr></thead>
+        <tbody id="auditTable"><tr><td colspan="5" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+{{end}}

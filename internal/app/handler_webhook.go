@@ -115,6 +115,7 @@ func (a *App) deliverWebhook(o database.WebhookOutbox) {
 	if err != nil {
 		a.DB.MarkOutboxFailure(o.ID, err.Error(), nextAttempt, time.Now().Unix()+webhookBackoff(o.Attempts), maxAttempts)
 		a.alertWebhookFailure(o.ID, o.URL, err.Error(), nextAttempt, maxAttempts)
+		a.recordDelivery(o.SubscriptionID, "delivery", o.URL, o.Payload, 0, "", err.Error())
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -128,6 +129,7 @@ func (a *App) deliverWebhook(o database.WebhookOutbox) {
 	if err != nil {
 		a.DB.MarkOutboxFailure(o.ID, err.Error(), nextAttempt, time.Now().Unix()+webhookBackoff(o.Attempts), maxAttempts)
 		a.alertWebhookFailure(o.ID, o.URL, err.Error(), nextAttempt, maxAttempts)
+		a.recordDelivery(o.SubscriptionID, "delivery", o.URL, o.Payload, 0, "", err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -135,11 +137,116 @@ func (a *App) deliverWebhook(o database.WebhookOutbox) {
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		a.DB.MarkOutboxSuccess(o.ID)
 		log.Printf("[WEBHOOK] delivered outbox #%d to %s", o.ID, o.URL)
+		a.recordDelivery(o.SubscriptionID, "delivery", o.URL, o.Payload, resp.StatusCode, string(body), "")
 	} else {
 		errMsg := fmt.Sprintf("status %d: %s", resp.StatusCode, string(body))
 		a.DB.MarkOutboxFailure(o.ID, errMsg, nextAttempt, time.Now().Unix()+webhookBackoff(o.Attempts), maxAttempts)
 		a.alertWebhookFailure(o.ID, o.URL, errMsg, nextAttempt, maxAttempts)
+		a.recordDelivery(o.SubscriptionID, "delivery", o.URL, o.Payload, resp.StatusCode, string(body), errMsg)
 	}
+}
+
+// recordDelivery writes a webhook delivery attempt to the history table.
+func (a *App) recordDelivery(subID int64, event, url, requestBody string, status int, responseBody, errText string) {
+	if err := a.DB.RecordWebhookDelivery(subID, event, url, requestBody, status, responseBody, errText, time.Now().Unix()); err != nil {
+		log.Printf("[WEBHOOK] record delivery failed: %v", err)
+	}
+}
+
+// AdminTestWebhook sends a sample "test" event to a webhook subscription
+// (HMAC-signed, but NOT via the retry outbox) and returns the response.
+func (a *App) AdminTestWebhook(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	subs, err := a.DB.ListWebhookSubscriptions()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询订阅失败"})
+		return
+	}
+	var sub *database.WebhookSubscription
+	for i := range subs {
+		if subs[i].ID == id {
+			sub = &subs[i]
+			break
+		}
+	}
+	if sub == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "订阅不存在"})
+		return
+	}
+	if !sub.IsActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "订阅未启用"})
+		return
+	}
+
+	payloadObj := map[string]interface{}{
+		"event":          "test",
+		"subscription_id": sub.ID,
+		"sample":         true,
+		"timestamp":      time.Now().Format(time.RFC3339),
+	}
+	payload, _ := json.Marshal(payloadObj)
+	secret := sub.Secret
+
+	req, err := http.NewRequest(http.MethodPost, sub.URL, bytes.NewReader(payload))
+	if err != nil {
+		a.recordDelivery(sub.ID, "test", sub.URL, string(payload), 0, "", err.Error())
+		c.JSON(http.StatusOK, gin.H{"status": 0, "error": err.Error()})
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if secret != "" {
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write(payload)
+		req.Header.Set("X-FeedShit-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		a.recordDelivery(sub.ID, "test", sub.URL, string(payload), 0, "", err.Error())
+		c.JSON(http.StatusOK, gin.H{"status": 0, "error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	a.recordDelivery(sub.ID, "test", sub.URL, string(payload), resp.StatusCode, string(body), "")
+	c.JSON(http.StatusOK, gin.H{
+		"status":         resp.StatusCode,
+		"body":           string(body),
+		"subscription_id": sub.ID,
+	})
+}
+
+// AdminWebhookDeliveries returns recent delivery history for a subscription.
+func (a *App) AdminWebhookDeliveries(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	deliveries, err := a.DB.ListWebhookDeliveries(id, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询投递历史失败"})
+		return
+	}
+	total, success, failed, rate, serr := a.DB.WebhookDeliveryStats(id)
+	if serr != nil {
+		// Stats are non-critical; fall back to zeros rather than failing the whole request.
+		total, success, failed, rate = 0, 0, 0, 0
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"deliveries": deliveries,
+		"stats": gin.H{
+			"total":        total,
+			"success":      success,
+			"failed":       failed,
+			"success_rate": rate,
+		},
+	})
 }
 
 // alertWebhookFailure sends an alert email when a webhook outbox reaches max attempts.

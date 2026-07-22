@@ -335,7 +335,63 @@ func (d *Database) migrate() error {
 		{28, "feedback_notes file_paths", `
 			ALTER TABLE feedback_notes ADD COLUMN file_paths TEXT NOT NULL DEFAULT '[]';
 		`},
-	// Future migrations go here — never renumber existing entries.
+		{29, "admin last_login_at", `
+			ALTER TABLE admins ADD COLUMN last_login_at INTEGER NOT NULL DEFAULT 0;
+		`},
+		{30, "webhook deliveries history", `
+			CREATE TABLE IF NOT EXISTS webhook_deliveries (
+				id              INTEGER PRIMARY KEY AUTOINCREMENT,
+				subscription_id INTEGER NOT NULL,
+				event           TEXT    NOT NULL DEFAULT '',
+				url             TEXT    NOT NULL DEFAULT '',
+				request_body    TEXT    NOT NULL DEFAULT '',
+				response_status INTEGER NOT NULL DEFAULT 0,
+				response_body   TEXT    NOT NULL DEFAULT '',
+				error           TEXT    NOT NULL DEFAULT '',
+				created_at      INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+			);
+			CREATE INDEX IF NOT EXISTS idx_deliveries_sub ON webhook_deliveries(subscription_id);
+			CREATE INDEX IF NOT EXISTS idx_deliveries_created ON webhook_deliveries(created_at DESC);
+		`},
+		{31, "faqs view_count column (C2)", `
+			ALTER TABLE faqs ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0;
+		`},
+		{32, "feedback_votes target_type (C2)", `
+			CREATE TABLE IF NOT EXISTS feedback_votes_new (
+				feedback_id INTEGER NOT NULL,
+				voter_key   TEXT    NOT NULL,
+				vote_type   TEXT    NOT NULL DEFAULT 'useful',
+				target_type TEXT    NOT NULL DEFAULT 'feedback',
+				created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+				PRIMARY KEY(feedback_id, voter_key, vote_type, target_type)
+			);
+			INSERT INTO feedback_votes_new (feedback_id, voter_key, vote_type, target_type, created_at)
+				SELECT feedback_id, voter_key, vote_type, 'feedback', created_at FROM feedback_votes;
+			DROP TABLE feedback_votes;
+			ALTER TABLE feedback_votes_new RENAME TO feedback_votes;
+			CREATE INDEX IF NOT EXISTS idx_votes_feedback ON feedback_votes(feedback_id);
+			CREATE INDEX IF NOT EXISTS idx_votes_target ON feedback_votes(target_type, feedback_id, vote_type);
+		`},
+		{33, "token_calls table (C3)", `
+			CREATE TABLE IF NOT EXISTS token_calls (
+				id        INTEGER PRIMARY KEY AUTOINCREMENT,
+				token_id  INTEGER NOT NULL,
+				ts        INTEGER NOT NULL,
+				status    INTEGER NOT NULL DEFAULT 0
+			);
+			CREATE INDEX IF NOT EXISTS idx_token_calls_token ON token_calls(token_id);
+			CREATE INDEX IF NOT EXISTS idx_token_calls_ts ON token_calls(ts);
+		`},
+		{34, "projects.show_on_global_roadmap (总路线图纳入控制)", `
+			ALTER TABLE projects ADD COLUMN show_on_global_roadmap INTEGER NOT NULL DEFAULT 1;
+		`},
+		{35, "roadmap curation fields (排序/置顶/目标日期/负责人/发布版本)", `
+			ALTER TABLE feedbacks ADD COLUMN roadmap_order INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE feedbacks ADD COLUMN roadmap_target_date INTEGER NOT NULL DEFAULT 0;
+			ALTER TABLE feedbacks ADD COLUMN roadmap_owner TEXT NOT NULL DEFAULT '';
+			ALTER TABLE feedbacks ADD COLUMN roadmap_release TEXT NOT NULL DEFAULT '';
+		`},
+		// Future migrations go here — never renumber existing entries.
 	}
 
 	for _, m := range migrations {
@@ -374,19 +430,23 @@ func (d *Database) migrateHashAPITokens() error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-
-	var updates int
+	// Buffer all rows first, then close before updating. Executing UPDATE
+	// inside rows.Next() with MaxOpenConns(1) risks connection deadlock.
+	type tokenRow struct {
+		id    int64
+		token string
+	}
+	var pending []tokenRow
 	for rows.Next() {
-		var id int64
-		var token string
-		if err := rows.Scan(&id, &token); err != nil {
+		var r tokenRow
+		if err := rows.Scan(&r.id, &r.token); err != nil {
+			rows.Close()
 			return err
 		}
 		// SHA-256 hex is exactly 64 chars — skip if already hashed
-		if len(token) == 64 {
+		if len(r.token) == 64 {
 			isHex := true
-			for _, c := range token {
+			for _, c := range r.token {
 				if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
 					isHex = false
 					break
@@ -396,9 +456,15 @@ func (d *Database) migrateHashAPITokens() error {
 				continue
 			}
 		}
-		h := sha256.Sum256([]byte(token))
+		pending = append(pending, r)
+	}
+	rows.Close()
+
+	var updates int
+	for _, r := range pending {
+		h := sha256.Sum256([]byte(r.token))
 		hash := hex.EncodeToString(h[:])
-		if _, err := d.db.Exec(`UPDATE api_tokens SET token = ? WHERE id = ?`, hash, id); err != nil {
+		if _, err := d.db.Exec(`UPDATE api_tokens SET token = ? WHERE id = ?`, hash, r.id); err != nil {
 			return err
 		}
 		updates++

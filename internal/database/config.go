@@ -98,6 +98,11 @@ func (d *Database) InitDefaultConfig(cfg *config.Config) {
 		{Key: "smtp_to", Value: cfg.SMTPTo, Description: "收件人地址（多个用逗号分隔）"},
 		{Key: "notify_enable", Value: fmt.Sprintf("%t", cfg.NotifyEnable), Description: "是否启用邮件通知"},
 		{Key: "report_recipients", Value: "", Description: "周报收件人（逗号分隔邮箱地址）"},
+		{Key: "roadmap_auto_board", Value: "true", Description: "新反馈提交时是否自动上板到路线图"},
+		{Key: "roadmap_default_status", Value: "planning", Description: "自动上板时的默认看板阶段(planning/in_progress/released)"},
+		{Key: "roadmap_default_public", Value: "false", Description: "自动上板时是否默认公开(安全默认不公开，由管理员手动设置)"},
+		{Key: "roadmap_auto_promote", Value: "true", Description: "反馈 resolved 时是否自动晋升已在板条目的状态"},
+		{Key: "roadmap_auto_promote_status", Value: "released", Description: "自动晋升到的目标阶段"},
 	}
 	for _, item := range defaults {
 		var count int
@@ -136,7 +141,10 @@ func (d *Database) GetConfigByPrefix(prefix string) ([]DBConfig, error) {
 }
 
 // ExecRaw 执行原始 SQL（INSERT/UPDATE/DELETE），供 report 包内部使用。
-// 调用方需自行确保语义正确；本方法仅提供互斥锁保护。
+//
+// SECURITY CONTRACT: callers MUST pass user-supplied values exclusively via
+// the args parameter (parameterized ? placeholders). Never interpolate user
+// input into the sql string — doing so introduces SQL injection.
 func (d *Database) ExecRaw(sql string, args ...interface{}) (sql.Result, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -180,6 +188,15 @@ func (d *Database) GetConfigWithFallback(key string) string {
 
 // QueryRaw 执行原始 SQL 查询（SELECT），供 report 包内部使用。
 // 返回 *sql.Rows，调用方必须 Close。
+//
+// SECURITY CONTRACT: callers MUST pass user-supplied values exclusively via
+// the args parameter (parameterized ? placeholders). Never interpolate user
+// input into the sql string.
+//
+// SAFETY NOTE: the RLock is released when this function returns, but the
+// caller still holds open Rows. This is only safe while MaxOpenConns == 1
+// (the current setting). If MaxOpenConns is ever increased, restructure to
+// return fully-materialized results instead of *sql.Rows.
 func (d *Database) QueryRaw(sql string, args ...interface{}) (*sql.Rows, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()

@@ -1,6 +1,7 @@
 package database
 
 import (
+	"strings"
 	"time"
 )
 
@@ -16,20 +17,45 @@ func (d *Database) InsertAuditLog(action, detail, user, ip string) error {
 	return err
 }
 
-// ListAuditLogs returns recent audit log entries.
-func (d *Database) ListAuditLogs(limit, offset int) ([]AuditLog, int, error) {
+// ListAuditLogs returns recent audit log entries, optionally filtered by action
+// (exact match), user (substring), and a created_at time range [fromUnix, toUnix].
+func (d *Database) ListAuditLogs(action, user string, fromUnix, toUnix int64, limit, offset int) ([]AuditLog, int, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
+	where := []string{}
+	args := []interface{}{}
+	if action != "" {
+		where = append(where, "action = ?")
+		args = append(args, action)
+	}
+	if user != "" {
+		where = append(where, "user LIKE ?")
+		args = append(args, "%"+user+"%")
+	}
+	if fromUnix > 0 {
+		where = append(where, "created_at >= ?")
+		args = append(args, fromUnix)
+	}
+	if toUnix > 0 {
+		where = append(where, "created_at <= ?")
+		args = append(args, toUnix)
+	}
+	whereSQL := ""
+	if len(where) > 0 {
+		whereSQL = " WHERE " + strings.Join(where, " AND ")
+	}
+
 	var total int
-	err := d.db.QueryRow(`SELECT COUNT(*) FROM audit_logs`).Scan(&total)
-	if err != nil {
+	if err := d.db.QueryRow(`SELECT COUNT(*) FROM audit_logs`+whereSQL, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
+	qargs := append([]interface{}{}, args...)
+	qargs = append(qargs, limit, offset)
 	rows, err := d.db.Query(
-		`SELECT id, action, detail, user, ip, created_at FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-		limit, offset,
+		`SELECT id, action, detail, user, ip, created_at FROM audit_logs`+whereSQL+` ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		qargs...,
 	)
 	if err != nil {
 		return nil, 0, err

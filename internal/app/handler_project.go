@@ -58,10 +58,11 @@ func (a *App) AdminListProjects(c *gin.Context) {
 	// Apply project member restrictions for non-admin roles
 	username, _ := c.Get("admin_user")
 	role, _ := c.Get("admin_role")
-	if usernameStr, ok := username.(string); ok && role.(string) != "admin" {
+	roleStr, _ := role.(string)
+	if usernameStr, ok := username.(string); ok && roleStr != "admin" {
 		admin, _ := a.DB.GetAdminByUsername(usernameStr)
 		if admin != nil {
-			allowedSlugs, _ := a.DB.GetAdminProjectSlugs(admin.ID, role.(string))
+			allowedSlugs, _ := a.DB.GetAdminProjectSlugs(admin.ID, roleStr)
 			if allowedSlugs != nil {
 				allowedSet := make(map[string]bool)
 				for _, s := range allowedSlugs {
@@ -92,6 +93,7 @@ func (a *App) AdminCreateProject(c *gin.Context) {
 		Description string `json:"description"`
 		FormSchema  string `json:"form_schema"`
 		Announcement string `json:"announcement"`
+		ShowOnGlobalRoadmap *bool `json:"show_on_global_roadmap"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -117,6 +119,10 @@ func (a *App) AdminCreateProject(c *gin.Context) {
 	if formSchema == "" {
 		formSchema = "[]"
 	}
+	showGlobal := true
+	if req.ShowOnGlobalRoadmap != nil {
+		showGlobal = *req.ShowOnGlobalRoadmap
+	}
 	p := &database.Project{
 		Name:         req.Name,
 		Slug:         req.Slug,
@@ -124,6 +130,7 @@ func (a *App) AdminCreateProject(c *gin.Context) {
 		IsActive:     true,
 		FormSchema:   formSchema,
 		Announcement: req.Announcement,
+		ShowOnGlobalRoadmap: showGlobal,
 	}
 	id, err := a.DB.CreateProject(p)
 	if err != nil {
@@ -156,6 +163,7 @@ func (a *App) AdminUpdateProject(c *gin.Context) {
 		IsArchived  bool   `json:"is_archived"`
 		FormSchema  string `json:"form_schema"`
 		Announcement string `json:"announcement"`
+		ShowOnGlobalRoadmap *bool `json:"show_on_global_roadmap"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -211,6 +219,10 @@ func (a *App) AdminUpdateProject(c *gin.Context) {
 		}
 	}
 
+	showGlobal := existing.ShowOnGlobalRoadmap
+	if req.ShowOnGlobalRoadmap != nil {
+		showGlobal = *req.ShowOnGlobalRoadmap
+	}
 	p := &database.Project{
 		ID:           id,
 		Name:         req.Name,
@@ -220,6 +232,7 @@ func (a *App) AdminUpdateProject(c *gin.Context) {
 		IsArchived:   req.IsArchived,
 		FormSchema:   formSchema,
 		Announcement: req.Announcement,
+		ShowOnGlobalRoadmap: showGlobal,
 	}
 	if err := a.DB.UpdateProject(p); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新失败: " + err.Error()})
@@ -233,6 +246,65 @@ func (a *App) AdminUpdateProject(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "项目已更新"})
 }
 
+// AdminCloneProject duplicates an existing project into a new one, copying its
+// form schema, description, announcement and categories. The clone is always
+// reset to active + not-archived and starts with zero feedbacks. Route:
+// POST /api/v1/admin/projects/:id/clone
+func (a *App) AdminCloneProject(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的项目 ID"})
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+		Slug string `json:"slug"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供名称和标识"})
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Slug = strings.TrimSpace(req.Slug)
+	if req.Name == "" || req.Slug == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "名称和标识不能为空"})
+		return
+	}
+
+	// Validate slug: lowercase, alphanumeric + hyphens/underscores only
+	for _, ch := range req.Slug {
+		if !((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_') {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "标识只能包含小写字母、数字、连字符和下划线"})
+			return
+		}
+	}
+	if len(req.Slug) < 3 || len(req.Slug) > 64 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "标识长度须为 3-64 个字符"})
+		return
+	}
+
+	// Slug must be unique among existing projects. GetProjectBySlug returns a
+	// non-nil error when the slug is absent, so we only treat a non-nil result
+	// as "taken" (swallowing the not-found error, same idiom as UpdateProject).
+	if existing, _ := a.DB.GetProjectBySlug(req.Slug); existing != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "标识已被使用"})
+		return
+	}
+
+	newID, err := a.DB.CloneProject(id, req.Name, req.Slug)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "克隆失败: " + err.Error()})
+		return
+	}
+
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("clone_project", fmt.Sprintf("克隆项目 #%d 为 #%d (slug=%s)", id, newID, req.Slug), fmt.Sprintf("%v", user), clientIP)
+
+	c.JSON(http.StatusOK, gin.H{"message": "已克隆项目", "id": newID, "slug": req.Slug})
+}
+
 func (a *App) AdminDeleteProject(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -241,30 +313,35 @@ func (a *App) AdminDeleteProject(c *gin.Context) {
 	}
 
 	// Safety: deleting a project cascades to all its feedbacks and uploaded
-	// files, which is unrecoverable. Require explicit confirmation (either the
-	// ?confirm=true query flag or a {"confirm":true} body) to prevent accidental
-	// loss via a stray API call.
-	confirmed := c.Query("confirm") == "true" || c.Query("confirm") == "1"
-	if !confirmed {
-		var body struct {
-			Confirm bool `json:"confirm"`
-		}
-		if bErr := c.ShouldBindJSON(&body); bErr == nil {
-			confirmed = body.Confirm
-		}
+	// files, which is unrecoverable. The UI enforces a "type the exact project
+	// name" gate; legacy API callers may still pass ?confirm=true (soft) but the
+	// name match is the strong confirmation path.
+	var body struct {
+		Confirm     bool   `json:"confirm"`
+		ProjectName string `json:"project_name"`
 	}
-	if !confirmed {
+	_ = c.ShouldBindJSON(&body)
+
+	// Fetch project first (needed for the name-match gate and for cleanup).
+	project, err := a.DB.GetProject(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
+		return
+	}
+
+	legacyConfirm := c.Query("confirm") == "true" || c.Query("confirm") == "1" || body.Confirm
+	nameMatches := body.ProjectName != "" && body.ProjectName == project.Name
+	if !legacyConfirm && !nameMatches {
 		c.JSON(http.StatusPreconditionFailed, gin.H{
-			"error":           "删除项目不可恢复，请确认后重试（携带 confirm=true）",
+			"error":           "删除项目不可恢复，请输入准确项目名确认删除",
 			"require_confirm": true,
 		})
 		return
 	}
-
-	// Get project info before deletion for audit log and file cleanup
-	project, err := a.DB.GetProject(id)
-	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "项目不存在"})
+	if body.ProjectName != "" && !nameMatches {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "项目名不匹配，无法删除（请完整输入项目名称「" + project.Name + "」）",
+		})
 		return
 	}
 

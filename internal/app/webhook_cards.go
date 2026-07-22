@@ -21,6 +21,16 @@ var svgUseElement = regexp.MustCompile(`(?i)<use[\s>][\s\S]*?</use>|<use[\s>][^>
 var svgForeignObject = regexp.MustCompile(`(?i)<foreignObject[\s>][\s\S]*?</foreignObject>`)
 var svgNestedNamespace = regexp.MustCompile(`(?i)xmlns\s*=\s*["']?[^"'\s]*javascript`)
 
+// truncateRunes truncates s to at most n runes, appending "..." if truncated.
+// Unlike byte-level slicing, this never splits multi-byte UTF-8 characters.
+func truncateRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "..."
+}
+
 // detectWebhookPlatform returns the platform name based on the webhook URL.
 func detectWebhookPlatform(url string) string {
 	switch {
@@ -138,9 +148,7 @@ func buildFeishuCard(event string, data map[string]interface{}, fb *database.Fee
 
 	// Add description if available
 	if desc, ok := data["description"].(string); ok && desc != "" {
-		if len(desc) > 200 {
-			desc = desc[:200] + "..."
-		}
+		desc = truncateRunes(desc, 200)
 		elements := card["card"].(map[string]interface{})["elements"].([]map[string]interface{})
 		elements = append(elements, map[string]interface{}{
 			"tag": "div",
@@ -178,9 +186,7 @@ func buildDingTalkCard(event string, data map[string]interface{}, fb *database.F
 	md.WriteString(fmt.Sprintf("- **编号：** #%v\n", data["id"]))
 	md.WriteString(fmt.Sprintf("- **项目：** %v\n", data["project_id"]))
 	if desc, ok := data["description"].(string); ok && desc != "" {
-		if len(desc) > 200 {
-			desc = desc[:200] + "..."
-		}
+		desc = truncateRunes(desc, 200)
 		md.WriteString(fmt.Sprintf("- **描述：** %s\n", desc))
 	}
 	if fb != nil {
@@ -220,9 +226,7 @@ func buildSlackCard(event string, data map[string]interface{}, fb *database.Feed
 	}
 
 	if desc, ok := data["description"].(string); ok && desc != "" {
-		if len(desc) > 500 {
-			desc = desc[:500] + "..."
-		}
+		desc = truncateRunes(desc, 500)
 		blocks = append(blocks, map[string]interface{}{
 			"type": "section",
 			"text": map[string]string{"type": "mrkdwn", "text": desc},
@@ -256,9 +260,7 @@ func buildWeComCard(event string, data map[string]interface{}, fb *database.Feed
 	md.WriteString(fmt.Sprintf("> 编号: **#%v**\n", data["id"]))
 	md.WriteString(fmt.Sprintf("> 项目: **%v**\n", data["project_id"]))
 	if desc, ok := data["description"].(string); ok && desc != "" {
-		if len(desc) > 200 {
-			desc = desc[:200] + "..."
-		}
+		desc = truncateRunes(desc, 200)
 		md.WriteString(fmt.Sprintf("> 描述: %s\n", desc))
 	}
 	if fb != nil {

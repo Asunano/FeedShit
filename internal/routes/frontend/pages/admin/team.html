@@ -1,0 +1,68 @@
+{{define "adminTeam"}}
+<div id="tab-team" style="display:none">
+    <div class="filter-bar">
+      <strong style="font-size:.95rem">团队成员</strong>
+      <span class="spacer"></span>
+      <button class="btn-sm" data-click="openAdminModal" data-args="">+ 新建成员</button>
+      <button class="btn-sm" data-click="openInviteModal" data-args="" style="margin-left:4px">+ 邀请链接</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>用户名</th><th>邮箱</th><th>角色</th><th>状态</th><th>创建时间</th><th>最后登录</th><th>操作</th></tr></thead>
+        <tbody id="adminTable"><tr><td colspan="7" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+    <div id="invitationList" style="margin-top:16px"></div>
+  </div>
+<div class="modal-overlay" id="adminModal">
+  <div class="modal">
+    <h3 id="adminModalTitle">新建成员</h3>
+    <input type="hidden" id="adminEditId">
+    <div class="settings-field"><label>用户名 *</label><input type="text" id="adminUsername" placeholder="3-32 位"></div>
+    <div class="settings-field"><label>邮箱</label><input type="email" id="adminEmail" placeholder="用于邮件通知"></div>
+    <div class="settings-field"><label>密码 <span id="adminPwdHint">*</span></label><input type="password" id="adminPassword" placeholder="至少 8 位，含大小写和数字"><div class="hint" id="adminPwdHelp">留空则不修改密码</div></div>
+    <div class="settings-field"><label>角色</label><select id="adminRole">
+      <option value="admin">管理员（全部权限）</option>
+      <option value="manager">经理（项目内全部权限）</option>
+      <option value="editor" selected>编辑（管理反馈+项目）</option>
+      <option value="viewer">只读（仅查看）</option>
+    </select></div>
+    <div class="settings-field" id="adminActiveField"><div class="toggle"><input type="checkbox" id="adminActive" checked><span>启用</span></div></div>
+    <div class="settings-field" id="adminGrantsSection" style="display:none">
+      <label>初始授权 <span style="font-weight:400;color:var(--muted)">（可选，限定该项目访问范围）</span></label>
+      <div id="createGrantsArea" style="max-height:240px;overflow-y:auto;border:1px solid var(--tag-bg);border-radius:4px;padding:8px"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeAdminModal" data-args="">取消</button>
+      <button class="btn-save" data-click="saveAdmin" data-args="">保存</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="inviteModal">
+  <div class="modal" style="max-width:500px">
+    <h3>创建邀请链接</h3>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:16px">生成一个邀请链接，分享给他人即可注册成为团队成员。邀请链接达到使用次数后自动失效。</p>
+    <div class="settings-field"><label>角色</label><select id="inviteRole" data-change="onInviteRoleChange" data-args="">
+      <option value="manager">经理（项目内全部权限）</option>
+      <option value="editor" selected>编辑（管理反馈+项目）</option>
+      <option value="viewer">只读（仅查看）</option>
+    </select></div>
+    <div class="settings-field" id="inviteProjectsField"><label>授权项目 <span style="font-weight:400;color:var(--muted)">（勾选可访问的项目）</span></label>
+      <div id="inviteProjectsArea" style="max-height:200px;overflow-y:auto;border:1px solid var(--tag-bg);border-radius:4px;padding:8px"></div>
+    </div>
+    <div class="settings-field"><label>使用次数</label><input type="number" id="inviteMaxUses" value="1" min="1" style="width:100px;padding:8px 10px;border:1px solid var(--border-soft);border-radius:4px"></div>
+    <div class="settings-field"><label>有效期（天，0 表示不过期）</label><input type="number" id="inviteExpireDays" value="7" min="0" style="width:100px;padding:8px 10px;border:1px solid var(--border-soft);border-radius:4px"></div>
+    <div id="inviteResultArea" style="display:none;margin-bottom:12px">
+      <label>邀请链接</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="inviteURL" readonly style="flex:1;padding:8px 10px;border:1px solid var(--border-soft);border-radius:4px;font-size:.8rem;background:var(--note-bg)">
+        <button class="btn-sm" data-click="copyInviteURL" data-args="">复制</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeInviteModal" data-args="">取消</button>
+      <button class="btn-save" data-click="createInvitation" data-args="">生成链接</button>
+    </div>
+  </div>
+</div>
+{{end}}

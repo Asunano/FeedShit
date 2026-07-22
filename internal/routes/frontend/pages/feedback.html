@@ -37,7 +37,7 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
 .file-input-wrap input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .file-input-wrap .hint{color:var(--hint);font-size:.8rem}
 .preview-grid{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-.preview-item{position:relative;width:72px;height:72px;border:1px solid var(--border-soft);border-radius:4px;overflow:hidden;background:var(--subtle)}
+.preview-item{position:relative;width:96px;height:96px;border:1px solid var(--border-soft);border-radius:4px;overflow:hidden;background:var(--subtle);cursor:zoom-in}
 .preview-item img{width:100%;height:100%;object-fit:cover}
 .preview-item .preview-name{position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.55);color:var(--primary-fg);font-size:.55rem;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:1px 2px}
 .preview-item .preview-remove{position:absolute;top:1px;right:1px;width:18px;height:18px;background:rgba(180,0,0,.75);color:var(--primary-fg);border:none;border-radius:50%;font-size:.7rem;line-height:18px;text-align:center;cursor:pointer;display:none}
@@ -179,6 +179,7 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     <h1 id="pageTitle">反馈提交</h1>
   </div>
   <p class="subtitle" id="pageSubtitle">项目：<span class="project-badge" id="projectDisplay">-</span></p>
+  <p style="margin:-12px 0 16px"><a href="/roadmap" id="projectRoadmapLink" style="color:var(--accent);font-size:.85rem">查看本项目路线图 →</a></p>
   <div id="projectAnnouncement"></div>
   <div id="lastTrackBanner"></div>
   <div class="card">
@@ -222,6 +223,13 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     </div>
   </div>
 </div>
+<!-- 图片预览 Lightbox（提交页：纯本地预览，无下载按钮） -->
+<div class="lightbox" id="fbLightbox">
+  <div class="lightbox__close" id="fbLightboxClose" aria-label="关闭">×</div>
+  <img class="lightbox__img" id="fbLightboxImg" alt="预览">
+  <div class="lightbox__cap" id="fbLightboxCap"></div>
+</div>
+
 <script nonce="{{.Nonce}}">
 (function(){
   // Project data injected by server — unique per /fb/{slug} page.
@@ -237,6 +245,8 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
   document.title = PROJECT.name + ' - 反馈提交';
   document.getElementById('pageTitle').textContent = PROJECT.name + ' 反馈';
   document.getElementById('projectDisplay').textContent = PROJECT.slug;
+  var rmLink = document.getElementById('projectRoadmapLink');
+  if (rmLink && PROJECT.slug) rmLink.href = '/p/' + encodeURIComponent(PROJECT.slug) + '/roadmap';
   if (PROJECT.description) {
     document.getElementById('pageSubtitle').innerHTML =
       '项目：<span class="project-badge">' + escHtml(PROJECT.slug) + '</span> ' +
@@ -839,6 +849,32 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     }
   }
 
+  // ========== 图片预览 Lightbox（提交页：点击缩略图看大图，纯前端，无下载） ==========
+  (function(){
+    var lb = document.getElementById('fbLightbox');
+    var img = document.getElementById('fbLightboxImg');
+    var cap = document.getElementById('fbLightboxCap');
+    var preview = document.getElementById('imagePreview');
+    if (preview) {
+      preview.addEventListener('click', function(e){
+        if (e.target.classList.contains('preview-remove')) return;
+        var item = e.target.closest('.preview-item');
+        if (!item) return;
+        var im = item.querySelector('img');
+        if (!im) return;
+        img.src = im.src;
+        cap.textContent = im.alt || '';
+        lb.classList.add('active');
+      });
+    }
+    function closeLb(){ lb.classList.remove('active'); }
+    document.getElementById('fbLightboxClose').addEventListener('click', closeLb);
+    lb.addEventListener('click', function(e){ if (e.target === lb) closeLb(); });
+    document.addEventListener('keydown', function(e){
+      if (e.key === 'Escape' && lb.classList.contains('active')) closeLb();
+    });
+  })();
+
   // ========== Collect custom data from form ==========
   function collectFormData() {
     var data = {};
@@ -1061,16 +1097,40 @@ h1{font-size:1.4rem;font-weight:600;margin-bottom:6px}
     var html = '<div class="faq-hint-title">可能已有相关解答（点击问题展开答案）：</div>';
     faqs.forEach(function(f) {
       var aid = 'faq-a-' + f.id;
-      html += '<div class="faq-item"><a class="faq-q" data-click="__toggleFaq" data-args="\'' + aid + '\'">' + escHtml(f.question) + '</a>' +
-        '<div class="faq-a" id="' + aid + '" style="display:none">' + escHtml(f.answer) + '</div></div>';
+      html += '<div class="faq-item">'
+        + '<a class="faq-q" data-click="__toggleFaq" data-args="this,\'' + aid + '\'" data-faq="' + f.id + '">' + escHtml(f.question) + '</a>'
+        // answer is server-rendered Markdown (already sanitized) — inject as HTML, not text
+        + '<div class="faq-a" id="' + aid + '" style="display:none">' + (f.answer || '') + '</div>'
+        + '<div class="faq-foot"><button class="btn-sm faq-vote" data-click="voteFaq" data-args="' + f.id + '">👍 有用 <span id="faqv-' + f.id + '">' + (f.useful_votes || 0) + '</span></button></div>'
+        + '</div>';
     });
     html += '<div class="faq-still"><a data-click="__scrollToSubmit" data-args="">仍未解决？仍要提交新反馈 →</a></div>';
     faqHint.className = 'dup-warning visible';
     faqHint.innerHTML = html;
   }
-  window.__toggleFaq = function(id) {
-    var el = document.getElementById(id);
-    if (el) el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+  window.__toggleFaq = function(el, aid) {
+    var node = document.getElementById(aid);
+    if (!node) return;
+    var willShow = node.style.display === 'none';
+    node.style.display = willShow ? 'block' : 'none';
+    // Count a "view" only when the answer is actually revealed.
+    if (willShow) {
+      var fid = el ? el.getAttribute('data-faq') : '';
+      if (fid) {
+        fetch('/api/v1/faq/' + fid + '/view', { method: 'POST' }).catch(function(){});
+      }
+    }
+  };
+  window.voteFaq = function(faqId) {
+    faqId = Number(faqId);
+    if (!faqId) return;
+    fetch('/api/v1/faq/' + faqId + '/vote', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var span = document.getElementById('faqv-' + faqId);
+        if (span && d && typeof d.votes === 'number') span.textContent = d.votes;
+      })
+      .catch(function(){});
   };
   window.__scrollToSubmit = function() {
     faqHint.className = 'dup-warning'; faqHint.innerHTML = '';

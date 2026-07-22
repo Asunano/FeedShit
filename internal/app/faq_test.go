@@ -323,7 +323,7 @@ func TestAdminCRUDAuditLogs(t *testing.T) {
 		t.Fatalf("delete: expected 200, got %d body=%s", w3.Code, w3.Body.String())
 	}
 
-	logs, _, err := app.DB.ListAuditLogs(100, 0)
+	logs, _, err := app.DB.ListAuditLogs("", "", 0, 0, 100, 0)
 	if err != nil {
 		t.Fatalf("ListAuditLogs: %v", err)
 	}

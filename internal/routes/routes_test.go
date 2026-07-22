@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"bytes"
 	"encoding/json"
 	"html/template"
 	"io"
@@ -319,7 +320,12 @@ func extractDirective(csp, directive string) string {
 // pages — including feedback.html and admin.html, which require a project /
 // admin session to reach via the HTTP routes.
 func TestAllPageTemplatesRender(t *testing.T) {
-	tpl := template.Must(template.ParseFS(frontendFS, "frontend/layouts/base.html", "frontend/pages/*.html"))
+	// admin.html is matched by the *.html wildcard but never rendered here; it
+	// references the admin-only renderTab func, so register a no-op stub to let
+	// the parse succeed.
+	tpl := template.Must(template.New("public").Funcs(template.FuncMap{
+		"renderTab": func(name string, data interface{}) template.HTML { return "" },
+	}).ParseFS(frontendFS, "frontend/layouts/base.html", "frontend/pages/*.html"))
 
 	pages := []struct {
 		name string
@@ -332,8 +338,14 @@ func TestAllPageTemplatesRender(t *testing.T) {
 		{"roadmap.html", ""},
 		{"register.html", ""},
 		{"feedback.html", ""},
-		{"admin.html", "admin"},
 	}
+
+	// NOTE: admin.html is intentionally NOT rendered here. It depends on the
+	// per-tab partials (adminDashboard, adminFeedbackDetail, ...) which live only
+	// in the SEPARATE admin template set (routes.go parses it with
+	// "frontend/pages/admin/*.html" on its own). admin.html is never rendered from
+	// this public set; it is guarded by TestAdminTemplatesRender below. This keeps a
+	// single broken admin partial from taking down the public site's template parse.
 
 	for _, p := range pages {
 		html, err := executePage(tpl, p.name, PageData{Nav: p.nav, Nonce: "test-nonce"})
@@ -347,11 +359,117 @@ func TestAllPageTemplatesRender(t *testing.T) {
 			t.Fatalf("%s: unified container missing (no site-footer)", p.name)
 		}
 		// Inline (non-external) scripts must carry the per-request CSP nonce.
-		// Pages that load JS only via <script src> (e.g. admin.html → dashboard.js)
-		// legitimately need no nonce and are exempt.
+		// Pages that load JS only via <script src> legitimately need no nonce
+		// and are exempt.
 		if inlineScriptNeedsNonce(html) && !strings.Contains(html, "test-nonce") {
 			t.Fatalf("%s: inline script missing CSP nonce", p.name)
 		}
+	}
+}
+
+// TestAdminTemplatesRender guards the refactored admin UI: the admin template set
+// is parsed SEPARATELY from the public set (routes.go Register) so a syntax error in
+// any admin page or its per-tab partials only disables the admin UI, never the public
+// TestAdminTemplatesRender verifies the isolated admin template set: the shell
+// parses, every tab/modal partial is defined and rendered, and a clean build
+// shows no isolated error boxes.
+func TestAdminTemplatesRender(t *testing.T) {
+	set := loadAdminTemplates(frontendFS)
+	if set == nil || set.shell == nil {
+		t.Fatalf("admin shell failed to parse: %+v", set)
+	}
+	if len(set.failedTabErrors) != 0 {
+		t.Fatalf("unexpected tab parse failures on clean tree: %v", set.failedTabErrors)
+	}
+	var buf bytes.Buffer
+	pd := PageData{Nav: "admin", Nonce: "test-nonce"}
+	if err := set.shell.ExecuteTemplate(&buf, "admin.html", pd); err != nil {
+		t.Fatalf("admin.html execute failed: %v", err)
+	}
+	out := buf.String()
+	// Unified container must still wrap the admin shell.
+	for _, want := range []string{`theme-toggle`, `site-footer`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered admin.html missing unified container marker %q", want)
+		}
+	}
+	// Every tab + its owned/shared modals must be present in the rendered output.
+	for _, want := range []string{
+		`id="tab-dashboard"`, `id="tab-pending"`, `id="tab-roadmap"`,
+		`id="tab-projects"`, `id="tab-audit"`, `id="tab-team"`,
+		`id="tab-settings"`, `id="tab-kb"`,
+		`/shared/admin/admin-core.js`,
+		`/shared/admin/admin-dashboard.js`, `/shared/admin/admin-pending.js`,
+		`/shared/admin/admin-roadmap.js`, `/shared/admin/admin-projects.js`,
+		`/shared/admin/admin-audit.js`, `/shared/admin/admin-team.js`,
+		`/shared/admin/admin-settings.js`, `/shared/admin/admin-kb.js`,
+		`id="projectModal"`, `id="deleteProjectModal"`, `id="cloneModal"`,
+		`id="formPreviewModal"`, `id="fieldEditorModal"`,
+		`id="adminModal"`, `id="inviteModal"`,
+		`id="tokenModal"`, `id="tokenRotateModal"`, `id="tokenStatsModal"`, `id="webhookModal"`,
+		`id="faqModal"`,
+		`id="dupSimilarModal"`, `id="toast"`, `id="adminLightbox"`, `id="pdfModal"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rendered admin.html missing %q", want)
+		}
+	}
+	// A clean build must NOT contain any isolated error boxes.
+	if strings.Contains(out, "admin-tab-error") {
+		t.Errorf("clean admin render unexpectedly contains an isolated error box")
+	}
+}
+
+// TestAdminTemplateIsolation proves that a broken/missing tab is contained: it
+// renders an isolated error box while the other (good) tabs keep rendering. This
+// is the core guarantee of per-tab independent parsing.
+func TestAdminTemplateIsolation(t *testing.T) {
+	// Synthetic set: only a subset of tabs registered on purpose.
+	set := &adminTemplateSet{
+		tabs:            make(map[string]*template.Template),
+		failedTabErrors: make(map[string]error),
+	}
+	// Good tab: pending.
+	if raw, err := frontendFS.ReadFile("frontend/pages/admin/pending.html"); err != nil {
+		t.Fatal(err)
+	} else if t2, err := template.New("adminPending").Parse(string(raw)); err != nil {
+		t.Fatalf("pending parse: %v", err)
+	} else {
+		set.tabs["adminPending"] = t2
+	}
+	// Runtime-broken tab: parses fine but references an undefined template, so it
+	// fails at execute time (not parse time) — must still be isolated.
+	if broken, err := template.New("adminRoadmap").Parse(`{{define "adminRoadmap"}}roadmap {{template "does-not-exist" .}} end{{end}}`); err != nil {
+		t.Fatalf("broken tab parse unexpectedly failed: %v", err)
+	} else {
+		set.tabs["adminRoadmap"] = broken
+	}
+	// dashboard intentionally NOT registered — simulates parse/file failure.
+
+	// 1) Good tab renders its content and is NOT wrapped in an error box.
+	good := set.renderTab("adminPending", nil)
+	if !strings.Contains(string(good), `id="tab-pending"`) {
+		t.Errorf("good tab missing its content marker: %q", good)
+	}
+	if strings.Contains(string(good), "admin-tab-error") {
+		t.Errorf("good tab wrongly wrapped in error box: %q", good)
+	}
+
+	// 2) Missing tab -> isolated error box, does NOT panic or cascade.
+	missing := set.renderTab("adminDashboard", nil)
+	if !strings.Contains(string(missing), "admin-tab-error") {
+		t.Errorf("missing tab should render an isolated error box, got: %q", missing)
+	}
+
+	// 3) Runtime-broken tab -> isolated error box, does NOT cascade to the good tab.
+	brokenOut := set.renderTab("adminRoadmap", nil)
+	if !strings.Contains(string(brokenOut), "admin-tab-error") {
+		t.Errorf("runtime-broken tab should render an isolated error box, got: %q", brokenOut)
+	}
+
+	// 4) Re-render the good tab after the broken one — isolation must hold.
+	if !strings.Contains(string(set.renderTab("adminPending", nil)), `id="tab-pending"`) {
+		t.Errorf("isolation leak: good tab broken after rendering a bad tab")
 	}
 }
 
@@ -387,7 +505,12 @@ return false
 //     quote) escape that used to break the whole script's parse — which silently
 //     killed custom-field rendering AND the notify-consent modal.
 func TestFeedbackPageInjectsProjectData(t *testing.T) {
-	tpl := template.Must(template.ParseFS(frontendFS, "frontend/layouts/base.html", "frontend/pages/*.html"))
+	// admin.html is matched by the *.html wildcard but never rendered here; it
+	// references the admin-only renderTab func, so register a no-op stub to let
+	// the parse succeed.
+	tpl := template.Must(template.New("public").Funcs(template.FuncMap{
+		"renderTab": func(name string, data interface{}) template.HTML { return "" },
+	}).ParseFS(frontendFS, "frontend/layouts/base.html", "frontend/pages/*.html"))
 	rendered, err := executePage(tpl, "feedback.html", PageData{Nav: "", Nonce: "test-nonce"})
 	if err != nil {
 		t.Fatalf("render feedback.html failed: %v", err)

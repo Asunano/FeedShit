@@ -3,22 +3,48 @@
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg);line-height:1.5}
 
-.container{max-width:520px;margin:60px auto;padding:0 16px}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.container{max-width:560px;margin:48px auto;padding:0 16px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,.06);margin-bottom:20px}
 .card h2{font-size:1.2rem;font-weight:600;margin-bottom:4px}
-.card .sub{color:var(--muted);font-size:.85rem;margin-bottom:28px}
+.card .sub{color:var(--muted);font-size:.85rem;margin-bottom:24px}
 
-.field{margin-bottom:18px}
+.field{margin-bottom:16px}
 .field label{display:block;font-size:.8rem;font-weight:500;color:var(--field-label);margin-bottom:4px}
 .field input{width:100%;padding:8px 10px;border:1px solid var(--input-border);border-radius:4px;font-size:.9rem;background:var(--panel);color:var(--fg)}
 .field input:focus{outline:none;border-color:var(--muted)}
 .field .hint{font-size:.75rem;color:var(--hint);margin-top:2px}
+.row{display:flex;gap:12px}
+.row .field{flex:1}
 
-.btn{display:block;width:100%;padding:12px;background:var(--primary);color:var(--primary-fg);border:none;border-radius:4px;font-size:.95rem;cursor:pointer;transition:background .15s;margin-top:24px}
+.btn{display:block;width:100%;padding:12px;background:var(--primary);color:var(--primary-fg);border:none;border-radius:4px;font-size:.95rem;cursor:pointer;transition:background .15s;margin-top:8px}
 .btn:hover{background:var(--primary-hover)}
 .btn:disabled{background:var(--muted);cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--border);margin-top:0}
+.btn.ghost:hover{background:var(--panel)}
 
-.error{color:var(--danger);font-size:.8rem;margin-top:8px;display:none}
+.error{color:var(--danger);font-size:.8rem;margin-top:10px;display:none}
+
+/* Step indicator */
+.steps{display:flex;gap:8px;margin-bottom:24px}
+.step{flex:1;text-align:center;font-size:.78rem;font-weight:500;padding:7px 4px;border-radius:20px;background:var(--panel);border:1px solid var(--border);color:var(--muted)}
+.step.active{background:var(--primary);border-color:var(--primary);color:var(--primary-fg)}
+.step.done{color:var(--success-fg);border-color:var(--success-fg)}
+
+.step-pane{display:none}
+.step-pane.active{display:block}
+
+/* Master key status banner */
+.key-banner{padding:10px 14px;border-radius:6px;font-size:.8rem;margin-bottom:20px;line-height:1.4}
+.key-banner.ok{background:var(--success-bg);border:1px solid var(--success-fg);color:var(--success-fg)}
+.key-banner.warn{background:var(--notice-bg);border:1px solid var(--notice-border);color:var(--notice-fg)}
+
+/* System info card */
+.sysinfo{font-size:.82rem}
+.sysinfo h3{font-size:.95rem;font-weight:600;margin-bottom:12px}
+.sysinfo dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px}
+.sysinfo dt{color:var(--muted);white-space:nowrap}
+.sysinfo dd{word-break:break-all;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.78rem}
+
 .success-msg{text-align:center;padding:24px}
 .success-msg h3{font-size:1.1rem;margin-bottom:8px;color:var(--success-fg)}
 .success-msg p{color:var(--muted);font-size:.9rem}
@@ -27,13 +53,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .key-notice strong{color:var(--notice-fg)}
 .key-notice p{margin:6px 0;color:var(--notice-fg)}
 .key-notice code{background:var(--notice-bg);padding:2px 6px;border-radius:3px;font-size:.8rem}
+
+.nav{display:flex;gap:12px;margin-top:20px}
+.nav .btn{margin-top:0}
+.nav .spacer{flex:1}
 </style>
 <div class="container">
   <div class="card" id="setupCard">
     <h2>初始设置</h2>
-    <p class="sub">首次使用 FeedShit，请创建管理员账户</p>
+    <p class="sub">首次使用 FeedShit，请完成以下两步配置</p>
 
-    <form id="setupForm">
+    <div id="keyBanner" class="key-banner" style="display:none"></div>
+
+    <div class="steps">
+      <div class="step active" data-step="1">1 账户</div>
+      <div class="step" data-step="2">2 邮件</div>
+    </div>
+
+    <!-- Step 1: Admin account -->
+    <div class="step-pane active" data-pane="1">
       <div class="field">
         <label>管理员用户名 *</label>
         <input type="text" id="adminUser" required minlength="2" placeholder="admin" value="admin">
@@ -47,10 +85,64 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
         <label>确认密码 *</label>
         <input type="password" id="adminPwdConfirm" required minlength="8" placeholder="再次输入密码">
       </div>
+    </div>
 
-      <div class="error" id="setupError"></div>
-      <button type="submit" class="btn" id="setupBtn">完成设置</button>
-    </form>
+    <!-- Step 2: SMTP (skippable) -->
+    <div class="step-pane" data-pane="2">
+      <div class="field">
+        <label>SMTP 服务器</label>
+        <input type="text" id="smtpHost" placeholder="smtp.example.com">
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>端口</label>
+          <input type="number" id="smtpPort" placeholder="587" value="587">
+        </div>
+        <div class="field">
+          <label>用户名</label>
+          <input type="text" id="smtpUser" placeholder="user@example.com">
+        </div>
+      </div>
+      <div class="field">
+        <label>密码</label>
+        <input type="password" id="smtpPass" placeholder="SMTP 密码（加密存储）">
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>发件人地址</label>
+          <input type="text" id="smtpFrom" placeholder="noreply@example.com">
+        </div>
+        <div class="field">
+          <label>收件人地址</label>
+          <input type="text" id="smtpTo" placeholder="admin@example.com">
+        </div>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="notifyEnable" style="width:auto"> 启用邮件通知
+        </label>
+      </div>
+      <p class="hint">此步骤可跳过，安装后仍可在后台设置中配置邮件。留空则不使用邮件通知。</p>
+    </div>
+
+    <div class="error" id="setupError"></div>
+
+    <div class="nav">
+      <button type="button" class="btn ghost" id="prevBtn" style="display:none">上一步</button>
+      <div class="spacer"></div>
+      <button type="button" class="btn" id="nextBtn">下一步</button>
+      <button type="button" class="btn" id="setupBtn" style="display:none">完成设置</button>
+    </div>
+  </div>
+
+  <div class="card sysinfo" id="sysInfoCard">
+    <h3>系统信息</h3>
+    <dl>
+      <dt>版本</dt><dd id="siVersion">—</dd>
+      <dt>Go 运行时</dt><dd id="siGo">—</dd>
+      <dt>数据目录</dt><dd id="siDataDir">—</dd>
+      <dt>数据库文件</dt><dd id="siDbPath">—</dd>
+    </dl>
   </div>
 
   <div class="card" id="successCard" style="display:none">
@@ -71,81 +163,124 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 
 <script nonce="{{.Nonce}}">
 (function(){
+  var step = 1;
+  var TOTAL = 2;
+  var sysData = {};
+
+  function $(id){ return document.getElementById(id); }
+  function showErr(msg){
+    var el = $('setupError');
+    el.textContent = msg || '';
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  // ---- Load status: redirect if already set up; populate system info + key banner ----
   fetch('/api/v1/setup/status').then(function(r){ return r.json(); }).then(function(d){
-    if (d.setup_complete) {
-      window.location.href = '/';
+    if (d.setup_complete) { window.location.href = '/'; return; }
+    sysData = d;
+    $('siVersion').textContent = d.version || 'dev';
+    $('siGo').textContent = d.go_version || '—';
+    $('siDataDir').textContent = d.data_dir || '—';
+    $('siDbPath').textContent = d.db_path || '—';
+    renderKeyBanner(d);
+  }).catch(function(){ /* ignore, wizard still usable */ });
+
+  function renderKeyBanner(d){
+    var el = $('keyBanner');
+    if (!el) return;
+    el.style.display = 'block';
+    if (d.master_key_source === 'env') {
+      el.className = 'key-banner ok';
+      el.innerHTML = '✅ 主密钥已通过环境变量 <code>FEEDSHIT_MASTER_KEY</code> 提供，安全性最佳。';
+    } else if (d.master_key_source === 'file') {
+      el.className = 'key-banner warn';
+      el.innerHTML = '⚠️ 主密钥来自密钥文件 <code>data/key/master.key</code>，请务必备份该文件。';
+    } else {
+      el.className = 'key-banner warn';
+      el.innerHTML = '⚠️ 本次运行自动生成了主密钥文件 <code>data/key/master.key</code>，请务必备份，丢失将无法解密已存密钥。';
     }
+  }
+
+  // ---- Step navigation ----
+  function renderSteps(){
+    var steps = document.querySelectorAll('.step');
+    steps.forEach(function(s){
+      var n = parseInt(s.getAttribute('data-step'), 10);
+      s.classList.toggle('active', n === step);
+      s.classList.toggle('done', n < step);
+    });
+    document.querySelectorAll('.step-pane').forEach(function(p){
+      p.classList.toggle('active', parseInt(p.getAttribute('data-pane'), 10) === step);
+    });
+    $('prevBtn').style.display = step > 1 ? 'block' : 'none';
+    $('nextBtn').style.display = step < TOTAL ? 'block' : 'none';
+    $('setupBtn').style.display = step === TOTAL ? 'block' : 'none';
+  }
+
+  function validateStep(){
+    showErr('');
+    if (step === 1) {
+      var user = $('adminUser').value.trim();
+      var pwd = $('adminPwd').value;
+      var confirmPwd = $('adminPwdConfirm').value;
+      if (user.length < 2) { showErr('用户名至少 2 个字符'); return false; }
+      if (pwd !== confirmPwd) { showErr('两次输入的密码不一致'); return false; }
+      if (pwd.length < 8) { showErr('密码长度不能少于 8 位'); return false; }
+      if (!/[A-Z]/.test(pwd)) { showErr('密码须包含至少一个大写字母'); return false; }
+      if (!/[a-z]/.test(pwd)) { showErr('密码须包含至少一个小写字母'); return false; }
+      if (!/[0-9]/.test(pwd)) { showErr('密码须包含至少一个数字'); return false; }
+    }
+    return true;
+  }
+
+  $('nextBtn').addEventListener('click', function(){
+    if (!validateStep()) return;
+    if (step < TOTAL) { step++; renderSteps(); }
+  });
+  $('prevBtn').addEventListener('click', function(){
+    showErr('');
+    if (step > 1) { step--; renderSteps(); }
   });
 
-  document.getElementById('setupForm').addEventListener('submit', function(e){
-    e.preventDefault();
-    var user = document.getElementById('adminUser').value.trim();
-    var pwd = document.getElementById('adminPwd').value;
-    var confirm = document.getElementById('adminPwdConfirm').value;
-    var errEl = document.getElementById('setupError');
-    var btn = document.getElementById('setupBtn');
-
-    if (user.length < 2) {
-      errEl.textContent = '用户名至少 2 个字符';
-      errEl.style.display = 'block';
-      return;
-    }
-    if (pwd !== confirm) {
-      errEl.textContent = '两次输入的密码不一致';
-      errEl.style.display = 'block';
-      return;
-    }
-    if (pwd.length < 8) {
-      errEl.textContent = '密码长度不能少于 8 位';
-      errEl.style.display = 'block';
-      return;
-    }
-    if (!/[A-Z]/.test(pwd)) {
-      errEl.textContent = '密码须包含至少一个大写字母';
-      errEl.style.display = 'block';
-      return;
-    }
-    if (!/[a-z]/.test(pwd)) {
-      errEl.textContent = '密码须包含至少一个小写字母';
-      errEl.style.display = 'block';
-      return;
-    }
-    if (!/[0-9]/.test(pwd)) {
-      errEl.textContent = '密码须包含至少一个数字';
-      errEl.style.display = 'block';
-      return;
-    }
-
+  // ---- Final submit ----
+  $('setupBtn').addEventListener('click', function(){
+    if (!validateStep()) return;
     var body = {
-      admin_username: user,
-      admin_password: pwd
+      admin_username: $('adminUser').value.trim(),
+      admin_password: $('adminPwd').value,
+      smtp_host: $('smtpHost').value.trim(),
+      smtp_port: parseInt($('smtpPort').value, 10) || 0,
+      smtp_user: $('smtpUser').value.trim(),
+      smtp_pass: $('smtpPass').value,
+      smtp_from: $('smtpFrom').value.trim(),
+      smtp_to: $('smtpTo').value.trim(),
+      notify_enable: $('notifyEnable').checked
     };
 
-    btn.disabled = true;
-    btn.textContent = '保存中...';
-    errEl.style.display = 'none';
-
+    var btn = $('setupBtn');
+    btn.disabled = true; btn.textContent = '保存中...';
+    showErr('');
     fetch('/api/v1/setup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
-    }).then(function(r){ return r.json(); }).then(function(d){
-      if (d.message) {
-        document.getElementById('setupCard').style.display = 'none';
-        document.getElementById('successCard').style.display = 'block';
-      } else {
-        errEl.textContent = d.error || '设置失败';
-        errEl.style.display = 'block';
-        btn.disabled = false;
-        btn.textContent = '完成设置';
-      }
-    }).catch(function(){
-      errEl.textContent = '网络错误';
-      errEl.style.display = 'block';
-      btn.disabled = false;
-      btn.textContent = '完成设置';
-    });
+    }).then(function(r){ return r.json().then(function(d){ return {status:r.status, d:d}; }); })
+      .then(function(x){
+        if (x.d.message) {
+          $('setupCard').style.display = 'none';
+          $('sysInfoCard').style.display = 'none';
+          $('successCard').style.display = 'block';
+        } else {
+          showErr(x.d.error || '设置失败');
+          btn.disabled = false; btn.textContent = '完成设置';
+        }
+      }).catch(function(){
+        showErr('网络错误');
+        btn.disabled = false; btn.textContent = '完成设置';
+      });
   });
+
+  renderSteps();
 })();
 </script>
 {{template "chromebot" .}}

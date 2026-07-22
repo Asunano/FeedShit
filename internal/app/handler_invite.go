@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -162,7 +163,9 @@ func (a *App) PublicRegister(c *gin.Context) {
 	// Parse project IDs
 	var projectIDs []string
 	if inv.ProjectIDs != "" && inv.ProjectIDs != "[]" {
-		json.Unmarshal([]byte(inv.ProjectIDs), &projectIDs)
+		if err := json.Unmarshal([]byte(inv.ProjectIDs), &projectIDs); err != nil {
+			log.Printf("[WARN] invitation %s: malformed project_ids %q: %v", inv.Token, inv.ProjectIDs, err)
+		}
 	}
 
 	// Create admin account

@@ -1,0 +1,125 @@
+{{define "adminDashboard"}}
+<div id="tab-dashboard">
+    <div class="stats" id="statsRow">
+      <div class="stat-card"><div class="num" id="statTotal">-</div><div class="lbl">总反馈数</div></div>
+      <div class="stat-card"><div class="num" id="statProjects">-</div><div class="lbl">项目数</div></div>
+      <div class="stat-card"><div class="num" id="statToday">-</div><div class="lbl">今日新增</div></div>
+      <div class="stat-card"><div class="num" id="statAvgRes">-</div><div class="lbl">平均处理时长</div></div>
+    </div>
+
+    <div id="listView">
+      <div class="filter-bar">
+        <select id="projectFilter" data-change="onProjectChange" data-args="">
+          <option value="">全部项目</option>
+        </select>
+        <select id="statusFilter" data-change="loadFeedbacks" data-args="">
+          <option value="">全部状态</option>
+          <option value="pending">待处理</option>
+          <option value="processing">处理中</option>
+          <option value="resolved">已解决</option>
+          <option value="closed">已关闭</option>
+        </select>
+        <select id="priorityFilter" data-change="loadFeedbacks" data-args="">
+          <option value="">全部优先级</option>
+          <option value="urgent">紧急</option>
+          <option value="high">高</option>
+          <option value="medium">中</option>
+          <option value="low">低</option>
+        </select>
+        <select id="assigneeFilter" data-change="loadFeedbacks" data-args="">
+          <option value="">全部指派</option>
+        </select>
+        <select id="categoryFilter" data-change="loadFeedbacks" data-args="">
+          <option value="">全部分类</option>
+        </select>
+        <select id="pageSize" title="每页条数" data-change="onPageSizeChange" data-args="this.value">
+          <option value="20">20 条/页</option>
+          <option value="50">50 条/页</option>
+          <option value="100" selected>100 条/页</option>
+          <option value="200">200 条/页</option>
+        </select>
+        <select id="sortBy" title="排序" data-change="onSortChange" data-args="this.value">
+          <option value="">默认（时间新→旧）</option>
+          <option value="updated_at">更新时间</option>
+          <option value="votes">投票数</option>
+          <option value="priority">优先级</option>
+        </select>
+        <button class="btn-sm" id="mineBtn" data-click="toggleMine" data-args="">指派给我</button>
+        <input type="text" id="keywordSearch" placeholder="搜索标题/描述/标签/联系人/备注...">
+        <span class="count" id="feedbackCount"></span>
+        <span class="spacer"></span>
+        <button class="btn-sm" data-click="exportFeedback" data-args="'csv'">导出 CSV</button>
+        <button class="btn-sm" data-click="exportFeedback" data-args="'json'">导出 JSON</button>
+        <button class="btn-sm" data-click="exportFeedback" data-args="'xlsx'">导出 XLSX</button>
+        <button class="btn-sm" data-click="refreshDashboard" data-args="">刷新</button>
+      </div>
+      <div class="bulk-bar" id="bulkBar">
+        <span id="bulkCount">0 条已选</span>
+        <select id="bulkStatusSelect">
+          <option value="">批量改状态...</option>
+          <option value="pending">待处理</option>
+          <option value="processing">处理中</option>
+          <option value="resolved">已解决</option>
+          <option value="closed">已关闭</option>
+        </select>
+        <select id="bulkPrioritySelect">
+          <option value="">批量改优先级...</option>
+          <option value="urgent">紧急</option>
+          <option value="high">高</option>
+          <option value="medium">中</option>
+          <option value="low">低</option>
+        </select>
+        <input type="text" id="bulkAssigneeInput" placeholder="批量指派..." style="padding:4px 8px;border:1px solid var(--input-border);border-radius:4px;font-size:.8rem;width:100px">
+        <input type="text" id="bulkTagsInput" placeholder="批量标签..." style="padding:4px 8px;border:1px solid var(--input-border);border-radius:4px;font-size:.8rem;width:100px">
+        <button data-click="bulkUpdateStatus" data-args="" style="background:var(--fg);color:var(--primary-fg)">应用</button>
+        <button data-click="bulkUpdatePriority" data-args="" style="background:var(--field-label);color:var(--primary-fg)">优先级</button>
+        <button data-click="bulkUpdateAssignee" data-args="" style="background:var(--field-label);color:var(--primary-fg)">指派</button>
+        <button data-click="bulkUpdateTags" data-args="" style="background:var(--field-label);color:var(--primary-fg)">标签</button>
+        <button data-click="bulkDelete" data-args="" style="background:var(--priority-urgent-fg);color:var(--primary-fg)">批量删除</button>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn-sm" data-click="clearSelection" data-args="">取消选择</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th class="cb-col"><input type="checkbox" id="selectAllCb" data-change="toggleSelectAll" data-args="this.checked"></th><th>ID</th><th>项目</th><th>标题</th><th>优先级</th><th>状态</th><th>投票</th><th>指派</th><th>IP</th><th>时间</th></tr></thead>
+          <tbody id="feedbackTable"><tr><td colspan="10" class="empty">加载中...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pagination-bar" id="paginationBar"></div>
+      <div class="chart-row" style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+        <div class="chart-container" id="trendChart" style="flex:1;min-width:300px">
+          <h2>反馈趋势</h2>
+          <div class="range-seg" id="trendRange">
+            <button type="button" class="active" data-click="onTrendRange" data-args="'7'">7天</button>
+            <button type="button" data-click="onTrendRange" data-args="'custom'">自定义</button>
+          </div>
+          <div id="customRange" style="display:none;margin-top:8px;align-items:center;gap:8px;flex-wrap:wrap">
+            <input type="date" id="trendFrom">
+            <span>至</span>
+            <input type="date" id="trendTo">
+            <button class="btn-sm" data-click="applyCustomRange" data-args="">应用</button>
+          </div>
+          <div id="chartInner"><p class="chart-empty">加载中...</p></div>
+        </div>
+        <div class="chart-container" id="statusChart" style="flex:1;min-width:300px">
+          <h2>状态分布</h2>
+          <div id="statusDonut"><p class="chart-empty">加载中...</p></div>
+        </div>
+      </div>
+      <div class="kbd-hint" id="kbdHint">
+        <button class="kbd-hint-toggle" data-click="toggleKbdHint" data-args="" title="键盘快捷键">快捷键 ⌨</button>
+        <div class="kbd-hint-body" id="kbdHintBody" style="display:none">
+          <div><kbd>j</kbd>/<kbd>k</kbd> 上 / 下移动选中</div>
+          <div><kbd>e</kbd> 打开详情</div>
+          <div><kbd>/</kbd> 聚焦搜索</div>
+          <div><kbd>Esc</kbd> 关闭弹层</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="detail-panel" id="detailView">
+      <div class="detail-back" data-click="showList" data-args="">&#8592; 返回列表</div>
+      <div class="detail-card" id="detailContent"></div>
+    </div>
+  </div>
+{{end}}

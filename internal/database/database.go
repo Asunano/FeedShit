@@ -62,10 +62,16 @@ type Feedback struct {
 	Category        string    `json:"category"`
 	PublicOnRoadmap bool      `json:"public_on_roadmap"`
 	RoadmapStatus   string    `json:"roadmap_status"`
+	RoadmapOrder    int       `json:"roadmap_order"`
+	RoadmapTargetDate int64   `json:"roadmap_target_date"`
+	RoadmapOwner    string    `json:"roadmap_owner"`
+	RoadmapRelease  string    `json:"roadmap_release"`
 	Votes           int       `json:"votes"`
 	UsefulVotes     int       `json:"useful_votes"`
 	EncounteredVotes int      `json:"encountered_votes"`
 	RatingOpen      bool      `json:"rating_open"`
+	// FormSchema 仅由 AdminGetFeedback 在返回时填充（来自所属项目），非数据库列。
+	FormSchema string `json:"form_schema" gorm:"-"`
 	// Export-only: populated by ExportFeedbacks for CSV/JSON/XLSX output.
 	NotesContent string `json:"notes_content,omitempty"`
 	RatingScore  int    `json:"rating_score,omitempty"`
@@ -81,6 +87,7 @@ type Admin struct {
 	PasswordHash string    `json:"-"`
 	Role         string    `json:"role"`
 	IsActive     bool      `json:"is_active"`
+	LastLoginAt  int64     `json:"last_login_at"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -97,16 +104,17 @@ type FeedbackNote struct {
 
 // Project represents a feedback collection project.
 type Project struct {
-	ID            int64     `json:"id"`
-	Name          string    `json:"name"`
-	Slug          string    `json:"slug"`
-	Description   string    `json:"description"`
-	IsActive      bool      `json:"is_active"`
-	IsArchived    bool      `json:"is_archived"`
-	FormSchema    string    `json:"form_schema"`
-	Announcement  string    `json:"announcement"`
-	FeedbackCount int       `json:"feedback_count"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID                  int64     `json:"id"`
+	Name                string    `json:"name"`
+	Slug                string    `json:"slug"`
+	Description         string    `json:"description"`
+	IsActive            bool      `json:"is_active"`
+	IsArchived          bool      `json:"is_archived"`
+	FormSchema          string    `json:"form_schema"`
+	Announcement        string    `json:"announcement"`
+	ShowOnGlobalRoadmap bool      `json:"show_on_global_roadmap"`
+	FeedbackCount       int       `json:"feedback_count"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 // Category represents a feedback classification within a project.
@@ -176,10 +184,35 @@ type RoadmapItem struct {
 	ID            int64     `json:"id"`
 	Title         string    `json:"title"`
 	Category      string    `json:"category"`
+	Description   string    `json:"description"`
 	ProjectSlug   string    `json:"project_slug"`
 	RoadmapStatus string    `json:"roadmap_status"`
 	Votes         int       `json:"votes"`
 	CreatedAt     time.Time `json:"created_at"`
+	MentionCount  int       `json:"mention_count"`
+	RoadmapOrder  int       `json:"roadmap_order"`
+	TargetDate    int64     `json:"target_date"`
+	Owner         string    `json:"owner"`
+	Release       string    `json:"release"`
+}
+
+// RoadmapAdminItem is the admin management view of roadmap entries: every
+// feedback that has been placed on the board (roadmap_status set) or flagged
+// public, with its public flag exposed for inline toggling.
+type RoadmapAdminItem struct {
+	ID              int64  `json:"id"`
+	Title           string `json:"title"`
+	Category        string `json:"category"`
+	ProjectSlug     string `json:"project_slug"`
+	RoadmapStatus   string `json:"roadmap_status"`
+	PublicOnRoadmap bool   `json:"public_on_roadmap"`
+	Votes           int    `json:"votes"`
+	UpdatedAt       int64  `json:"updated_at"`
+	MentionCount    int    `json:"mention_count"`
+	RoadmapOrder    int    `json:"roadmap_order"`
+	TargetDate      int64  `json:"target_date"`
+	Owner           string `json:"owner"`
+	Release         string `json:"release"`
 }
 
 // WebhookSubscription defines a per-project/event webhook endpoint.
@@ -203,6 +236,20 @@ type WebhookOutbox struct {
 	Attempts       int       `json:"attempts"`
 	NextAt         int64     `json:"next_at"`
 	LastError      string    `json:"last_error"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+// WebhookDelivery is a recorded webhook delivery attempt (success or failure)
+// kept for audit/history display in the admin UI.
+type WebhookDelivery struct {
+	ID             int64     `json:"id"`
+	SubscriptionID int64     `json:"subscription_id"`
+	Event          string    `json:"event"`
+	URL            string    `json:"url"`
+	RequestBody    string    `json:"request_body"`
+	ResponseStatus int       `json:"response_status"`
+	ResponseBody   string    `json:"response_body"`
+	Error          string    `json:"error"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 

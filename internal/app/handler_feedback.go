@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"os"
@@ -159,6 +160,7 @@ func (a *App) SubmitFeedback(c *gin.Context) {
 	}
 	fb.ID = id
 
+	a.autoBoardFeedback(fb.ID)
 	go a.Mailer.SendFeedbackNotification(fb)
 	go a.SendWebhookNotification(fb)
 	// Notify the submitter (confirmation + tracking link) when they opted in.
@@ -184,6 +186,7 @@ func (a *App) AdminListFeedbacks(c *gin.Context) {
 	assignee := c.Query("assignee")
 	category := c.Query("category")
 	trackingToken := c.Query("tracking_token")
+	sort := c.Query("sort")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
 
@@ -287,9 +290,9 @@ func (a *App) AdminListFeedbacks(c *gin.Context) {
 	var err error
 
 	if keyword != "" || status != "" || priority != "" || assignee != "" || category != "" || trackingToken != "" {
-		list, total, err = a.DB.SearchFeedbacks(projectIDs, accessPlan, keyword, status, priority, assignee, category, trackingToken, limit, offset)
+		list, total, err = a.DB.SearchFeedbacks(projectIDs, accessPlan, keyword, status, priority, assignee, category, trackingToken, sort, limit, offset)
 	} else {
-		list, total, err = a.DB.ListFeedbacks(projectIDs, accessPlan, limit, offset)
+		list, total, err = a.DB.ListFeedbacks(projectIDs, accessPlan, sort, limit, offset)
 	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
@@ -301,10 +304,10 @@ func (a *App) AdminListFeedbacks(c *gin.Context) {
 	projNames, _ := a.DB.GetProjectNameMap()
 
 	c.JSON(http.StatusOK, gin.H{
-		"feedbacks":    list,
-		"total":        total,
-		"projects":     projList,
-		"assignees":    assignees,
+		"feedbacks":     list,
+		"total":         total,
+		"projects":      projList,
+		"assignees":     assignees,
 		"project_names": projNames,
 	})
 }
@@ -324,6 +327,12 @@ func (a *App) AdminGetFeedback(c *gin.Context) {
 	if fb == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "反馈不存在"})
 		return
+	}
+
+	// Attach the owning project's form_schema so the admin UI can render custom
+	// fields with proper labels and human-readable values.
+	if proj, perr := a.DB.GetProjectBySlug(fb.ProjectID); perr == nil && proj != nil {
+		fb.FormSchema = proj.FormSchema
 	}
 
 	c.JSON(http.StatusOK, fb)
@@ -385,6 +394,9 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 	clientIP := middleware.GetClientIP(c)
 	if statusChanged {
 		a.DB.RecordStatusChange(id, oldFb.Status, effectiveStatus, fmt.Sprintf("%v", user), "")
+		if effectiveStatus == database.StatusResolved {
+			a.autoPromoteFeedback(id)
+		}
 	}
 	a.DB.InsertAuditLog("update_status", fmt.Sprintf("反馈 #%d 状态更新为 %s", id, effectiveStatus), fmt.Sprintf("%v", user), clientIP)
 
@@ -422,6 +434,36 @@ func (a *App) AdminUpdateFeedbackStatus(c *gin.Context) {
 	}, oldFb)
 
 	c.JSON(http.StatusOK, gin.H{"message": "状态已更新"})
+}
+
+// autoBoardFeedback applies the global "auto-board" rule: when enabled, a newly
+// submitted feedback is placed on the roadmap board with the configured default
+// status and visibility. Safe no-op when disabled or on error.
+func (a *App) autoBoardFeedback(id int64) {
+	rc := a.DB.GetRoadmapConfig()
+	if !rc.AutoBoard {
+		return
+	}
+	if err := a.DB.SetRoadmap(id, rc.DefaultPublic, rc.DefaultStatus); err != nil {
+		log.Printf("WARN: auto-board feedback #%d failed: %v", id, err)
+	}
+}
+
+// autoPromoteFeedback applies the global "auto-promote" rule: when a feedback is
+// resolved and already on the board, its roadmap status is advanced to the
+// configured target (default released). Only promotes items already on the board.
+func (a *App) autoPromoteFeedback(id int64) {
+	rc := a.DB.GetRoadmapConfig()
+	if !rc.AutoPromote {
+		return
+	}
+	status, public, err := a.DB.GetRoadmapState(id)
+	if err != nil || status == "" {
+		return
+	}
+	if err := a.DB.SetRoadmap(id, public, rc.AutoPromoteStatus); err != nil {
+		log.Printf("WARN: auto-promote feedback #%d failed: %v", id, err)
+	}
 }
 
 // AdminTriggerRatingInvite opens the CSAT rating for a feedback and emails the
@@ -475,7 +517,9 @@ func (a *App) AdminDeleteFeedback(c *gin.Context) {
 	}
 
 	var paths []string
-	json.Unmarshal([]byte(fb.FilePaths), &paths)
+	if err := json.Unmarshal([]byte(fb.FilePaths), &paths); err != nil && fb.FilePaths != "" && fb.FilePaths != "[]" {
+		log.Printf("[WARN] feedback #%d: malformed file_paths %q: %v", fb.ID, fb.FilePaths, err)
+	}
 	var fileErrors []string
 	for _, p := range paths {
 		absPath := filepath.Join(a.Cfg.DataDir, filepath.FromSlash(p))
@@ -556,6 +600,8 @@ func (a *App) AdminUpdateFeedbackAssignee(c *gin.Context) {
 	if req.Assignee != "" {
 		assigneeEmail := a.DB.GetAdminEmail(req.Assignee)
 		if assigneeEmail != "" {
+			safeTitle := html.EscapeString(fb.Title)
+			safeProject := html.EscapeString(fb.ProjectID)
 			go a.Mailer.Send(assigneeEmail,
 				fmt.Sprintf("[FeedShit] 您被指派处理反馈 #%d", id),
 				fmt.Sprintf(`<html><body style="font-family:-apple-system,sans-serif;color:#333;max-width:600px;margin:0 auto">
@@ -568,7 +614,7 @@ func (a *App) AdminUpdateFeedbackAssignee(c *gin.Context) {
 <p><a href="%s/admin/#feedback/%d" style="display:inline-block;padding:10px 20px;background:#e53e3e;color:white;text-decoration:none;border-radius:4px">在后台查看</a></p>
 <p style="color:#999;font-size:12px;margin-top:24px">此邮件由 FeedShit 自动发送</p>
 </body></html>`,
-					fb.ID, fb.Title, fb.ProjectID, a.Cfg.BaseURL, fb.ID))
+					fb.ID, safeTitle, safeProject, a.Cfg.BaseURL, fb.ID))
 		}
 	}
 
@@ -607,7 +653,9 @@ func (a *App) AdminBulkDeleteFeedbacks(c *gin.Context) {
 			continue
 		}
 		var paths []string
-		json.Unmarshal([]byte(fb.FilePaths), &paths)
+		if err := json.Unmarshal([]byte(fb.FilePaths), &paths); err != nil && fb.FilePaths != "" && fb.FilePaths != "[]" {
+			log.Printf("[WARN] feedback #%d: malformed file_paths %q: %v", fb.ID, fb.FilePaths, err)
+		}
 		for _, p := range paths {
 			absPath := filepath.Join(a.Cfg.DataDir, filepath.FromSlash(p))
 			os.Remove(absPath)
@@ -1001,7 +1049,7 @@ func (a *App) AdminUpdateFeedbackCategory(c *gin.Context) {
 				if admin != nil {
 					targetRole := a.DB.GetEffectiveRole(admin.ID, fb.ProjectID, req.Category)
 					roleLevel := middleware.RoleLevel
-				if roleLevel[targetRole] < 2 {
+					if roleLevel[targetRole] < 2 {
 						c.JSON(http.StatusForbidden, gin.H{"error": "您对目标分类无编辑权限"})
 						return
 					}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,6 +24,26 @@ import (
 	"feedshit/internal/security"
 )
 
+// csvHeaderAliases maps (normalized) Chinese CSV headers to the canonical
+// English column names used throughout the import pipeline. Kept at package
+// scope so both the preview path and the real import path share one source of
+// truth.
+var csvHeaderAliases = map[string]string{
+	"标题":     "title",
+	"描述":     "description",
+	"状态":     "status",
+	"标签":     "tags",
+	"指派":     "assignee",
+	"联系人":    "contact_name",
+	"联系邮箱":   "contact_email",
+	"优先级":    "priority",
+	"提交时间":   "created_at",
+	"项目":     "project_id",
+	"自定义字段":  "custom_data",
+	"附件":     "file_paths",
+	"来源ip":   "client_ip",
+}
+
 func (a *App) AdminStats(c *gin.Context) {
 	// Apply member_grants restrictions for non-admin roles
 	total, projects, today, err := a.getScopedStats(c)
@@ -34,13 +55,38 @@ func (a *App) AdminStats(c *gin.Context) {
 	if cerr != nil {
 		csatAvg, csatTotal = 0, 0
 	}
+	projectIDs := a.getAdminProjectIDs(c)
+	avgSec, resolvedCount, rerr := a.DB.GetAvgResolutionSeconds(projectIDs)
+	if rerr != nil {
+		avgSec, resolvedCount = 0, 0
+	}
+	avgHours := math.Round(avgSec/3600*10) / 10
 	c.JSON(http.StatusOK, gin.H{
-		"total_feedbacks": total,
-		"total_projects":  projects,
-		"today_feedbacks": today,
-		"csat_avg":        csatAvg,
-		"csat_total":      csatTotal,
+		"total_feedbacks":      total,
+		"total_projects":       projects,
+		"today_feedbacks":      today,
+		"csat_avg":             csatAvg,
+		"csat_total":           csatTotal,
+		"avg_resolution_hours": avgHours,
+		"resolved_count":       resolvedCount,
 	})
+}
+
+// AdminPendingCount returns how many feedbacks are awaiting first review
+// (status = 'pending'). Scoped to the admin's member_grants when not super-admin.
+func (a *App) AdminPendingCount(c *gin.Context) {
+	role, _ := c.Get("admin_role")
+	roleStr, _ := role.(string)
+	var ids []string
+	if roleStr != "admin" {
+		ids = a.getAdminProjectIDs(c)
+	}
+	n, err := a.DB.CountPendingFeedbacks(ids)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取待审批数量失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"count": n})
 }
 
 // ========== Admin: Project Stats ==========
@@ -142,10 +188,10 @@ func (a *App) AdminExportCSV(c *gin.Context) {
 			clientIP := middleware.GetClientIP(c)
 			a.DB.InsertAuditLog("export", fmt.Sprintf("导出反馈 %d 条 (项目: %s)", len(feedbacks), projectID), fmt.Sprintf("%v", user), clientIP)
 
-		a.dispatchExport(c, projectID, feedbacks, roleStr == "admin")
-		return
+			a.dispatchExport(c, projectID, feedbacks, roleStr == "admin")
+			return
+		}
 	}
-}
 
 	feedbacks, err := a.DB.ExportFeedbacks(projectID)
 	if err != nil {
@@ -330,13 +376,26 @@ func (a *App) exportXLSX(c *gin.Context, projectID string, feedbacks []database.
 // ========== Chart Data ==========
 
 func (a *App) AdminChartData(c *gin.Context) {
-	daysStr := c.DefaultQuery("days", "30")
-	days, _ := strconv.Atoi(daysStr)
-	if days <= 0 || days > 365 {
-		days = 30
+	fromStr := c.Query("from")
+	toStr := c.Query("to")
+	var trend []map[string]interface{}
+	var err error
+	if fromStr != "" && toStr != "" {
+		fromUnix, ferr := time.Parse("2006-01-02", fromStr)
+		toUnix, terr := time.Parse("2006-01-02", toStr)
+		if ferr == nil && terr == nil {
+			toEnd := toUnix.AddDate(0, 0, 1).Unix() // include the entire "to" day
+			trend, err = a.DB.GetDailyTrendInRange(fromUnix.Unix(), toEnd)
+		}
 	}
-
-	trend, err := a.DB.GetDailyTrend(days)
+	if trend == nil && err == nil {
+		daysStr := c.DefaultQuery("days", "30")
+		days, _ := strconv.Atoi(daysStr)
+		if days <= 0 || days > 365 {
+			days = 30
+		}
+		trend, err = a.DB.GetDailyTrend(days)
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取趋势数据失败"})
 		return
@@ -378,8 +437,11 @@ func (a *App) AdminListAuditLogs(c *gin.Context) {
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
+	action := c.Query("action")
+	user := c.Query("user")
+	fromUnix, toUnix := parseAuditDateRange(c)
 
-	logs, total, err := a.DB.ListAuditLogs(limit, offset)
+	logs, total, err := a.DB.ListAuditLogs(action, user, fromUnix, toUnix, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询审计日志失败"})
 		return
@@ -389,6 +451,52 @@ func (a *App) AdminListAuditLogs(c *gin.Context) {
 		"logs":  logs,
 		"total": total,
 	})
+}
+
+// parseAuditDateRange reads the optional `from`/`to` query params (format
+// 2006-01-02) and converts them to unix timestamps spanning the full day.
+func parseAuditDateRange(c *gin.Context) (int64, int64) {
+	var fromUnix, toUnix int64
+	if f := c.Query("from"); f != "" {
+		if t, err := time.Parse("2006-01-02", f); err == nil {
+			fromUnix = t.Unix()
+		}
+	}
+	if t2 := c.Query("to"); t2 != "" {
+		if t, err := time.Parse("2006-01-02", t2); err == nil {
+			toUnix = t.Add(24 * time.Hour).Unix()
+		}
+	}
+	return fromUnix, toUnix
+}
+
+// AdminExportAuditLogs streams the (filtered) audit log as a CSV download.
+func (a *App) AdminExportAuditLogs(c *gin.Context) {
+	action := c.Query("action")
+	user := c.Query("user")
+	fromUnix, toUnix := parseAuditDateRange(c)
+
+	logs, _, err := a.DB.ListAuditLogs(action, user, fromUnix, toUnix, 100000, 0)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "导出审计日志失败"})
+		return
+	}
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=audit_logs_%s.csv", time.Now().Format("20060102_150405")))
+	w := csv.NewWriter(c.Writer)
+	defer w.Flush()
+	_ = w.Write([]string{"id", "action", "detail", "user", "ip", "created_at"})
+	for _, l := range logs {
+		_ = w.Write([]string{
+			strconv.FormatInt(l.ID, 10),
+			l.Action,
+			l.Detail,
+			l.User,
+			l.IP,
+			l.CreatedAt.Format("2006-01-02 15:04:05"),
+		})
+	}
 }
 
 // ========== Backup ==========
@@ -477,20 +585,36 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 	}
 
 	// Chinese → English header alias map
-	cnToEn := map[string]string{
-		"标题":    "title",
-		"描述":    "description",
-		"状态":    "status",
-		"标签":    "tags",
-		"指派":    "assignee",
-		"联系人":   "contact_name",
-		"联系邮箱":  "contact_email",
-		"优先级":   "priority",
-		"提交时间":  "created_at",
-		"项目":    "project_id",
-		"自定义字段": "custom_data",
-		"附件":    "file_paths",
-		"来源ip":  "client_ip",
+	cnToEn := csvHeaderAliases
+
+	// #7 CSV 导入预览：只解析表头 + 前 10 行 + 列映射，不写入
+	if c.Query("preview") == "1" {
+		header := records[0]
+		mapped := map[string]string{}
+		hasTitle := false
+		for _, h := range header {
+			normalized := strings.TrimSpace(strings.ToLower(h))
+			en := normalized
+			if v, ok := csvHeaderAliases[normalized]; ok {
+				en = v
+			}
+			mapped[h] = en
+			if en == "title" {
+				hasTitle = true
+			}
+		}
+		limit := len(records) - 1
+		if limit > 10 {
+			limit = 10
+		}
+		sampleRows := records[1 : limit+1]
+		c.JSON(http.StatusOK, gin.H{
+			"headers":     header,
+			"sample_rows": sampleRows,
+			"mapped":      mapped,
+			"has_title":   hasTitle,
+		})
+		return
 	}
 
 	// Parse header to find column indices (normalized to English names)
@@ -642,7 +766,7 @@ func (a *App) AdminImportCSV(c *gin.Context) {
 		}
 		validPriorities := database.ValidPriorities
 		rawPriority := getCol("priority")
-		if !validPriorities[rawPriority] {
+		if rawPriority != "" && !validPriorities[rawPriority] {
 			errors = append(errors, fmt.Sprintf("第 %d 行: 无效的优先级 %q，已跳过", lineNum, rawPriority))
 			continue
 		}
@@ -769,7 +893,7 @@ func (a *App) AdminImportJSON(c *gin.Context) {
 			importErrors = append(importErrors, fmt.Sprintf("第 %d 条: 无效的状态值 %q", lineNum, rec.Status))
 			continue
 		}
-		if !validPriorities[rec.Priority] {
+		if rec.Priority != "" && !validPriorities[rec.Priority] {
 			importErrors = append(importErrors, fmt.Sprintf("第 %d 条: 无效的优先级 %q", lineNum, rec.Priority))
 			continue
 		}
@@ -905,10 +1029,10 @@ func (a *App) AdminListBackups(c *gin.Context) {
 		}
 		info, _ := e.Info()
 		backups = append(backups, map[string]interface{}{
-			"name":      e.Name(),
-			"size":      info.Size(),
-			"size_str":  formatFileSize(info.Size()),
-			"modified":  info.ModTime().Format("2006-01-02 15:04:05"),
+			"name":          e.Name(),
+			"size":          info.Size(),
+			"size_str":      formatFileSize(info.Size()),
+			"modified":      info.ModTime().Format("2006-01-02 15:04:05"),
 			"modified_unix": info.ModTime().Unix(),
 		})
 	}

@@ -36,9 +36,10 @@ func (d *Database) GetAdminByUsername(username string) (*Admin, error) {
 	var a Admin
 	var createdAt int64
 	var isActive int
+	var lastLoginAt int64
 	err := d.db.QueryRow(
-		`SELECT id, username, password_hash, role, is_active, created_at FROM admins WHERE username = ?`, username,
-	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.Role, &isActive, &createdAt)
+		`SELECT id, username, password_hash, role, is_active, last_login_at, created_at FROM admins WHERE username = ?`, username,
+	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.Role, &isActive, &lastLoginAt, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -46,6 +47,7 @@ func (d *Database) GetAdminByUsername(username string) (*Admin, error) {
 		return nil, err
 	}
 	a.IsActive = isActive == 1
+	a.LastLoginAt = lastLoginAt
 	a.CreatedAt = time.Unix(createdAt, 0)
 	return &a, nil
 }
@@ -58,9 +60,10 @@ func (d *Database) GetAdminByID(id int64) (*Admin, error) {
 	var a Admin
 	var createdAt int64
 	var isActive int
+	var lastLoginAt int64
 	err := d.db.QueryRow(
-		`SELECT id, username, password_hash, role, is_active, created_at FROM admins WHERE id = ?`, id,
-	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.Role, &isActive, &createdAt)
+		`SELECT id, username, password_hash, role, is_active, last_login_at, created_at FROM admins WHERE id = ?`, id,
+	).Scan(&a.ID, &a.Username, &a.PasswordHash, &a.Role, &isActive, &lastLoginAt, &createdAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -68,6 +71,7 @@ func (d *Database) GetAdminByID(id int64) (*Admin, error) {
 		return nil, err
 	}
 	a.IsActive = isActive == 1
+	a.LastLoginAt = lastLoginAt
 	a.CreatedAt = time.Unix(createdAt, 0)
 	return &a, nil
 }
@@ -77,7 +81,7 @@ func (d *Database) ListAdmins() ([]Admin, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	rows, err := d.db.Query(`SELECT id, username, password_hash, role, is_active, created_at FROM admins ORDER BY id`)
+	rows, err := d.db.Query(`SELECT id, username, password_hash, role, is_active, last_login_at, created_at FROM admins ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -88,10 +92,12 @@ func (d *Database) ListAdmins() ([]Admin, error) {
 		var a Admin
 		var createdAt int64
 		var isActive int
-		if err := rows.Scan(&a.ID, &a.Username, &a.PasswordHash, &a.Role, &isActive, &createdAt); err != nil {
+		var lastLoginAt int64
+		if err := rows.Scan(&a.ID, &a.Username, &a.PasswordHash, &a.Role, &isActive, &lastLoginAt, &createdAt); err != nil {
 			return nil, err
 		}
 		a.IsActive = isActive == 1
+		a.LastLoginAt = lastLoginAt
 		a.CreatedAt = time.Unix(createdAt, 0)
 		list = append(list, a)
 	}
@@ -132,8 +138,16 @@ func (d *Database) UpdateAdminPassword(id int64, passwordHash string) error {
 	return err
 }
 
+// UpdateAdminLastLogin records the timestamp of an admin's most recent login.
+func (d *Database) UpdateAdminLastLogin(adminID, loginAt int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(`UPDATE admins SET last_login_at = ? WHERE id = ?`, loginAt, adminID)
+	return err
+}
+
 // GetAdminEmail returns the admin's email from their account record.
-// Previously used a heuristic based on feedback contact_name — now authoritative.
+// Previously used a heuristic based on feedback contact_name �? now authoritative.
 func (d *Database) GetAdminEmail(username string) string {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -204,7 +218,7 @@ func (d *Database) DeleteMemberGrant(id int64) error {
 }
 
 // GetAllowedProjectSlugs returns distinct project slugs from member_grants for an admin.
-// Returns nil if the admin has no grants (meaning no restriction — can see all).
+// Returns nil if the admin has no grants (meaning no restriction �? can see all).
 func (d *Database) GetAllowedProjectSlugs(adminID int64) []string {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -234,8 +248,10 @@ func (d *Database) GetEffectiveRole(adminID int64, projectSlug, categoryKey stri
 	defer d.mu.RUnlock()
 	// Refer to middleware.RoleLevel for the shared definition
 	roleLevel := map[string]int{"viewer": 1, "editor": 2, "manager": 3, "admin": 4}
-	bestRole := ""
-	bestLevel := 0
+	exactRole := ""
+	exactLevel := 0
+	wildcardRole := ""
+	wildcardLevel := 0
 	rows, err := d.db.Query(`SELECT category_key, role FROM member_grants WHERE admin_id = ? AND project_slug = ?`, adminID, projectSlug)
 	if err != nil {
 		return ""
@@ -247,15 +263,19 @@ func (d *Database) GetEffectiveRole(adminID int64, projectSlug, categoryKey stri
 			continue
 		}
 		lvl := roleLevel[role]
-		if cat == categoryKey && lvl > bestLevel {
-			bestLevel = lvl
-			bestRole = role
-		} else if cat == "*" && lvl > bestLevel {
-			bestLevel = lvl
-			bestRole = role
+		if cat == categoryKey && lvl > exactLevel {
+			exactLevel = lvl
+			exactRole = role
+		} else if cat == "*" && lvl > wildcardLevel {
+			wildcardLevel = lvl
+			wildcardRole = role
 		}
 	}
-	return bestRole
+	// Exact match takes precedence over wildcard
+	if exactRole != "" {
+		return exactRole
+	}
+	return wildcardRole
 }
 
 // GetAllowedCategories returns the category keys an admin is granted for a specific project.

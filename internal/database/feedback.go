@@ -77,8 +77,8 @@ func (d *Database) InsertFeedback(f *Feedback) (int64, error) {
 		status = "pending"
 	}
 	res, err := d.db.Exec(
-		`INSERT INTO feedbacks (project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, category, content_hash, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))`,
+		`INSERT INTO feedbacks (project_id, title, description, custom_data, file_paths, client_ip, status, tags, assignee, contact_name, contact_email, tracking_token, priority, category, content_hash, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))`,
 		f.ProjectID, f.Title, f.Description, f.CustomData, f.FilePaths, f.ClientIP, status, f.Tags, f.Assignee, f.ContactName, f.ContactEmail, f.TrackingToken, f.Priority, f.Category, ComputeContentHash(f.Title, f.Description),
 	)
 	if err != nil {
@@ -93,9 +93,25 @@ func (d *Database) InsertFeedback(f *Feedback) (int64, error) {
 	return id, nil
 }
 
+// feedbackOrderBy translates the UI sort key into a SQL ORDER BY clause.
+// Sorting is applied at the database level (global), so ordering is correct
+// across all pages rather than only within the current slice.
+func feedbackOrderBy(sort string) string {
+	switch sort {
+	case "updated_at":
+		return " ORDER BY updated_at DESC, id DESC"
+	case "votes":
+		return " ORDER BY (SELECT COUNT(*) FROM feedback_votes WHERE feedback_id = feedbacks.id AND target_type = 'feedback') DESC, created_at DESC"
+	case "priority":
+		return " ORDER BY CASE priority WHEN 'urgent' THEN 4 WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC, created_at DESC"
+	default:
+		return " ORDER BY created_at DESC"
+	}
+}
+
 // ListFeedbacks returns feedbacks filtered by project_id (empty = all), paginated.
 // limit is automatically clamped to [1, 500] to prevent uncontrolled queries.
-func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess, limit, offset int) ([]Feedback, int, error) {
+func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess, sort string, limit, offset int) ([]Feedback, int, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -137,7 +153,7 @@ func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess
 
 	queryArgs := append(args, limit, offset)
 	rows, err = d.db.Query(
-		`SELECT `+cols+`, public_on_roadmap, roadmap_status FROM feedbacks`+where+` ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		`SELECT `+cols+`, public_on_roadmap, roadmap_status FROM feedbacks`+where+feedbackOrderBy(sort)+` LIMIT ? OFFSET ?`,
 		queryArgs...,
 	)
 	if err != nil {
@@ -168,7 +184,7 @@ func (d *Database) ListFeedbacks(projectIDs []string, accessPlan []ProjectAccess
 			ph[i] = "?"
 			args[i] = f.ID
 		}
-		vrows, verr := d.db.Query(`SELECT feedback_id, COUNT(*) FROM feedback_votes WHERE feedback_id IN (`+strings.Join(ph, ",")+`) GROUP BY feedback_id`, args...)
+		vrows, verr := d.db.Query(`SELECT feedback_id, COUNT(*) FROM feedback_votes WHERE target_type = 'feedback' AND feedback_id IN (`+strings.Join(ph, ",")+`) GROUP BY feedback_id`, args...)
 		if verr == nil {
 			defer vrows.Close()
 			vmap := make(map[int64]int, len(list))
@@ -200,7 +216,7 @@ func escapeLikePattern(s string) string {
 
 // SearchFeedbacks supports keyword search across multiple fields, status/priority/assignee filters, and project filter.
 // limit is automatically clamped to [1, 500] to prevent uncontrolled queries.
-func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAccess, keyword, status, priority, assignee, category, trackingToken string, limit, offset int) ([]Feedback, int, error) {
+func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAccess, keyword, status, priority, assignee, category, trackingToken string, sort string, limit, offset int) ([]Feedback, int, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -270,7 +286,7 @@ func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAcce
 
 	queryArgs := append(args, limit, offset)
 	rows, err := d.db.Query(
-		`SELECT `+cols+`, public_on_roadmap, roadmap_status FROM feedbacks `+where+` ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		`SELECT `+cols+`, public_on_roadmap, roadmap_status FROM feedbacks `+where+feedbackOrderBy(sort)+` LIMIT ? OFFSET ?`,
 		queryArgs...,
 	)
 	if err != nil {
@@ -301,7 +317,7 @@ func (d *Database) SearchFeedbacks(projectIDs []string, accessPlan []ProjectAcce
 			ph[i] = "?"
 			args[i] = f.ID
 		}
-		vrows, verr := d.db.Query(`SELECT feedback_id, COUNT(*) FROM feedback_votes WHERE feedback_id IN (`+strings.Join(ph, ",")+`) GROUP BY feedback_id`, args...)
+		vrows, verr := d.db.Query(`SELECT feedback_id, COUNT(*) FROM feedback_votes WHERE target_type = 'feedback' AND feedback_id IN (`+strings.Join(ph, ",")+`) GROUP BY feedback_id`, args...)
 		if verr == nil {
 			defer vrows.Close()
 			vmap := make(map[int64]int, len(list))
@@ -387,8 +403,9 @@ func (d *Database) MergeFeedback(sourceID, targetID int64) error {
 	if _, err := d.db.Exec(`UPDATE feedback_notes SET feedback_id = ? WHERE feedback_id = ?`, targetID, sourceID); err != nil {
 		return err
 	}
-	// Remove source votes (they would conflict with the same voting key on target)
-	if _, err := d.db.Exec(`DELETE FROM feedback_votes WHERE feedback_id = ?`, sourceID); err != nil {
+	// Remove source feedback votes only (target_type guards against touching
+	// any FAQ votes that might share the same numeric id).
+	if _, err := d.db.Exec(`DELETE FROM feedback_votes WHERE feedback_id = ? AND target_type = 'feedback'`, sourceID); err != nil {
 		return err
 	}
 	return nil
@@ -674,7 +691,7 @@ func (d *Database) ExportFeedbacks(projectID string) ([]Feedback, error) {
 			ph[i] = "?"
 			args[i] = f.ID
 		}
-		vrows, verr := d.db.Query(`SELECT feedback_id, COUNT(*) FROM feedback_votes WHERE feedback_id IN (`+strings.Join(ph, ",")+`) GROUP BY feedback_id`, args...)
+		vrows, verr := d.db.Query(`SELECT feedback_id, COUNT(*) FROM feedback_votes WHERE target_type = 'feedback' AND feedback_id IN (`+strings.Join(ph, ",")+`) GROUP BY feedback_id`, args...)
 		if verr == nil {
 			defer vrows.Close()
 			vmap := make(map[int64]int, len(list))

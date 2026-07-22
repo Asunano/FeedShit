@@ -125,7 +125,7 @@ func (a *App) AdminAddFeedbackNote(c *gin.Context) {
 		content = strings.TrimSpace(req.Content)
 		isPublic = req.IsPublic
 	}
-	if content == "" && filePaths == "[]" {
+	if content == "" && (filePaths == "[]" || filePaths == "") {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "内容或附件至少填写一项"})
 		return
 	}

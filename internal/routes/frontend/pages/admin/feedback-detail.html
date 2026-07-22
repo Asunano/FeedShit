@@ -1,0 +1,35 @@
+{{define "adminFeedbackDetail"}}
+<div class="modal-overlay" id="dupSimilarModal">
+  <div class="modal">
+    <h3>标记为重复</h3>
+    <p id="dupSimilarMsg" style="color:var(--muted);font-size:.82rem;margin:-8px 0 12px"></p>
+    <div id="dupSimilarList" style="max-height:46vh;overflow-y:auto"></div>
+    <div class="settings-field" style="margin-top:12px">
+      <label>或手动输入主反馈 ID</label>
+      <input type="number" id="dupSimilarManual" placeholder="例如 128" style="width:100%">
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeDupSimilar" data-args="">取消</button>
+      <button class="btn-save" data-click="confirmMarkDuplicate" data-args="">确认标记</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<div class="lightbox" id="adminLightbox">
+  <div class="lightbox__close" data-click="closeAdminLb" title="关闭">×</div>
+  <img class="lightbox__img" id="adminLbImg" alt="预览">
+  <div class="lightbox__bar">
+    <button type="button" class="lightbox__btn" data-click="adminLbPrev" id="adminLbPrev">← 上一张</button>
+    <a class="lightbox__btn" id="adminLbDownload" target="_blank" rel="noopener" download>下载原图</a>
+    <button type="button" class="lightbox__btn" data-click="adminLbNext" id="adminLbNext">下一张 →</button>
+  </div>
+  <div class="lightbox__cap" id="adminLbCap"></div>
+</div>
+<div class="lightbox" id="pdfModal">
+  <div class="lightbox__close" data-click="closePdf" title="关闭">×</div>
+  <div class="lightbox__bar">
+    <a class="lightbox__btn" id="pdfDownload" target="_blank" rel="noopener" download>下载</a>
+  </div>
+  <iframe id="pdfFrame" style="width:90vw;height:82vh;border:0"></iframe>
+</div>
+{{end}}

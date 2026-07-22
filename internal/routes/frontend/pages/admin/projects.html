@@ -1,0 +1,213 @@
+{{define "adminProjects"}}
+<div id="tab-projects" style="display:none">
+    <div id="projectListView">
+      <div class="filter-bar">
+        <strong style="font-size:.95rem">反馈项目</strong>
+        <span class="spacer"></span>
+        <button class="btn-sm" data-click="openProjectModal" data-args="">+ 新建项目</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>项目名称</th><th>标识</th><th>状态</th><th>反馈数</th><th>反馈链接</th><th>操作</th></tr></thead>
+          <tbody id="projectTable"><tr><td colspan="6" class="empty">加载中...</td></tr></tbody>
+        </table>
+      </div>
+      <div style="margin-top:20px">
+        <div class="settings-card">
+          <h2>项目反馈统计</h2>
+          <div id="projectStatsChart"><p class="empty">加载中...</p></div>
+        </div>
+      </div>
+    </div>
+    <div id="projectDetailView" style="display:none">
+      <div class="detail-back" data-click="showProjectList" data-args="">&#8592; 返回项目列表</div>
+      <div id="projectDetailContent"></div>
+    </div>
+  </div>
+<div class="modal-overlay" id="projectModal">
+  <div class="modal">
+    <h3 id="projectModalTitle">新建项目</h3>
+    <input type="hidden" id="pfId">
+    <div class="row">
+      <div class="settings-field"><label>项目名称 *</label><input type="text" id="pfName" placeholder="例：官网、App"></div>
+      <div class="settings-field"><label>项目标识 *</label><input type="text" id="pfSlug" placeholder="例：website、app"></div>
+    </div>
+    <div class="row">
+      <div class="settings-field" style="flex:1">
+        <label>表单模板</label>
+        <select id="pfTemplate" data-change="onProjectTemplateChange" data-args="">
+          <option value="empty">空模板（无自定义字段）</option>
+          <option value="bug_report">🐛 Bug 反馈</option>
+          <option value="feature_request">💡 功能建议</option>
+          <option value="contact">📞 联系我们</option>
+          <option value="support">🎫 工单支持</option>
+          <option value="product_review">⭐ 产品评价</option>
+          <option value="nps">📊 NPS 调查</option>
+          <option value="satisfaction">😊 满意度问卷</option>
+        </select>
+      </div>
+    </div>
+    <div class="settings-field"><label>项目描述</label><input type="text" id="pfDesc" placeholder="可选"></div>
+    <div class="settings-field"><div class="toggle"><input type="checkbox" id="pfActive" checked><span>启用（关闭后该项目无法提交新反馈）</span></div></div>
+    <div class="settings-field"><div class="toggle"><input type="checkbox" id="pfArchived"><span>归档（归档后项目隐藏且不接受反馈，数据保留）</span></div></div>
+    <div class="settings-field"><div class="toggle"><input type="checkbox" id="pfGlobalRoadmap" checked><span>纳入总路线图（在 /roadmap 公开总路线图中展示本项目反馈）</span></div></div>
+    <div class="settings-field">
+      <label>项目公告（可选，显示在反馈页顶部）</label>
+      <div style="display:flex;gap:8px;margin-bottom:6px">
+        <select id="pfAnnounceLevel" style="flex:0 0 130px">
+          <option value="info">ℹ️ 提示</option>
+          <option value="warning">⚠️ 警告</option>
+          <option value="success">✅ 成功</option>
+          <option value="danger">🚫 重要</option>
+        </select>
+        <select id="pfAnnounceType" style="flex:1">
+          <option value="text">纯文本</option>
+          <option value="html">HTML 代码</option>
+        </select>
+      </div>
+      <textarea id="pfAnnouncement" rows="3" placeholder="可选：填写后会在该项目反馈页顶部展示公告"></textarea>
+      <div class="hint">支持纯文本或受限 HTML（链接 / 强调 / 列表），危险内容会自动过滤</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeProjectModal" data-args="">取消</button>
+      <button class="btn-save" data-click="saveProject" data-args="">保存</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="deleteProjectModal">
+  <div class="modal">
+    <h3>删除项目确认</h3>
+    <p style="color:var(--priority-urgent-fg);font-size:.85rem;margin-bottom:8px">⚠️ 此操作不可恢复，将级联删除该项目下所有反馈与上传文件。</p>
+    <p style="font-size:.85rem;margin-bottom:12px">请输入项目名 <strong id="deleteProjectName" style="font-family:monospace"></strong> 以确认删除：</p>
+    <div class="settings-field"><input type="text" id="deleteProjectInput" placeholder="在此输入项目名" autocomplete="off"></div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeDeleteProjectModal" data-args="">取消</button>
+      <button class="btn-danger" id="confirmDeleteBtn" data-click="confirmDeleteProject" data-args="" disabled>确认删除</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="formPreviewModal">
+  <div class="modal" style="max-width:680px">
+    <h3>表单预览</h3>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">以下为终端用户将看到的提交表单（只读预览）。</p>
+    <div id="formPreviewBody" style="max-height:60vh;overflow:auto"></div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeFormPreview" data-args="">关闭</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="cloneModal">
+  <div class="modal">
+    <h3>克隆项目</h3>
+    <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">将复制该项目的表单结构、描述、公告与分类，并重置为启用 / 未归档状态。反馈数据不会被复制。</p>
+    <div class="settings-field"><label>新项目名称 *</label><input type="text" id="cloneName" placeholder="例：官网 (副本)"></div>
+    <div class="settings-field"><label>新项目标识 *</label><input type="text" id="cloneSlug" placeholder="例：website-copy"></div>
+    <div id="cloneError" style="font-size:.8rem;color:var(--priority-urgent-fg);min-height:1rem"></div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeCloneModal" data-args="">取消</button>
+      <button class="btn-save" data-click="confirmClone" data-args="">克隆</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="fieldEditorModal">
+  <div class="modal">
+    <h3 id="fieldEditorTitle">添加字段</h3>
+    <div class="field-editor">
+      <div class="field-row">
+        <div><label>字段类型</label><select id="feType" data-change="onFieldTypeChange" data-args="">
+          <option value="text">单行文本</option>
+          <option value="textarea">多行文本</option>
+          <option value="number">数字</option>
+          <option value="email">邮箱</option>
+          <option value="url">网址</option>
+          <option value="tel">电话</option>
+          <option value="date">日期</option>
+          <option value="time">时间</option>
+          <option value="datetime">日期时间</option>
+          <option value="month">月份</option>
+          <option value="color">颜色</option>
+          <option value="select">下拉选择</option>
+          <option value="checkbox">复选框</option>
+          <option value="radio">单选</option>
+          <option value="rating">评分</option>
+          <option value="toggle">开关</option>
+          <option value="slider">滑块</option>
+          <option value="tags">标签</option>
+          <option value="markdown">Markdown</option>
+          <option value="file">文件上传</option>
+          <option value="image">图片上传</option>
+          <option value="hidden">隐藏字段</option>
+          <option value="section">分区标题</option>
+          <option value="html">HTML</option>
+          <option value="paragraph">说明文字</option>
+          <option value="divider">分割线</option>
+          <option value="scale">量表评分</option>
+        </select></div>
+        <div><label>字段名称（英文标识）</label><input type="text" id="feName" placeholder="例：priority"></div>
+      </div>
+      <div class="field-row full"><div><label>显示标签</label><input type="text" id="feLabel" placeholder="例：优先级"></div></div>
+      <div class="field-row full" id="feSysRow">
+        <div><label>系统字段映射 <span style="font-weight:400;color:var(--muted)">（设为系统字段后，该字段由后台特殊处理）</span></label>
+        <select id="feSys" data-change="onSysChange" data-args="">
+          <option value="">普通字段（自定义）</option>
+          <option value="title">反馈标题（映射到标题列，必填）</option>
+          <option value="description">详细描述（映射到描述列）</option>
+          <option value="category">问题分类（使用项目分类字典）</option>
+          <option value="notify">通知订阅（收集联系信息）</option>
+          <option value="images">图片上传区</option>
+          <option value="files">文件上传区</option>
+        </select></div>
+      </div>
+      <div class="field-row full" id="fePlaceholderRow"><div><label>占位提示</label><input type="text" id="fePlaceholder" placeholder="可选"></div></div>
+      <div class="field-row half" id="feDefaultRow" style="display:none"><div><label>默认值</label><input type="text" id="feDefault" placeholder="可选"></div></div>
+      <div class="field-row three-col" id="feMinMaxStepRow" style="display:none">
+        <div><label>最小值</label><input type="number" id="feMin" placeholder="无"></div>
+        <div><label>最大值</label><input type="number" id="feMax" placeholder="无"></div>
+        <div><label>步长</label><input type="number" id="feStep" placeholder="1"></div>
+      </div>
+      <div class="field-row half" id="feMinMaxLenRow" style="display:none">
+        <div><label>最小长度</label><input type="number" id="feMinLength" placeholder="无"></div>
+        <div><label>最大长度</label><input type="number" id="feMaxLength" placeholder="无"></div>
+      </div>
+      <div class="field-row half" id="fePatternRow" style="display:none"><div><label>正则校验</label><input type="text" id="fePattern" placeholder="如 \d{11}"></div></div>
+      <div class="field-row half" id="feRowsRow" style="display:none"><div><label>行数</label><input type="number" id="feRows" placeholder="4"></div></div>
+      <div class="field-row half" id="feAcceptRow" style="display:none"><div><label>允许类型</label><input type="text" id="feAccept" placeholder="如 .pdf,.docx"></div>
+        <div class="toggle" style="margin-left:12px"><input type="checkbox" id="feMultiple"><span>多文件</span></div>
+      </div>
+      <div class="field-row half" id="feIconRow" style="display:none">
+        <div><label>图标</label><select id="feIcon">
+          <option value="star">★ 星星</option>
+          <option value="heart">❤ 心</option>
+          <option value="thumb">👍 拇指</option>
+        </select></div>
+      </div>
+      <div class="field-row half" id="feToggleLabelRow" style="display:none">
+        <div><label>开启时标签</label><input type="text" id="feLabelOn" placeholder="已启用"></div>
+        <div><label>关闭时标签</label><input type="text" id="feLabelOff" placeholder="已禁用"></div>
+      </div>
+      <div class="field-row full" id="feCollapsibleRow" style="display:none">
+        <div class="toggle"><input type="checkbox" id="feCollapsible"><span>可折叠</span></div>
+      </div>
+      <div class="field-row full" id="feContentRow" style="display:none">
+        <div><label>HTML 内容</label><textarea id="feContent" placeholder="输入 HTML" style="min-height:80px;font-family:monospace"></textarea></div>
+      </div>
+      <div class="field-row full" id="feWidthRow">
+        <div><label>宽度</label><select id="feWidth">
+          <option value="full">整行</option>
+          <option value="half">半行</option>
+          <option value="third">三分之一</option>
+        </select></div>
+      </div>
+      <div class="field-row full" id="feHelpRow"><div><label>帮助文本</label><input type="text" id="feHelpText" placeholder="字段下方显示的提示信息（可选）"></div></div>
+      <div class="field-row full" id="feOptionsRow" style="display:none">
+        <div><label>选项（每行一个）</label><div class="options-editor"><div id="feOptionsList"></div><button class="add-opt" data-click="addOptionRow" data-args="">+ 添加选项</button></div></div>
+      </div>
+      <div class="field-row"><div class="toggle"><input type="checkbox" id="feRequired"><span>必填</span></div></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeFieldEditor" data-args="">取消</button>
+      <button class="btn-save" data-click="saveFieldEditor" data-args="">确定</button>
+    </div>
+  </div>
+</div>
+{{end}}

@@ -58,13 +58,22 @@ func Register(r *gin.Engine, application *app.App) {
 		sharedFS.ServeHTTP(c.Writer, c.Request)
 	})
 
-	// Parse all HTML page templates once at startup. The shared layout
-	// (frontend/layouts/base.html) defines "chrometop"/"chromebot"; each page under
-	// frontend/pages/*.html references it via {{template "chrometop" .}} /
-	// {{template "chromebot" .}} and gets the per-request CSP nonce via {{.Nonce}}.
-	// This IS the unified container: new pages write only their own content + a thin
-	// <script nonce> block — never the theme button, header, or footer boilerplate.
-	tpl := template.Must(template.ParseFS(frontendFS, "frontend/layouts/base.html", "frontend/pages/*.html"))
+	// Public + other page templates. The *.html wildcard also matches admin.html,
+	// but admin.html is never rendered from THIS set (admin routes use adminSet
+	// below). admin.html references the admin-only renderTab func, so we register a
+	// harmless stub purely to let the parse succeed — the public routes never
+	// execute admin.html, so the stub is never called. This guarantees an
+	// admin-only template error cannot break the public parse.
+	tpl := template.Must(template.New("public").Funcs(template.FuncMap{
+		"renderTab": func(name string, data interface{}) template.HTML { return "" },
+	}).ParseFS(frontendFS, "frontend/layouts/base.html", "frontend/pages/*.html"))
+
+	// Admin template set — each tab/partial is parsed INDEPENDENTLY so a syntax
+	// error in one admin module is isolated to that module and cannot take down
+	// the rest of the admin UI (or the public site). The shell is parsed once and
+	// resolves each tab via the renderTab func. On shell-parse failure the admin
+	// routes fall back to a friendly error instead of crashing the process.
+	adminSet := loadAdminTemplates(frontendFS)
 
 	// ========== Pre-setup whitelist ==========
 	setupWhitelist := []string{
@@ -127,12 +136,12 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// Landing page
 	r.GET("/", func(c *gin.Context) {
-		serveTemplate(c, tpl, "index.html", PageData{Nav: "", Nonce: nonceOf(c)})
+		serveTemplate(c, tpl, "index.html", PageData{Nav: "", PublicNav: "home", Nonce: nonceOf(c)})
 	})
 
 	// Dedicated public project list page
 	r.GET("/projects", func(c *gin.Context) {
-		serveTemplate(c, tpl, "projects.html", PageData{Nav: "", Nonce: nonceOf(c)})
+		serveTemplate(c, tpl, "projects.html", PageData{Nav: "", PublicNav: "projects", Nonce: nonceOf(c)})
 	})
 
 	// Setup page (always accessible via whitelist)
@@ -184,7 +193,7 @@ func Register(r *gin.Engine, application *app.App) {
 			"categories":   activeCats,
 		})
 		// Render the unified template (nonce via {{.Nonce}}) and inject project data.
-		rendered, err := executePage(tpl, "feedback.html", PageData{Nav: "", Nonce: nonceOf(c)})
+		rendered, err := executePage(tpl, "feedback.html", PageData{Nav: "", PublicNav: "feedback", Nonce: nonceOf(c)})
 		if err != nil {
 			c.Data(http.StatusInternalServerError, "text/plain; charset=utf-8", []byte("template render error"))
 			return
@@ -206,7 +215,15 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// Public roadmap board (no login required)
 	r.GET("/p/:slug/roadmap", func(c *gin.Context) {
-		serveTemplate(c, tpl, "roadmap.html", PageData{Nav: "", Nonce: nonceOf(c)})
+		serveTemplate(c, tpl, "roadmap.html", PageData{Nav: "", PublicNav: "roadmap", Nonce: nonceOf(c)})
+	})
+	// Friendly alias: /roadmap/:slug (same page, old path kept for back-compat)
+	r.GET("/roadmap/:slug", func(c *gin.Context) {
+		serveTemplate(c, tpl, "roadmap.html", PageData{Nav: "", PublicNav: "roadmap", Nonce: nonceOf(c)})
+	})
+	// Total roadmap aggregating all opted-in projects (slug empty -> global filter)
+	r.GET("/roadmap", func(c *gin.Context) {
+		serveTemplate(c, tpl, "roadmap.html", PageData{Nav: "", PublicNav: "roadmap", Nonce: nonceOf(c)})
 	})
 
 	// ========== Public API routes ==========
@@ -227,6 +244,8 @@ func Register(r *gin.Engine, application *app.App) {
 	faqPub := r.Group("/api/v1")
 	faqPub.Use(middleware.RateLimitMiddleware(application.RL))
 	faqPub.GET("/faq", application.PublicSearchFAQ)
+	faqPub.POST("/faq/:id/view", application.PublicViewFAQ)
+	faqPub.POST("/faq/:id/vote", application.PublicVoteFAQ)
 
 	// Invitation registration page — rendered by the unified template, with the
 	// invite token injected in place of INVITE_TOKEN_PLACEHOLDER.
@@ -254,14 +273,16 @@ func Register(r *gin.Engine, application *app.App) {
 
 	// Public tracking routes (submitter self-service)
 	r.GET("/track", func(c *gin.Context) {
-		serveTemplate(c, tpl, "track.html", PageData{Nav: "", Nonce: nonceOf(c)})
+		serveTemplate(c, tpl, "track.html", PageData{Nav: "", PublicNav: "track", Nonce: nonceOf(c)})
 	})
 	r.GET("/api/v1/track/feedback", application.PublicTrackFeedback)
 	trackReply := r.Group("/api/v1/track")
 	trackReply.Use(middleware.RateLimitMiddleware(application.RL))
 	trackReply.GET("/by-email", application.PublicListByEmail)
+	trackReply.GET("/lookup", application.PublicTrackLookup)
 	trackReply.POST("/reply", application.PublicSubmitReply)
 	trackReply.GET("/file", application.PublicServeTrackFile)
+	trackReply.GET("/thumb", application.PublicServeTrackFileThumb)
 	trackReply.POST("/:token/rating", application.PublicSubmitRating)
 	trackReply.POST("/:token/need-help", application.PublicNeedHelp)
 
@@ -277,7 +298,7 @@ func Register(r *gin.Engine, application *app.App) {
 			c.Redirect(http.StatusFound, "/admin/login")
 			return
 		}
-		serveTemplate(c, tpl, "admin.html", PageData{Nav: "admin", Nonce: nonceOf(c)})
+		serveAdmin(c, adminSet)
 	})
 
 	r.GET("/admin/*path", func(c *gin.Context) {
@@ -303,7 +324,7 @@ func Register(r *gin.Engine, application *app.App) {
 			return
 		}
 
-		serveTemplate(c, tpl, "admin.html", PageData{Nav: "admin", Nonce: nonceOf(c)})
+		serveAdmin(c, adminSet)
 	})
 
 	// ========== Admin API routes ==========
@@ -324,24 +345,29 @@ func Register(r *gin.Engine, application *app.App) {
 		// Dashboard
 		adminAPI.GET("/stats", application.AdminStats)
 		adminAPI.GET("/project-stats", application.AdminProjectStats)
+		adminAPI.GET("/pending-count", application.AdminPendingCount)
+		adminAPI.GET("/roadmap", application.AdminListRoadmap)
 
 		// Feedbacks
 		adminAPI.GET("/feedbacks", application.AdminListFeedbacks)
 		adminAPI.GET("/feedbacks/export", application.AdminExportCSV)
 		adminAPI.GET("/feedbacks/:id", application.AdminGetFeedback)
-		adminAPI.PUT("/feedbacks/:id/status", application.AdminUpdateFeedbackStatus)
-		adminAPI.POST("/feedbacks/:id/rating-invite", application.AdminTriggerRatingInvite)
-		adminAPI.PUT("/feedbacks/:id/assignee", application.AdminUpdateFeedbackAssignee)
-		adminAPI.PUT("/feedbacks/:id/priority", application.AdminUpdateFeedbackPriority)
-		adminAPI.POST("/feedbacks/:id/duplicate", application.AdminMarkAsDuplicate)
-		adminAPI.DELETE("/feedbacks/:id/duplicate", application.AdminUnmarkDuplicate)
-		adminAPI.DELETE("/feedbacks/:id", application.AdminDeleteFeedback)
-		adminAPI.POST("/feedbacks/:id/notes", application.AdminAddFeedbackNote)
+		adminAPI.GET("/feedbacks/:id/thumb", application.AdminServeFeedbackThumb)
+		adminAPI.PUT("/feedbacks/:id/status", middleware.RequireRole("editor"), application.AdminUpdateFeedbackStatus)
+		adminAPI.POST("/feedbacks/:id/rating-invite", middleware.RequireRole("editor"), application.AdminTriggerRatingInvite)
+		adminAPI.PUT("/feedbacks/:id/assignee", middleware.RequireRole("editor"), application.AdminUpdateFeedbackAssignee)
+		adminAPI.PUT("/feedbacks/:id/priority", middleware.RequireRole("editor"), application.AdminUpdateFeedbackPriority)
+		adminAPI.POST("/feedbacks/:id/duplicate", middleware.RequireRole("editor"), application.AdminMarkAsDuplicate)
+		adminAPI.DELETE("/feedbacks/:id/duplicate", middleware.RequireRole("editor"), application.AdminUnmarkDuplicate)
+		adminAPI.DELETE("/feedbacks/:id", middleware.RequireRole("editor"), application.AdminDeleteFeedback)
+		adminAPI.POST("/feedbacks/:id/notes", middleware.RequireRole("editor"), application.AdminAddFeedbackNote)
 		adminAPI.GET("/feedbacks/:id/notes", application.AdminListFeedbackNotes)
-		adminAPI.DELETE("/feedbacks/:id/notes/:noteId", application.AdminDeleteFeedbackNote)
-		adminAPI.POST("/feedbacks/bulk-delete", application.AdminBulkDeleteFeedbacks)
-		adminAPI.POST("/feedbacks/bulk-status", application.AdminBulkUpdateStatus)
-		adminAPI.PUT("/feedbacks/:id/roadmap", application.AdminSetRoadmap)
+		adminAPI.DELETE("/feedbacks/:id/notes/:noteId", middleware.RequireRole("editor"), application.AdminDeleteFeedbackNote)
+		adminAPI.POST("/feedbacks/bulk-delete", middleware.RequireRole("editor"), application.AdminBulkDeleteFeedbacks)
+		adminAPI.POST("/feedbacks/bulk-status", middleware.RequireRole("editor"), application.AdminBulkUpdateStatus)
+		adminAPI.PUT("/feedbacks/:id/roadmap", middleware.RequireRole("editor"), application.AdminSetRoadmap)
+		adminAPI.PUT("/feedbacks/:id/roadmap/meta", middleware.RequireRole("editor"), application.AdminSetRoadmapMeta)
+		adminAPI.POST("/roadmap/bulk", middleware.RequireRole("editor"), application.AdminBulkRoadmap)
 
 		// Projects (editor+)
 		adminAPI.GET("/projects", application.AdminListProjects)
@@ -378,35 +404,45 @@ func Register(r *gin.Engine, application *app.App) {
 		adminAPI.POST("/projects/:id/faqs", middleware.RequireRole("editor"), application.AdminCreateFAQ)
 		adminAPI.PUT("/projects/:id/faqs/:faqId", middleware.RequireRole("editor"), application.AdminUpdateFAQ)
 		adminAPI.DELETE("/projects/:id/faqs/:faqId", middleware.RequireRole("admin"), application.AdminDeleteFAQ)
+		adminAPI.POST("/faqs/preview", application.AdminPreviewFAQ)
+		adminAPI.GET("/projects/:id/faqs/export", middleware.RequireRole("editor"), application.AdminExportFAQs)
+		adminAPI.POST("/projects/:id/faqs/import", middleware.RequireRole("editor"), application.AdminImportFAQs)
 
 		// Duplicate detection (editor+): candidate similar feedback for a given feedback
 		adminAPI.GET("/feedbacks/:id/similar", middleware.RequireRole("editor"), application.AdminSimilarFeedbacks)
 
 		// Project archive (admin only)
 		adminAPI.POST("/projects/:id/archive", middleware.RequireRole("admin"), application.AdminArchiveProject)
+		// Project clone (editor+): duplicates schema/categories, resets to active/unarchived, zero feedbacks
+		adminAPI.POST("/projects/:id/clone", middleware.RequireRole("editor"), application.AdminCloneProject)
 
 		// Audit logs
 		adminAPI.GET("/audit-logs", application.AdminListAuditLogs)
+		adminAPI.GET("/audit/export", application.AdminExportAuditLogs)
 
 		// Chart data
 		adminAPI.GET("/chart-data", application.AdminChartData)
 
-		// Backup
-		adminAPI.POST("/backup", application.AdminBackup)
-		adminAPI.GET("/backup/download", application.AdminBackupDownload)
-		adminAPI.GET("/backups", application.AdminListBackups)
+		// Backup (admin only — contains full database)
+		adminAPI.POST("/backup", middleware.RequireRole("admin"), application.AdminBackup)
+		adminAPI.GET("/backup/download", middleware.RequireRole("admin"), application.AdminBackupDownload)
+		adminAPI.GET("/backups", middleware.RequireRole("admin"), application.AdminListBackups)
 
 		// API Token management (admin only)
 		adminAPI.GET("/api-tokens", middleware.RequireRole("admin"), application.AdminListAPITokens)
 		adminAPI.POST("/api-tokens", middleware.RequireRole("admin"), application.AdminCreateAPIToken)
 		adminAPI.PUT("/api-tokens/:id", middleware.RequireRole("admin"), application.AdminUpdateAPIToken)
 		adminAPI.DELETE("/api-tokens/:id", middleware.RequireRole("admin"), application.AdminDeleteAPIToken)
+		adminAPI.POST("/api-tokens/:id/rotate", middleware.RequireRole("admin"), application.AdminRotateAPIToken)
+		adminAPI.GET("/api-tokens/:id/stats", middleware.RequireRole("admin"), application.AdminTokenStats)
 
 		// Webhook subscriptions (admin only)
 		adminAPI.GET("/webhooks", middleware.RequireRole("admin"), application.AdminListWebhookSubscriptions)
 		adminAPI.POST("/webhooks", middleware.RequireRole("admin"), application.AdminCreateWebhookSubscription)
 		adminAPI.PUT("/webhooks/:id", middleware.RequireRole("admin"), application.AdminUpdateWebhookSubscription)
 		adminAPI.DELETE("/webhooks/:id", middleware.RequireRole("admin"), application.AdminDeleteWebhookSubscription)
+		adminAPI.POST("/webhooks/:id/test", middleware.RequireRole("admin"), application.AdminTestWebhook)
+		adminAPI.GET("/webhooks/:id/deliveries", middleware.RequireRole("admin"), application.AdminWebhookDeliveries)
 
 		// Bulk operations (editor+)
 		adminAPI.POST("/feedbacks/bulk-tags", middleware.RequireRole("editor"), application.AdminBulkUpdateTags)
@@ -487,9 +523,10 @@ func announcementOrDefault(s string) string {
 // shared layout (chrometop) from the floating theme toggle to the full admin
 // chrome (header + tab nav + logout button).
 type PageData struct {
-	Title string
-	Nav   string
-	Nonce string
+	Title    string
+	Nav      string
+	PublicNav string
+	Nonce    string
 }
 
 // nonceOf returns the per-request CSP nonce, or "" if unavailable.

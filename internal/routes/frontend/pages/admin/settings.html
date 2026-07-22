@@ -1,0 +1,192 @@
+{{define "adminSettings"}}
+<div id="tab-settings" style="display:none">
+    <div class="settings-layout">
+      <div class="settings-nav">
+        <button class="active" data-click="switchSettings" data-args="'email',this">邮件通知</button>
+        <button data-click="switchSettings" data-args="'account',this">账户安全</button>
+        <button data-click="switchSettings" data-args="'system',this">系统设置</button>
+        <button data-click="switchSettings" data-args="'tokens',this" id="navSettingsTokens" style="display:none">API Token</button>
+        <button data-click="switchSettings" data-args="'emailtpl',this" id="navSettingsEmailTpl" style="display:none">邮件模板</button>
+        <button data-click="switchSettings" data-args="'dataops',this" id="navSettingsDataOps" style="display:none">数据管理</button>
+        <button data-click="switchSettings" data-args="'webhooks',this" id="navSettingsWebhooks" style="display:none">Webhook</button>
+        <button data-click="switchSettings" data-args="'roadmap',this">路线图</button>
+      </div>
+      <div class="settings-content">
+        <div class="settings-card" id="settings-email">
+          <h2>邮件通知设置</h2>
+          <div id="emailForm"></div>
+          <div class="settings-actions">
+            <button class="btn-save" data-click="saveEmailSettings" data-args="">保存设置</button>
+          </div>
+        </div>
+        <div class="settings-card" id="settings-account" style="display:none">
+          <h2>账户安全</h2>
+          <div id="accountForm"></div>
+          <div class="settings-actions">
+            <button class="btn-save" data-click="saveAccount" data-args="">保存修改</button>
+          </div>
+        </div>
+        <div class="settings-card" id="settings-system" style="display:none">
+          <h2>系统设置</h2>
+          <div id="systemForm"></div>
+          <div class="settings-actions">
+            <button class="btn-save" data-click="saveSystemSettings" data-args="">保存设置</button>
+          </div>
+          <div style="border-top:1px solid var(--border);margin:24px 0 16px"></div>
+          <h2>全局公告</h2>
+          <div class="hint" style="margin-bottom:12px">发布到首页与「项目列表」页顶部的公告。支持纯文本或受限 HTML（链接 / 强调 / 列表），危险内容会自动过滤。</div>
+          <div id="announcementForm"></div>
+          <div class="settings-actions">
+            <button class="btn-save" data-click="saveAnnouncementSettings" data-args="">保存公告</button>
+          </div>
+          <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--tag-bg)">
+            <h2 style="font-size:.95rem">数据备份</h2>
+            <p style="font-size:.8rem;color:var(--muted);margin:8px 0">手动创建数据库备份文件，存储在服务端 backups 目录。系统每日凌晨 3 点自动备份。</p>
+            <button class="btn-save" data-click="doBackup" data-args="">立即备份</button>
+            <span id="backupResult" style="margin-left:12px;font-size:.8rem;color:var(--muted)"></span>
+          </div>
+        </div>
+        <div class="settings-card" id="settings-tokens" style="display:none">
+          <h2>API Token 管理</h2>
+          <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">API Token 允许外部系统（CI、监控等）通过 <code>POST /api/v1/external/feedback</code> 提交反馈。请求头需携带 <code>Authorization: Bearer &lt;token&gt;</code>。</p>
+          <div id="tokenList"></div>
+          <div style="margin-top:12px">
+            <button class="btn-sm" data-click="openTokenModal" data-args="">+ 创建 Token</button>
+          </div>
+        </div>
+        <div class="settings-card" id="settings-emailtpl" style="display:none">
+          <h2>邮件通知模板</h2>
+          <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">自定义邮件通知的标题和正文模板。支持占位符：<code>{{"{{"}}project{{"}}"}}</code> <code>{{"{{"}}title{{"}}"}}</code> <code>{{"{{"}}description{{"}}"}}</code> <code>{{"{{"}}status{{"}}"}}</code> <code>{{"{{"}}admin_url{{"}}"}}</code></p>
+          <div class="settings-field"><label>标题模板</label><input type="text" id="tplSubject" placeholder="例：[FeedShit] 新反馈：{{"{{"}}title{{"}}"}}"></div>
+          <div class="settings-field"><label>正文模板</label><textarea id="tplBody" rows="8" placeholder="例：项目：{{"{{"}}project{{"}}"}}&#10;标题：{{"{{"}}title{{"}}"}}&#10;描述：{{"{{"}}description{{"}}"}}&#10;查看详情：{{"{{"}}admin_url{{"}}"}}"></textarea></div>
+          <div class="settings-actions">
+            <button class="btn-save" data-click="saveEmailTemplate" data-args="">保存模板</button>
+          </div>
+        </div>
+        <div class="settings-card" id="settings-dataops" style="display:none">
+          <h2>数据管理</h2>
+          <div style="margin-bottom:20px">
+            <h3 style="font-size:.9rem;margin-bottom:8px">CSV 导入</h3>
+            <p style="font-size:.8rem;color:var(--muted);margin-bottom:8px">从 CSV 文件批量导入历史反馈数据。CSV 须包含 <code>title</code> 列，可选列：<code>description</code>, <code>status</code>, <code>tags</code>, <code>assignee</code>, <code>contact_name</code>, <code>contact_email</code>, <code>priority</code>, <code>created_at</code>（Unix 时间戳）。</p>
+            <div style="display:flex;align-items:center;gap:8px">
+              <select id="importProjectId" style="padding:6px 10px;border:1px solid var(--input-border);border-radius:4px;font-size:.85rem"></select>
+              <input type="file" id="csvFileInput" accept=".csv" style="font-size:.85rem">
+              <button class="btn-sm" data-click="previewCSVImport" data-args="">预览</button>
+              <button class="btn-save" data-click="doCSVImport" data-args="">确认导入</button>
+              <span id="importResult" style="font-size:.8rem;color:var(--muted)"></span>
+            </div>
+            <div id="csvPreviewArea" style="margin-top:12px;display:none"></div>
+          </div>
+          <div style="padding-top:16px;border-top:1px solid var(--tag-bg)">
+            <h3 style="font-size:.9rem;margin-bottom:8px">自动归档</h3>
+            <p style="font-size:.8rem;color:var(--muted);margin-bottom:8px">将超过指定天数的待处理/处理中反馈自动标记为已关闭。设为 0 表示禁用。</p>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="archiveDaysInput" min="0" value="0" style="width:80px;padding:6px 10px;border:1px solid var(--input-border);border-radius:4px;font-size:.85rem">
+              <span style="font-size:.8rem;color:var(--tag-fg)">天</span>
+              <button class="btn-save" data-click="doArchive" data-args="">立即归档</button>
+              <span id="archiveResult" style="font-size:.8rem;color:var(--muted)"></span>
+            </div>
+          </div>
+          <div style="padding-top:16px;border-top:1px solid var(--tag-bg);margin-top:16px">
+            <h3 style="font-size:.9rem;margin-bottom:8px">数据库备份</h3>
+            <div id="backupListContainer">
+              <p style="font-size:.8rem;color:var(--muted);margin-bottom:8px">加载中...</p>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="btn-save" data-click="triggerBackup" data-args="">创建备份</button>
+            </div>
+            <h3 style="font-size:.9rem;margin:16px 0 8px 0">清理旧备份</h3>
+            <p style="font-size:.8rem;color:var(--muted);margin-bottom:8px">删除超过指定天数的备份文件。设为 0 表示不自动清理。</p>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="pruneDaysInput" min="0" value="0" style="width:80px;padding:6px 10px;border:1px solid var(--input-border);border-radius:4px;font-size:.85rem">
+              <span style="font-size:.8rem;color:var(--tag-fg)">天</span>
+              <button class="btn-save" data-click="doPruneBackups" data-args="">立即清理</button>
+              <span id="pruneResult" style="font-size:.8rem;color:var(--muted)"></span>
+            </div>
+          </div>
+        </div>
+        <div class="settings-card" id="settings-webhooks" style="display:none">
+          <h2>Webhook 订阅</h2>
+          <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">配置外部系统接收新反馈/状态变更事件。设置签名密钥后，请求头携带 <code>X-FeedShit-Signature: sha256=HMAC</code>。失败自动重试（最多 8 次，指数退避）。</p>
+          <div id="webhookList"></div>
+          <div style="margin-top:12px"><button class="btn-sm" data-click="openWebhookModal" data-args="">+ 新建订阅</button></div>
+          <div id="whTestResult" style="margin-top:12px"></div>
+          <div class="settings-card" id="whDeliveriesCard" style="display:none;margin-top:16px">
+            <h3>最近投递</h3>
+            <div id="whDeliveries"></div>
+          </div>
+        </div>
+        <div class="settings-card" id="settings-roadmap" style="display:none">
+          <h2>路线图设置</h2>
+          <p style="font-size:.8rem;color:var(--muted);margin-bottom:12px">控制新反馈是否自动上板、默认公开策略，以及反馈 resolved 时是否自动晋升在板条目状态。</p>
+          <div class="settings-field"><label>新反馈自动上板</label><label class="toggle"><input type="checkbox" id="rmAutoBoard"><span>提交即进入路线图看板（默认阶段见下）</span></label></div>
+          <div class="settings-field"><label>自动上板默认阶段</label><select id="rmDefaultStatus"><option value="planning">规划中</option><option value="in_progress">进行中</option><option value="released">已发布</option></select></div>
+          <div class="settings-field"><label>自动上板默认公开</label><label class="toggle"><input type="checkbox" id="rmDefaultPublic"><span>新上板条目默认对公众可见（建议关闭，由管理员手动公开）</span></label></div>
+          <div class="settings-field"><label>resolved 自动晋升</label><label class="toggle"><input type="checkbox" id="rmAutoPromote"><span>反馈解决后自动推进已在板条目</span></label></div>
+          <div class="settings-field"><label>自动晋升目标阶段</label><select id="rmAutoPromoteStatus"><option value="released">已发布</option><option value="in_progress">进行中</option></select></div>
+          <div class="settings-actions"><button class="btn-save" data-click="saveRoadmapConfig" data-args="">保存设置</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+<div class="modal-overlay" id="tokenModal">
+  <div class="modal">
+    <h3 id="tokenModalTitle">创建 API Token</h3>
+    <input type="hidden" id="tokenEditId">
+    <div class="settings-field"><label>名称 *</label><input type="text" id="tokenName" placeholder="例：CI 流水线、监控告警"></div>
+    <div class="settings-field"><label>绑定项目</label><input type="text" id="tokenProject" placeholder="留空表示所有项目"></div>
+    <div class="settings-field"><label>每小时限速</label><input type="number" id="tokenRateLimit" value="60" min="0"><div class="hint">每 Token 每小时最大请求数，0 表示不限制</div></div>
+    <div class="settings-field"><label>每日配额</label><input type="number" id="tokenQuotaPerDay" value="1000" min="0"><div class="hint">每 Token 每日最大请求数，0 表示不限制</div></div>
+    <div id="tokenResult" style="display:none;margin-top:12px;padding:12px;background:var(--success-bg);border:1px solid var(--success-border);border-radius:4px">
+      <div style="font-size:.8rem;color:var(--success-fg);margin-bottom:4px">Token 已创建，请立即复制保存（只显示一次）：</div>
+      <code id="tokenValue" style="font-size:.85rem;word-break:all;user-select:all"></code>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeTokenModal" data-args="">关闭</button>
+      <button class="btn-save" id="tokenSaveBtn" data-click="saveToken" data-args="">创建</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="tokenRotateModal">
+  <div class="modal">
+    <h3>重新生成 API Token</h3>
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:8px">旧 Token 将立即失效，使用它的外部系统需更新密钥。新 Token 只显示一次，请立即复制保存。</p>
+    <div style="margin-top:12px;padding:12px;background:var(--success-bg);border:1px solid var(--success-border);border-radius:4px">
+      <div style="font-size:.8rem;color:var(--success-fg);margin-bottom:4px">新 Token（请立即复制保存）：</div>
+      <code id="tokenRotateValue" style="font-size:.85rem;word-break:break-all;user-select:all"></code>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeTokenRotateModal" data-args="">关闭</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="tokenStatsModal">
+  <div class="modal" style="max-width:700px">
+    <h3>API Token 近 24 小时调用趋势</h3>
+    <div id="tokenStatsBars" style="display:flex;align-items:flex-end;gap:2px;height:170px;margin-top:12px;overflow-x:auto;padding-bottom:4px"></div>
+    <div style="display:flex;gap:16px;margin-top:10px;font-size:.78rem;color:var(--muted)">
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--success-fg);border-radius:2px;margin-right:4px"></span>成功</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:#e5484d;border-radius:2px;margin-right:4px"></span>受限 (429)</span>
+    </div>
+    <div id="tokenStatsSummary" style="font-size:.8rem;color:var(--muted);margin-top:6px"></div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeTokenStatsModal" data-args="">关闭</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="webhookModal">
+  <div class="modal">
+    <h3 id="webhookModalTitle">新建 Webhook 订阅</h3>
+    <input type="hidden" id="webhookEditId">
+    <div class="settings-field"><label>绑定项目（可选）</label><input type="text" id="whProject" placeholder="留空表示所有项目"></div>
+    <div class="settings-field"><label>URL *</label><input type="text" id="whUrl" placeholder="https://..."></div>
+    <div class="settings-field"><label>签名密钥（可选）</label><input type="text" id="whSecret" placeholder="留空不签名"><div class="hint">设置后请求头携带 X-FeedShit-Signature: sha256=HMAC</div></div>
+    <div class="settings-field"><label>事件</label><input type="text" id="whEvents" placeholder="* 或 feedback.created,feedback.resolved"></div>
+    <div class="settings-field"><div class="toggle"><input type="checkbox" id="whActive" checked><span>启用</span></div></div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeWebhookModal" data-args="">取消</button>
+      <button class="btn-save" id="whSaveBtn" data-click="saveWebhook" data-args="">保存</button>
+    </div>
+  </div>
+</div>
+{{end}}

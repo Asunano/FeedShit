@@ -1,0 +1,57 @@
+{{define "adminRoadmap"}}
+<div id="tab-roadmap" style="display:none">
+    <div class="filter-bar">
+      <select id="rmStatusFilter">
+        <option value="">全部看板状态</option>
+        <option value="planning">规划中</option>
+        <option value="in_progress">进行中</option>
+        <option value="released">已发布</option>
+      </select>
+      <select id="rmPublicFilter">
+        <option value="">公开/非公开</option>
+        <option value="1">仅公开</option>
+        <option value="0">仅非公开</option>
+      </select>
+      <input type="text" id="rmKeyword" placeholder="搜索标题/描述...">
+      <span class="count" id="rmCount"></span>
+      <span class="spacer"></span>
+      <button class="btn-sm" data-click="loadRoadmap" data-args="">刷新</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><input type="checkbox" id="rmSelectAll" data-change="onRmSelectAll" data-args="this.checked"></th>
+          <th>ID</th><th>项目</th><th>标题</th><th>分类</th><th>看板状态</th><th>公开</th><th>提及</th><th>排序</th><th>更新</th><th>操作</th>
+        </tr></thead>
+        <tbody id="rmTable"><tr><td colspan="11" class="empty">加载中...</td></tr></tbody>
+      </table>
+    </div>
+    <div id="rmBulkBar" style="display:none;margin-top:12px;padding:10px 12px;background:var(--subtle);border:1px solid var(--border);border-radius:8px;align-items:center;flex-wrap:wrap;gap:8px">
+      <span id="rmBulkCount" style="font-size:.82rem">已选 0 条</span>
+      <select id="rmBulkStatus">
+        <option value="">设状态…</option>
+        <option value="planning">规划中</option>
+        <option value="in_progress">进行中</option>
+        <option value="released">已发布</option>
+      </select>
+      <label class="toggle"><input type="checkbox" id="rmBulkPublic"><span>设为公开</span></label>
+      <button class="btn-save" data-click="onRmBulkApply" data-args="">应用</button>
+      <button class="btn-sm" data-click="onRmBulkClear" data-args="">取消选择</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="rmCurateModal">
+    <div class="modal">
+      <h3>策展：<span id="rmCurateTitle"></span></h3>
+      <input type="hidden" id="rmCurateId">
+      <div class="settings-field"><label>排序权重（越大越靠前，置顶请填大数）</label><input type="number" id="rmCurateOrder" value="0"></div>
+      <div class="settings-field"><label>目标完成日期</label><input type="date" id="rmCurateTarget"></div>
+      <div class="settings-field"><label>负责人</label><input type="text" id="rmCurateOwner" placeholder="如：后端组 / 张三"></div>
+      <div class="settings-field"><label>发布版本</label><input type="text" id="rmCurateRelease" placeholder="如：v1.4.0"></div>
+      <div class="modal-actions">
+        <button class="btn-sm" data-click="closeRmCurate" data-args="">取消</button>
+        <button class="btn-save" data-click="saveRmCurate" data-args="">保存</button>
+      </div>
+    </div>
+  </div>
+{{end}}

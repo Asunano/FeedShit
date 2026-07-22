@@ -37,6 +37,14 @@ func getEmailSMTPConfig(db *database.Database) map[string]string {
 	return m
 }
 
+// sanitizeHeader strips CR and LF characters from a value destined for an SMTP
+// header field, preventing header injection (CRLF injection) attacks.
+func sanitizeHeader(s string) string {
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", "")
+	return s
+}
+
 // SendFeedbackNotification sends an email notification for a new feedback.
 func (m *Mailer) SendFeedbackNotification(fb *database.Feedback) {
 	cfg := getEmailSMTPConfig(m.db)
@@ -117,7 +125,7 @@ func (m *Mailer) SendFeedbackNotification(fb *database.Feedback) {
 	body = BuildNotificationBody(m.db, vars)
 
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		from, to, subject, body)
+		from, to, sanitizeHeader(subject), body)
 
 	addr := fmt.Sprintf("%s:%d", host, portNum)
 
@@ -174,12 +182,13 @@ func (m *Mailer) SendSubmitterConfirmation(fb *database.Feedback, trackURL strin
 	subject := BuildConfirmationSubject(m.db, vars)
 	body := BuildConfirmationBody(m.db, vars)
 
+	safeContact := sanitizeHeader(fb.ContactEmail)
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		from, fb.ContactEmail, subject, body)
+		from, safeContact, sanitizeHeader(subject), body)
 
 	addr := fmt.Sprintf("%s:%d", host, portNum)
 	auth := smtp.PlainAuth("", user, pass, host)
-	if err := smtpSend(addr, auth, from, []string{fb.ContactEmail}, []byte(msg)); err != nil {
+	if err := smtpSend(addr, auth, from, []string{safeContact}, []byte(msg)); err != nil {
 		log.Printf("[MAIL] Failed to send submitter confirmation for feedback #%d: %v", fb.ID, err)
 	} else {
 		log.Printf("[MAIL] Submitter confirmation sent for feedback #%d to %s", fb.ID, fb.ContactEmail)
@@ -359,12 +368,13 @@ func (m *Mailer) SendStatusChangeNotification(fb *database.Feedback, subject, ht
 		portNum = 587
 	}
 
+	safeContact := sanitizeHeader(fb.ContactEmail)
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		from, fb.ContactEmail, subject, htmlBody)
+		from, safeContact, sanitizeHeader(subject), htmlBody)
 
 	addr := fmt.Sprintf("%s:%d", host, portNum)
 	auth := smtp.PlainAuth("", user, pass, host)
-	if err := smtpSend(addr, auth, from, []string{fb.ContactEmail}, []byte(msg)); err != nil {
+	if err := smtpSend(addr, auth, from, []string{safeContact}, []byte(msg)); err != nil {
 		log.Printf("[MAIL] Failed to send submitter notification for feedback #%d: %v", fb.ID, err)
 	} else {
 		log.Printf("[MAIL] Submitter notification sent for feedback #%d to %s", fb.ID, fb.ContactEmail)
@@ -437,12 +447,13 @@ func (m *Mailer) SendCSATInvite(fb *database.Feedback, trackURL string) {
 	subject := BuildCSATSubject(m.db, vars)
 	body := BuildCSATBody(m.db, vars)
 
+	safeContact := sanitizeHeader(fb.ContactEmail)
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		from, fb.ContactEmail, subject, body)
+		from, safeContact, sanitizeHeader(subject), body)
 
 	addr := fmt.Sprintf("%s:%d", host, portNum)
 	auth := smtp.PlainAuth("", user, pass, host)
-	if err := smtpSend(addr, auth, from, []string{fb.ContactEmail}, []byte(msg)); err != nil {
+	if err := smtpSend(addr, auth, from, []string{safeContact}, []byte(msg)); err != nil {
 		log.Printf("[MAIL] Failed to send CSAT invite for feedback #%d: %v", fb.ID, err)
 	} else {
 		log.Printf("[MAIL] CSAT invite sent for feedback #%d to %s", fb.ID, fb.ContactEmail)
@@ -492,7 +503,7 @@ func (m *Mailer) SendSubmitterReplyNotification(fb *database.Feedback, replyCont
 </body></html>`, fb.ID, safeTitle, safeContent, adminLink)
 
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		from, to, subject, body)
+		from, to, sanitizeHeader(subject), body)
 
 	addr := fmt.Sprintf("%s:%d", host, portNum)
 	recipients := strings.Split(to, ",")
@@ -535,7 +546,7 @@ func (m *Mailer) Send(to, subject, htmlBody string) {
 	}
 
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		from, to, subject, htmlBody)
+		from, to, sanitizeHeader(subject), htmlBody)
 
 	addr := fmt.Sprintf("%s:%d", host, portNum)
 	recipients := strings.Split(to, ",")
@@ -552,9 +563,24 @@ func (m *Mailer) Send(to, subject, htmlBody string) {
 	}
 }
 
+// isPermanentSMTPError reports whether err is a permanent 5xx SMTP error that
+// will never succeed on retry (e.g., 550 mailbox not found, 553 relay denied).
+func isPermanentSMTPError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	for _, code := range []string{"550", "551", "552", "553", "554", "535", "538"} {
+		if strings.Contains(msg, code) {
+			return true
+		}
+	}
+	return false
+}
+
 // smtpSend 发送 SMTP 邮件，自动处理端口 465 (SSL/TLS) 与 STARTTLS。
 // addr: "host:port", auth: SMTP 认证, from: 发件人, to: 收件人列表, msg: 完整的 MIME 消息。
-// 发送失败后自动重试 2 次（指数退避：2s、8s）。
+// 发送失败后自动重试 2 次（指数退避：4s、8s），但 5xx 永久错误不重试。
 func smtpSend(addr string, auth smtp.Auth, from string, to []string, msg []byte) error {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
@@ -566,6 +592,11 @@ func smtpSend(addr string, auth smtp.Auth, from string, to []string, msg []byte)
 		if err := smtpSendOnce(addr, auth, from, to, msg); err != nil {
 			lastErr = err
 			log.Printf("[MAIL] attempt %d failed: %v", attempt+1, err)
+			// 5xx permanent errors (mailbox not found, relay denied, etc.) will
+			// never succeed on retry — bail out immediately.
+			if isPermanentSMTPError(err) {
+				return fmt.Errorf("permanent SMTP error (no retry): %w", err)
+			}
 			continue
 		}
 		return nil

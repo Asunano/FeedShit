@@ -1,0 +1,48 @@
+{{define "adminKb"}}
+<div id="tab-kb" style="display:none">
+  <div class="filter-bar">
+    <select id="kbProject" data-change="loadFaqs" data-args="">
+      <option value="">选择项目</option>
+    </select>
+    <button class="btn-sm" data-click="openFaqModal" data-args="0">+ 新增 FAQ</button>
+    <button class="btn-sm" data-click="exportFaqs" data-args="">导出 CSV</button>
+    <button class="btn-sm" data-click="triggerFaqCSV" data-args="">导入 CSV</button>
+    <input type="file" id="faqCSVFile" accept=".csv" style="display:none" data-change="onFaqCSVChange" data-args="">
+  </div>
+  <div id="faqCSVPreview" style="display:none;margin:12px 0;padding:12px;background:var(--note-bg);border:1px solid var(--border-soft);border-radius:6px">
+    <div style="font-size:.85rem;color:var(--muted);margin-bottom:8px">列映射预览（前 10 行，确认无误后导入）：</div>
+    <div id="faqCSVPreviewBody" style="font-size:.8rem;max-height:240px;overflow:auto"></div>
+    <div id="faqCSVPreviewNote" style="font-size:.8rem;color:var(--hint);margin:8px 0"></div>
+    <div class="modal-actions" style="justify-content:flex-start">
+      <button class="btn-save" data-click="importFaqCSV" data-args="">确认导入</button>
+      <button class="btn-sm" data-click="closeFaqCSVPreview" data-args="">取消</button>
+    </div>
+  </div>
+  <div id="kbEmpty" style="display:none;padding:30px;text-align:center;color:var(--muted);font-size:.9rem"></div>
+  <div class="table-wrap" id="kbTableWrap" style="display:none">
+    <table>
+      <thead><tr><th>问题</th><th>答案</th><th>排序</th><th>状态</th><th>查看</th><th>有用</th><th>操作</th></tr></thead>
+      <tbody id="kbBody"></tbody>
+    </table>
+  </div>
+</div>
+<div class="modal-overlay" id="faqModal">
+  <div class="modal">
+    <h3 id="faqModalTitle">新增 FAQ</h3>
+    <input type="hidden" id="faqEditId">
+    <div class="settings-field"><label>问题 *</label><textarea id="faqQuestion" rows="2" placeholder="用户常问的问题"></textarea></div>
+    <div class="settings-field"><label>答案（支持 Markdown）</label><textarea id="faqAnswer" rows="6" placeholder="支持 Markdown：**加粗**、*斜体*、# 标题、- 列表、[链接](url)、代码块等"></textarea></div>
+    <div class="settings-hint">提交后在前台经消毒渲染（自动剥离脚本/事件，防 XSS）。</div>
+    <div class="faq-preview-bar">
+      <button class="btn-sm" data-click="previewFaq" data-args="">预览渲染效果</button>
+    </div>
+    <div class="faq-preview" id="faqPreview" style="display:none"></div>
+    <div class="settings-field"><label>排序</label><input type="number" id="faqSort" value="0"></div>
+    <div class="settings-field"><div class="toggle"><input type="checkbox" id="faqActive" checked><span>启用（启用后将在提交页检索中展示）</span></div></div>
+    <div class="modal-actions">
+      <button class="btn-sm" data-click="closeFaqModal" data-args="">取消</button>
+      <button class="btn-save" id="faqSaveBtn" data-click="saveFaq" data-args="">保存</button>
+    </div>
+  </div>
+</div>
+{{end}}

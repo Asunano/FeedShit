@@ -21,6 +21,9 @@ import (
 	"feedshit/internal/middleware"
 )
 
+// AppVersion is the build version, overridable via -ldflags at build time.
+var AppVersion = "dev"
+
 // ========== Password Hashing Helpers ==========
 
 func hashPassword(password string) (string, error) {
@@ -339,10 +342,28 @@ func (a *App) HealthCheck(c *gin.Context) {
 func (a *App) SetupStatus(c *gin.Context) {
 	val := a.DB.GetConfig("setup_complete")
 	c.JSON(http.StatusOK, gin.H{
-		"setup_complete": val == "true",
-		"pow_difficulty": a.Cfg.PoWDifficulty,
-		"max_upload_mb":  a.Cfg.MaxUploadSize / 1024 / 1024,
+		"setup_complete":     val == "true",
+		"pow_difficulty":     a.Cfg.PoWDifficulty,
+		"max_upload_mb":      a.Cfg.MaxUploadSize / 1024 / 1024,
+		"master_key_env_set": os.Getenv("FEEDSHIT_MASTER_KEY") != "",
+		"master_key_source":  a.masterKeySource(),
+		"version":            AppVersion,
 	})
+}
+
+// masterKeySource reports how the AES-GCM master key was provisioned:
+// "env" (FEEDSHIT_MASTER_KEY), "file" (data/key/master.key), or "generated"
+// (auto-created on first run because neither was present). This is surfaced in
+// the setup wizard so admins understand their key situation.
+func (a *App) masterKeySource() string {
+	if os.Getenv("FEEDSHIT_MASTER_KEY") != "" {
+		return "env"
+	}
+	keyPath := a.Cfg.DataDir + "/key/master.key"
+	if _, err := os.Stat(keyPath); err == nil {
+		return "file"
+	}
+	return "generated"
 }
 
 // DoSetup handles POST /api/v1/setup
@@ -356,6 +377,13 @@ func (a *App) DoSetup(c *gin.Context) {
 	var req struct {
 		AdminUsername string `json:"admin_username"`
 		AdminPassword string `json:"admin_password"`
+		SMTPHost      string `json:"smtp_host"`
+		SMTPPort      int    `json:"smtp_port"`
+		SMTPUser      string `json:"smtp_user"`
+		SMTPPass      string `json:"smtp_pass"`
+		SMTPFrom      string `json:"smtp_from"`
+		SMTPTo        string `json:"smtp_to"`
+		NotifyEnable  bool   `json:"notify_enable"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "请求格式错误"})
@@ -395,6 +423,30 @@ func (a *App) DoSetup(c *gin.Context) {
 	// Also insert super admin into admins table for team management visibility
 	if _, err := a.DB.CreateAdmin(req.AdminUsername, hashedPwd, "admin"); err != nil {
 		log.Printf("[SETUP] Warning: failed to insert super admin into admins table: %v", err)
+	}
+
+	// Persist optional SMTP configuration. Reuses the encrypted config store
+	// (smtp_pass is auto-encrypted via sensitiveConfigKeys), so the admin can
+	// skip the separate settings page after install.
+	saveCfg := func(k, v, desc string) {
+		if v == "" {
+			return
+		}
+		if err := a.DB.SetConfig(k, v, desc); err != nil {
+			log.Printf("[SETUP] 保存 %s 失败: %v", k, err)
+		}
+	}
+	if req.SMTPHost != "" || req.SMTPUser != "" || req.SMTPPass != "" ||
+		req.SMTPFrom != "" || req.SMTPTo != "" || req.SMTPPort != 0 {
+		saveCfg("smtp_host", req.SMTPHost, "SMTP 服务器地址")
+		if req.SMTPPort != 0 {
+			saveCfg("smtp_port", strconv.Itoa(req.SMTPPort), "SMTP 端口")
+		}
+		saveCfg("smtp_user", req.SMTPUser, "SMTP 用户名")
+		saveCfg("smtp_pass", req.SMTPPass, "SMTP 密码")
+		saveCfg("smtp_from", req.SMTPFrom, "发件人地址")
+		saveCfg("smtp_to", req.SMTPTo, "收件人地址")
+		saveCfg("notify_enable", strconv.FormatBool(req.NotifyEnable), "是否启用邮件通知")
 	}
 
 	// Mark setup complete

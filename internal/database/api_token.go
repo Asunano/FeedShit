@@ -1,6 +1,7 @@
 package database
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -134,6 +135,29 @@ func (d *Database) DeleteAPIToken(id int64) error {
 	return err
 }
 
+// RotateAPIToken invalidates the current token and issues a brand-new one.
+// The plaintext is returned exactly once; only its SHA-256 hash is persisted,
+// so callers must surface it to the admin immediately (same contract as
+// CreateAPIToken). The previous token stops authenticating as soon as the
+// hash is overwritten.
+func (d *Database) RotateAPIToken(id int64) (string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", err
+	}
+	plaintext := "fs_" + hex.EncodeToString(tokenBytes)
+
+	if _, err := d.db.Exec(
+		`UPDATE api_tokens SET token = ?, last_used_at = '' WHERE id = ?`,
+		hashTokenSHA256(plaintext), id); err != nil {
+		return "", err
+	}
+	return plaintext, nil
+}
+
 func (d *Database) TouchAPIToken(token string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -165,4 +189,67 @@ func (d *Database) RecordTokenUsage(token string, quotaPerDay int) (bool, error)
 	}
 	_, err := d.db.Exec(`UPDATE api_tokens SET daily_count = daily_count + 1 WHERE token = ?`, hash)
 	return err == nil, err
+}
+
+// TokenCallBucket is one hour-binned cell of a token's recent call activity.
+// Hour is the unix-second start of the UTC hour; ok/fail split the status
+// observed at auth time (200 = authenticated success, 429 = rate/quota reject).
+type TokenCallBucket struct {
+	Hour  int64 `json:"hour"`
+	Count int   `json:"count"`
+	OK    int   `json:"ok"`
+	Fail  int   `json:"fail"`
+}
+
+// RecordTokenCall appends a single token-call event. Writes are best-effort
+// and intentionally fire-and-forget from the auth middleware so they never
+// add latency to the request path. status is the HTTP code seen at auth time.
+func (d *Database) RecordTokenCall(tokenID int64, status int) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(
+		`INSERT INTO token_calls (token_id, ts, status) VALUES (?, strftime('%s','now'), ?)`,
+		tokenID, status)
+	return err
+}
+
+// TokenCallStats returns the last 24 hourly buckets for a token, oldest first,
+// always exactly 24 cells (zero-filled for hours with no calls). Used by the
+// admin 24h trend chart. Buckets are keyed on UTC hour starts.
+func (d *Database) TokenCallStats(tokenID int64) ([]TokenCallBucket, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	now := time.Now().UTC()
+	curHour := now.Truncate(time.Hour)
+	buckets := make([]TokenCallBucket, 24)
+	byHour := make(map[int64]int, 24)
+	for i := 0; i < 24; i++ {
+		h := curHour.Add(-time.Duration(23-i) * time.Hour).Unix()
+		buckets[i] = TokenCallBucket{Hour: h}
+		byHour[h] = i
+	}
+
+	since := curHour.Add(-23 * time.Hour).Unix()
+	rows, err := d.db.Query(`
+		SELECT (ts/3600)*3600 AS hr, COUNT(*),
+		       SUM(CASE WHEN status < 400 THEN 1 ELSE 0 END),
+		       SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END)
+		FROM token_calls WHERE token_id = ? AND ts >= ? GROUP BY hr`, tokenID, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var hr, cnt, ok, fail int64
+		if err := rows.Scan(&hr, &cnt, &ok, &fail); err != nil {
+			continue
+		}
+		if idx, ok2 := byHour[hr]; ok2 {
+			buckets[idx].Count = int(cnt)
+			buckets[idx].OK = int(ok)
+			buckets[idx].Fail = int(fail)
+		}
+	}
+	return buckets, nil
 }

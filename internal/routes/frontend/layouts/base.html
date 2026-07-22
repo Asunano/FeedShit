@@ -15,6 +15,8 @@
     <h1><span>Feed</span>Shit</h1>
     <div class="nav">
       <button class="active" data-tab="dashboard" data-click="switchTab" data-args="'dashboard'">概览</button>
+      <button data-tab="pending" data-click="switchTab" data-args="'pending'" id="navPending">待审批 <span class="nav-badge" id="pendingBadge" style="display:none">0</span></button>
+      <button data-tab="roadmap" data-click="switchTab" data-args="'roadmap'">路线图</button>
       <button data-tab="projects" data-click="switchTab" data-args="'projects'">项目</button>
       <button data-tab="team" data-click="switchTab" data-args="'team'" id="navTeam" style="display:none">团队</button>
       <button data-tab="audit" data-click="switchTab" data-args="'audit'">审计</button>
@@ -28,9 +30,22 @@
     </div>
   </header>
   {{else}}
+  {{if .PublicNav}}
+  <header class="pnav">
+    <a class="pnav__brand" href="/">Feed<span>Shit</span></a>
+    <nav class="pnav__links">
+      <a href="/" class="{{if eq .PublicNav "home"}}active{{end}}">首页</a>
+      <a href="/projects" class="{{if eq .PublicNav "projects"}}active{{end}}">项目</a>
+      <a href="/roadmap" class="{{if eq .PublicNav "roadmap"}}active{{end}}">路线图</a>
+      <a href="/track" class="{{if eq .PublicNav "track"}}active{{end}}">跟踪</a>
+      <button type="button" class="theme-toggle pnav__toggle" id="themeToggleBtn" aria-label="切换主题" title="主题"><span class="theme-toggle__icon" aria-hidden="true"></span></button>
+    </nav>
+  </header>
+  {{else}}
   <button type="button" class="theme-toggle theme-toggle--float" id="themeToggleBtn" aria-label="切换主题" title="主题">
     <span class="theme-toggle__icon" aria-hidden="true"></span>
   </button>
+  {{end}}
   {{end}}
 {{end}}
 

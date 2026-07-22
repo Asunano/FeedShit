@@ -236,7 +236,11 @@ func (a *App) AdminUpdateAccount(c *gin.Context) {
 		return
 	}
 
-	if req.Username != "" && len(req.Username) >= 2 {
+	if req.Username != "" {
+		if len(req.Username) < 3 || len(req.Username) > 32 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "用户名长度须为 3-32 个字符"})
+			return
+		}
 		a.Cfg.AdminUsername = req.Username
 		if err := a.DB.SetConfig("admin_username", req.Username, "管理员用户名"); err != nil {
 			log.Printf("[CONFIG] 保存用户名失败: %v", err)

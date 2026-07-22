@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -94,6 +95,11 @@ func (a *App) AdminLogin(c *gin.Context) {
 	middleware.SetCSRFCookie(c, csrfToken, a.cookieSecure(c))
 
 	a.DB.InsertAuditLog("login", "管理员登录", req.Username, clientIP)
+
+	// Record last-login time for the matched admin account (table-based auth).
+	if admin != nil {
+		a.DB.UpdateAdminLastLogin(admin.ID, time.Now().Unix())
+	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "登录成功", "role": role})
 }

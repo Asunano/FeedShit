@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -19,9 +20,13 @@ func (d *Database) CreateProject(p *Project) (int64, error) {
 	if p.IsArchived {
 		archived = 1
 	}
+	showGlobal := 0
+	if p.ShowOnGlobalRoadmap {
+		showGlobal = 1
+	}
 	res, err := d.db.Exec(
-		`INSERT INTO projects (name, slug, description, is_active, is_archived, form_schema, announcement) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		p.Name, p.Slug, p.Description, active, archived, p.FormSchema, p.Announcement,
+		`INSERT INTO projects (name, slug, description, is_active, is_archived, form_schema, announcement, show_on_global_roadmap) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.Name, p.Slug, p.Description, active, archived, p.FormSchema, p.Announcement, showGlobal,
 	)
 	if err != nil {
 		return 0, err
@@ -48,33 +53,144 @@ func (d *Database) UpdateProject(p *Project) error {
 	if p.IsArchived {
 		archived = 1
 	}
+	showGlobal := 0
+	if p.ShowOnGlobalRoadmap {
+		showGlobal = 1
+	}
 	_, err := d.db.Exec(
-		`UPDATE projects SET name = ?, slug = ?, description = ?, is_active = ?, is_archived = ?, form_schema = ?, announcement = ? WHERE id = ?`,
-		p.Name, p.Slug, p.Description, active, archived, p.FormSchema, p.Announcement, p.ID,
+		`UPDATE projects SET name = ?, slug = ?, description = ?, is_active = ?, is_archived = ?, form_schema = ?, announcement = ?, show_on_global_roadmap = ? WHERE id = ?`,
+		p.Name, p.Slug, p.Description, active, archived, p.FormSchema, p.Announcement, showGlobal, p.ID,
 	)
 	return err
 }
 
-// DeleteProject removes a project and all associated feedbacks (cascade).
+// DeleteProject removes a project and all associated data (cascade).
 func (d *Database) DeleteProject(id int64) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// First get the project slug to delete associated feedbacks
+	// First get the project slug to delete associated data
 	var slug string
 	err := d.db.QueryRow(`SELECT slug FROM projects WHERE id = ?`, id).Scan(&slug)
 	if err != nil {
 		return err
 	}
 
-	// Delete associated feedbacks
-	if _, err := d.db.Exec(`DELETE FROM feedbacks WHERE project_id = ?`, slug); err != nil {
+	tx, err := d.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Get feedback IDs for this project to clean up dependent tables
+	rows, err := tx.Query(`SELECT id FROM feedbacks WHERE project_id = ?`, slug)
+	if err != nil {
+		return err
+	}
+	var fbIDs []int64
+	for rows.Next() {
+		var fid int64
+		if err := rows.Scan(&fid); err != nil {
+			rows.Close()
+			return err
+		}
+		fbIDs = append(fbIDs, fid)
+	}
+	rows.Close()
+
+	// Delete feedback-dependent data (notes, votes, ratings, status history)
+	if len(fbIDs) > 0 {
+		placeholders := make([]string, len(fbIDs))
+		args := make([]interface{}, len(fbIDs))
+		for i, fid := range fbIDs {
+			placeholders[i] = "?"
+			args[i] = fid
+		}
+		inClause := strings.Join(placeholders, ",")
+		for _, table := range []string{"feedback_notes", "feedback_votes", "feedback_ratings", "feedback_status_history"} {
+			if _, err := tx.Exec(`DELETE FROM `+table+` WHERE feedback_id IN (`+inClause+`)`, args...); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Delete feedbacks
+	if _, err := tx.Exec(`DELETE FROM feedbacks WHERE project_id = ?`, slug); err != nil {
+		return err
+	}
+
+	// Delete project-scoped data
+	for _, table := range []string{"categories", "webhook_subscriptions", "member_grants"} {
+		col := "project_slug"
+		if table == "webhook_subscriptions" {
+			col = "project_id"
+		}
+		if _, err := tx.Exec(`DELETE FROM `+table+` WHERE `+col+` = ?`, slug); err != nil {
+			return err
+		}
+	}
+
+	// Delete webhook outbox entries for this project's subscriptions
+	if _, err := tx.Exec(`DELETE FROM webhook_outbox WHERE subscription_id NOT IN (SELECT id FROM webhook_subscriptions)`); err != nil {
 		return err
 	}
 
 	// Delete the project
-	_, err = d.db.Exec(`DELETE FROM projects WHERE id = ?`, id)
-	return err
+	if _, err := tx.Exec(`DELETE FROM projects WHERE id = ?`, id); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+// CloneProject duplicates an existing project into a new one. It copies the
+// form schema, description, announcement and all categories, but resets the
+// clone to active + not-archived and does NOT copy feedbacks/files (those are
+// keyed by slug and reference the old project only). The caller is responsible
+// for ensuring the new slug is unique before calling this.
+func (d *Database) CloneProject(srcID int64, newName, newSlug string) (int64, error) {
+	// Read source project + categories OUTSIDE the write lock (those reads take
+	// their own RLock; nesting them inside a write lock would deadlock the
+	// non-reentrant RWMutex).
+	src, err := d.GetProject(srcID)
+	if err != nil {
+		return 0, err
+	}
+	if src == nil {
+		return 0, fmt.Errorf("源项目不存在")
+	}
+	cats, err := d.ListCategories(src.Slug)
+	if err != nil {
+		return 0, err
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	showGlobal := 0
+	if src.ShowOnGlobalRoadmap {
+		showGlobal = 1
+	}
+	res, err := d.db.Exec(
+		`INSERT INTO projects (name, slug, description, is_active, is_archived, form_schema, announcement, show_on_global_roadmap) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		newName, newSlug, src.Description, 1, 0, src.FormSchema, src.Announcement, showGlobal,
+	)
+	if err != nil {
+		return 0, err
+	}
+	newID, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	for _, c := range cats {
+		if _, err := d.db.Exec(
+			`INSERT INTO categories (project_slug, key, name, color, sort_order) VALUES (?, ?, ?, ?, ?)`,
+			newSlug, c.Key, c.Name, c.Color, c.SortOrder,
+		); err != nil {
+			return newID, err
+		}
+	}
+	return newID, nil
 }
 
 // GetProject returns a project by ID.
@@ -84,15 +200,16 @@ func (d *Database) GetProject(id int64) (*Project, error) {
 
 	var p Project
 	var createdAt int64
-	var isActive, isArchived int
+	var isActive, isArchived, showGlobal int
 	err := d.db.QueryRow(
-		`SELECT id, name, slug, description, is_active, is_archived, form_schema, announcement, created_at FROM projects WHERE id = ?`, id,
-	).Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &p.Announcement, &createdAt)
+		`SELECT id, name, slug, description, is_active, is_archived, form_schema, announcement, show_on_global_roadmap, created_at FROM projects WHERE id = ?`, id,
+	).Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &p.Announcement, &showGlobal, &createdAt)
 	if err != nil {
 		return nil, err
 	}
 	p.IsActive = isActive == 1
 	p.IsArchived = isArchived == 1
+	p.ShowOnGlobalRoadmap = showGlobal == 1
 	p.CreatedAt = time.Unix(createdAt, 0)
 	return &p, nil
 }
@@ -104,15 +221,16 @@ func (d *Database) GetProjectBySlug(slug string) (*Project, error) {
 
 	var p Project
 	var createdAt int64
-	var isActive, isArchived int
+	var isActive, isArchived, showGlobal int
 	err := d.db.QueryRow(
-		`SELECT id, name, slug, description, is_active, is_archived, form_schema, announcement, created_at FROM projects WHERE slug = ?`, slug,
-	).Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &p.Announcement, &createdAt)
+		`SELECT id, name, slug, description, is_active, is_archived, form_schema, announcement, show_on_global_roadmap, created_at FROM projects WHERE slug = ?`, slug,
+	).Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &p.Announcement, &showGlobal, &createdAt)
 	if err != nil {
 		return nil, err
 	}
 	p.IsActive = isActive == 1
 	p.IsArchived = isArchived == 1
+	p.ShowOnGlobalRoadmap = showGlobal == 1
 	p.CreatedAt = time.Unix(createdAt, 0)
 	return &p, nil
 }
@@ -125,7 +243,7 @@ func (d *Database) listProjectsWithArchive(archived *bool) ([]Project, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	query := `SELECT id, name, slug, description, is_active, is_archived, form_schema, announcement, created_at FROM projects`
+	query := `SELECT id, name, slug, description, is_active, is_archived, form_schema, announcement, show_on_global_roadmap, created_at FROM projects`
 	args := []interface{}{}
 	if archived != nil {
 		v := 0
@@ -147,12 +265,13 @@ func (d *Database) listProjectsWithArchive(archived *bool) ([]Project, error) {
 	for rows.Next() {
 		var p Project
 		var createdAt int64
-		var isActive, isArchived int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &p.Announcement, &createdAt); err != nil {
+		var isActive, isArchived, showGlobal int
+		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &isActive, &isArchived, &p.FormSchema, &p.Announcement, &showGlobal, &createdAt); err != nil {
 			return nil, err
 		}
 		p.IsActive = isActive == 1
 		p.IsArchived = isArchived == 1
+		p.ShowOnGlobalRoadmap = showGlobal == 1
 		p.CreatedAt = time.Unix(createdAt, 0)
 		projects = append(projects, p)
 	}

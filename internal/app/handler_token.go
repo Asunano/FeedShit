@@ -3,6 +3,7 @@ package app
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -137,6 +138,47 @@ func (a *App) AdminDeleteAPIToken(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "已删除"})
 }
 
+// AdminRotateAPIToken regenerates an API token's secret. The old token is
+// immediately invalidated; the new plaintext is returned once and must be
+// shown to the admin (it cannot be recovered later).
+func (a *App) AdminRotateAPIToken(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	plaintext, err := a.DB.RotateAPIToken(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "重新生成失败"})
+		return
+	}
+	user, _ := c.Get("admin_user")
+	clientIP := middleware.GetClientIP(c)
+	a.DB.InsertAuditLog("rotate_api_token", fmt.Sprintf("重新生成 API Token #%d", id), fmt.Sprintf("%v", user), clientIP)
+	c.JSON(http.StatusOK, gin.H{
+		"id":      id,
+		"token":   plaintext,
+		"message": "Token 已重新生成，请立即复制保存（只显示一次）",
+	})
+}
+
+// AdminTokenStats returns the last 24 hourly call buckets for a token, used by
+// the admin 24h trend chart. ok/fail are split by the HTTP status seen at auth
+// time (200 = success, 429 = rate/quota rejection).
+func (a *App) AdminTokenStats(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的 ID"})
+		return
+	}
+	buckets, err := a.DB.TokenCallStats(id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取统计失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"buckets": buckets})
+}
+
 // ========== API Token Auth Middleware ==========
 
 // APITokenAuthMiddleware authenticates requests using Bearer token from API tokens.
@@ -161,6 +203,7 @@ func (a *App) APITokenAuthMiddleware() gin.HandlerFunc {
 			key := tokenStr + "#" + hour
 			if a.tokenHourHits[key] >= token.RateLimit {
 				a.tokenMu.Unlock()
+				go a.DB.RecordTokenCall(token.ID, 429)
 				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "API Token 每小时请求次数超限", "retry_after": 3600})
 				return
 			}
@@ -173,6 +216,7 @@ func (a *App) APITokenAuthMiddleware() gin.HandlerFunc {
 			if qerr != nil {
 				log.Printf("[API] quota check failed: %v", qerr)
 			} else if !ok {
+				go a.DB.RecordTokenCall(token.ID, 429)
 				c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "API Token 每日配额已用尽"})
 				return
 			}
@@ -181,6 +225,7 @@ func (a *App) APITokenAuthMiddleware() gin.HandlerFunc {
 		c.Set("api_token_project", token.ProjectID)
 		c.Set("api_token_name", token.Name)
 		go a.DB.TouchAPIToken(tokenStr)
+		go a.DB.RecordTokenCall(token.ID, 200)
 		c.Next()
 	}
 }
@@ -204,8 +249,8 @@ func (a *App) SubmitFeedbackWithToken(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "项目不存在"})
 		return
 	}
-	if !proj.IsActive {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "项目已停用，无法提交反馈"})
+	if !proj.IsActive || proj.IsArchived {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "项目已停用或已归档，无法提交反馈"})
 		return
 	}
 
@@ -269,12 +314,13 @@ func (a *App) SubmitFeedbackWithToken(c *gin.Context) {
 			return
 		}
 	}
+	filePathsJSON, _ := json.Marshal(uploadedFiles)
 	fb := &database.Feedback{
 		ProjectID:    pid,
 		Title:        req.Title,
 		Description:  req.Description,
 		CustomData:   req.CustomData,
-		FilePaths:    strings.Join(uploadedFiles, ","),
+		FilePaths:    string(filePathsJSON),
 		Tags:         req.Tags,
 		ContactName:  req.ContactName,
 		ContactEmail: req.ContactEmail,
@@ -299,6 +345,7 @@ func (a *App) SubmitFeedbackWithToken(c *gin.Context) {
 	}
 	fb.ID = id
 
+	a.autoBoardFeedback(fb.ID)
 	tokenName, _ := c.Get("api_token_name")
 	a.DB.InsertAuditLog("api_submit", fmt.Sprintf("API Token 提交反馈 #%d: %s", id, req.Title), fmt.Sprintf("%v", tokenName), fb.ClientIP)
 
